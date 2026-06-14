@@ -1,0 +1,81 @@
+'''Parse and classify DEP-3 patch headers.
+
+DEP-3 (https://dep-team.pages.debian.net/deps/dep3/) tags a patch with
+RFC-2822-style metadata at the top of the file. We use it to classify each
+carried patch as forwarded upstream, Debian-only, or unknown.
+
+The classification is deliberately honest: a patch with no DEP-3 evidence is
+UNKNOWN, never assumed divergent. This departs from DEP-3's implicit "not
+forwarded" default, because the project's job is to surface divergence it can
+actually justify, not to cry wolf.
+'''
+from __future__ import annotations
+
+import enum
+
+
+class PatchClass(enum.Enum):
+    FORWARDED = 'forwarded'
+    DEBIAN_ONLY = 'debian-only'
+    UNKNOWN = 'unknown'
+
+
+# Lines that mark the start of patch content (and so the end of any header).
+_DIFF_MARKERS = ('--- ', '+++ ', 'diff ', 'Index:', '@@ ', 'rename ', 'GIT binary patch')
+
+
+def parse_header(text: str) -> dict[str, str]:
+    '''Parse the RFC-2822-style DEP-3 header at the top of a patch.
+
+    The header ends at the first blank line, a line that is exactly ``---``, or
+    the start of the diff. Field names are lower-cased; continuation lines
+    (leading whitespace) are folded into the preceding field.
+    '''
+    fields: dict[str, str] = {}
+    current_key: str | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped == '' or stripped == '---' or line.startswith(_DIFF_MARKERS):
+            break
+        if line[:1] in (' ', '\t') and current_key is not None:
+            fields[current_key] = (fields[current_key] + ' ' + stripped).strip()
+            continue
+        if ':' in line:
+            key, _, value = line.partition(':')
+            current_key = key.strip().lower()
+            fields[current_key] = value.strip()
+        else:
+            # A non-field line in the header area (e.g. git "From <hash>" or
+            # free text); it does not continue a field.
+            current_key = None
+    return fields
+
+
+def classify(text: str) -> PatchClass:
+    '''Classify a patch as FORWARDED, DEBIAN_ONLY, or UNKNOWN by its DEP-3 header.'''
+    fields = parse_header(text)
+    if not fields:
+        return PatchClass.UNKNOWN
+
+    # Definitive: the change is already in upstream.
+    if 'applied-upstream' in fields:
+        return PatchClass.FORWARDED
+
+    forwarded = fields.get('forwarded')
+    if forwarded is not None:
+        # "no", "not-needed" (and non-standard "not yet"/"not needed") all mean
+        # the patch is not headed upstream; anything else ("yes", a URL) means
+        # it is.
+        return PatchClass.DEBIAN_ONLY if forwarded.strip().lower().startswith('no') else PatchClass.FORWARDED
+
+    origin_category = fields.get('origin', '').split(',', 1)[0].strip().lower()
+    if origin_category in ('upstream', 'backport'):
+        return PatchClass.FORWARDED
+    if origin_category == 'vendor':
+        return PatchClass.DEBIAN_ONLY
+
+    # DEP-3: Forwarded absent but a Bug reference present implies it was sent.
+    if any(key == 'bug' or key.startswith('bug-') for key in fields):
+        return PatchClass.FORWARDED
+
+    return PatchClass.UNKNOWN
