@@ -7,11 +7,16 @@ build/
 dist/
 .venv/
 venv/
+release-venv/
+
+# setuptools_scm writes this at build time
+divergulent/_version.py
 
 # Tooling / caches
 .pytest_cache/
 .mypy_cache/
 .tox/
+.stestr/
 .coverage
 htmlcov/
 

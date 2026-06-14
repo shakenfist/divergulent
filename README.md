@@ -53,14 +53,38 @@ on the local machine:
 The local-package inventory is sensitive (it fingerprints the host), so
 the default posture is local-only — nothing leaves the machine.
 
+## Usage
+
+List the installed packages mapped to their source packages:
+
+```bash
+divergulent inventory          # aligned table
+divergulent inventory --json   # machine-readable
+```
+
 ## Status
 
-Greenfield. Nothing is implemented yet. The plan for the first
-implementation lives in
+Early. Phase 1 is implemented: `divergulent inventory` reads the
+installed-package set from `dpkg` and maps each package to its source
+package and version. The staleness and divergence axes are not built
+yet. The plan for the first implementation lives in
 [docs/plans/PLAN-initial.md](docs/plans/PLAN-initial.md); see
 [docs/plans/index.md](docs/plans/index.md) for the plan index.
 
-## Development conventions
+## Development
+
+Tests and linting run through `tox`:
+
+```bash
+tox -epy3      # unit tests (stestr + testtools)
+tox -eflake8   # style checks on the current change
+```
+
+CI runs the same checks on push and pull requests
+(`.github/workflows/unit-tests.yml`). Releases are tag-driven
+(`v*`) and publish to PyPI via Sigstore-signed tags and PyPI trusted
+publishing — see [RELEASE-SETUP.md](RELEASE-SETUP.md) for the one-time
+configuration.
 
 Planning and pre-push workflow templates live at the repository root:
 [PLAN-TEMPLATE.md](PLAN-TEMPLATE.md) and

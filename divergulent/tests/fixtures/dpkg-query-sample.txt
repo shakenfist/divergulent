@@ -1,0 +1,7 @@
+ii 	bash	5.2.15-2+b7	bash	5.2.15-2	amd64
+ii 	libc6	2.36-9+deb12u4	glibc	2.36-9+deb12u4	amd64
+ii 	libc6	2.36-9+deb12u4	glibc	2.36-9+deb12u4	i386
+hi 	docker-ce	5:24.0.7-1	docker-ce	5:24.0.7-1	amd64
+rc 	old-package	1.0-1	old-package	1.0-1	amd64
+un 	phantom
+ii 	weird	9.9			amd64

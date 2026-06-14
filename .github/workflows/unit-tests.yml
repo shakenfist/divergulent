@@ -1,0 +1,36 @@
+name: Sanity checks
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  lint:
+    runs-on: [self-hosted, vm, debian-12]
+
+    steps:
+      - name: Checkout code with two commits
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get dist-upgrade -y
+          sudo apt-get install -y -q tox python3 python3-venv python3-wheel
+
+      - name: Lint with flake8
+        run: |
+          tox -eflake8
+
+      - name: Run unit tests
+        run: |
+          tox -epy3
