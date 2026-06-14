@@ -42,6 +42,17 @@ supplements explicit DEP-3 fields with Debian-authored heuristics (the
 old `# DP:` convention and deb-*/debian-* filenames). Explicit DEP-3
 always wins; patches with neither are UNKNOWN, not assumed divergent.
 
+## Scoring
+
+`score.combine` ranks packages with a transparent weighted sum
+(`debian_only*3 + unknown_patches*1 + behind*2`; forwarded patches score
+0). The weights are provisional, to be tuned once we have real data.
+Being *behind upstream* is weighted low on purpose: it is normal and
+expected on a stable Debian release, so it must not dominate the report
+or read as alarming on its own. The score only orders packages; the two
+axes are always shown so the output is never an opaque verdict, and a
+package that could not be assessed is reported as such, never as clean.
+
 ## Dependencies
 
 divergulent audits dependency/patch divergence, so it keeps its own

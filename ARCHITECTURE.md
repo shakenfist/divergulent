@@ -54,6 +54,10 @@ installed-package inventory never leaves the machine.
   classifies it with `dep3`. Yields PATCHED (with per-class counts) /
   CLEAN / NATIVE / UNKNOWN. Version-pinned patch content is cached with
   a long TTL.
+- `divergulent/score.py` — combines a package's staleness and
+  divergence into a `PackageDrift` with a transparent weighted score
+  (used only for ranking; both axes are retained for display). Pure, no
+  I/O.
 - `divergulent/tests/` — testtools tests run via stestr/tox; every
   external effect is mocked or driven from a fixture so the suite runs
   offline.
@@ -70,10 +74,14 @@ staleness:  inventory  ->  dedup by source  ->  RepologySource.staleness()  ->  
 divergence: inventory  ->  dedup by source  ->  DebianPatchesSource.divergence()  ->  cli (ranked table / JSON)
                                                       |
                                           HttpClient  ->  sources.debian.org  ->  dep3.classify() per patch
+
+score:      inventory  ->  dedup by source  ->  staleness + divergence (one shared HttpClient)
+                                            ->  score.combine()  ->  cli (ranked report + whole-machine summary)
 ```
 
 ## Planned
 
-- **Phase 4** — a scoring model combining the two axes (staleness and
-  divergence) into one per-package signal and a ranked, whole-machine
-  report.
+- **Phase 5** — a per-package `show` detail view (each carried patch
+  with its classification, description, and Debian bug references).
+- See `docs/plans/` Future work for BTS cross-referencing and the
+  candidate "patch hygiene & justification" master plan.

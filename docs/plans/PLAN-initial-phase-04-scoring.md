@@ -7,6 +7,13 @@ stable release) versus "carries distro-only patches" is what
 keeps the headline answer trustworthy rather than alarmist.
 This phase completes the first swing.
 
+**Status: complete.** All steps (4a score model, 4b `score`
+CLI, 4c docs) are implemented and committed; `divergulent
+score` works on real data and the suite passes via
+`tox -epy3`. This completes the first swing (phases 1–4).
+Weights were left at their provisional defaults, to be tuned
+once we have more data.
+
 ## Prompt
 
 Phases 1–3 are merged; explore the existing code before adding
