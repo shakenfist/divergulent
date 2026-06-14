@@ -23,7 +23,7 @@ DEFAULT_USER_AGENT = f'divergulent/{__version__} (+https://github.com/shakenfist
 
 
 class HttpClient:
-    '''Fetch JSON politely, caching results and rate-limiting the network.'''
+    '''Fetch resources politely, caching results and rate-limiting the network.'''
 
     def __init__(self, cache: Cache, *, user_agent: str = DEFAULT_USER_AGENT,
                  timeout: float = 10.0, min_interval: float = 1.0,
@@ -41,27 +41,47 @@ class HttpClient:
 
     def get_json(self, url: str, *, cache_namespace: str, cache_key: str,
                  ttl_seconds: float) -> Any:
-        '''Return parsed JSON for ``url``, or None on any failure.
+        '''Return parsed JSON for ``url``, or None on any failure.'''
+        return self._cached(url, cache_namespace, cache_key, ttl_seconds, json.loads)
+
+    def get_text(self, url: str, *, cache_namespace: str, cache_key: str,
+                 ttl_seconds: float) -> str | None:
+        '''Return the decoded text body for ``url``, or None on any failure.'''
+        return self._cached(
+            url, cache_namespace, cache_key, ttl_seconds,
+            lambda payload: payload.decode('utf-8', 'replace'))
+
+    def _cached(self, url: str, namespace: str, key: str, ttl_seconds: float,
+                decode: Callable[[bytes], Any]) -> Any:
+        '''Return a cached value, or fetch, decode, cache and return it.
 
         A cache hit returns immediately without touching the network or the
-        rate limiter. Failures (network, timeout, non-JSON) return None and are
-        not cached, so a later run retries.
+        rate limiter. Failures return None and are not cached, so a later run
+        retries.
         '''
-        cached = self._cache.get(cache_namespace, cache_key)
+        cached = self._cache.get(namespace, key)
         if cached is not None:
             return cached
 
+        payload = self._fetch(url)
+        if payload is None:
+            return None
+        try:
+            value = decode(payload)
+        except ValueError:
+            return None
+
+        self._cache.set(namespace, key, value, ttl_seconds)
+        return value
+
+    def _fetch(self, url: str) -> bytes | None:
         self._throttle()
         try:
             request = urllib.request.Request(url, headers={'User-Agent': self._user_agent})
             with self._urlopen(request, timeout=self._timeout) as response:
-                payload = response.read()
-            data = json.loads(payload)
-        except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+                return response.read()
+        except (urllib.error.URLError, TimeoutError, OSError):
             return None
-
-        self._cache.set(cache_namespace, cache_key, data, ttl_seconds)
-        return data
 
     def _throttle(self) -> None:
         now = self._clock()

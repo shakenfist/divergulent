@@ -111,3 +111,30 @@ class HttpClientTestCase(testtools.TestCase):
         client.get_json('https://repology.org/x', cache_namespace='r', cache_key='k', ttl_seconds=100)
         client.get_json('https://repology.org/x', cache_namespace='r', cache_key='k', ttl_seconds=100)
         self.assertEqual(2, len(attempts))
+
+    def test_get_text_returns_body(self):
+        def urlopen(request, timeout=None):
+            return FakeResponse(b'Forwarded: no\n--- a/x\n')
+
+        client = self._client(urlopen)
+        text = client.get_text('https://sources.debian.org/p', cache_namespace='d', cache_key='k', ttl_seconds=100)
+        self.assertEqual('Forwarded: no\n--- a/x\n', text)
+
+    def test_get_text_cache_hit_skips_network(self):
+        self.cache.set('d', 'k', 'cached text', ttl_seconds=100)
+
+        def urlopen(request, timeout=None):
+            raise AssertionError('the network must not be touched on a cache hit')
+
+        client = self._client(urlopen)
+        self.assertEqual(
+            'cached text',
+            client.get_text('https://sources.debian.org/p', cache_namespace='d', cache_key='k', ttl_seconds=100))
+
+    def test_get_text_error_returns_none(self):
+        def urlopen(request, timeout=None):
+            raise urllib.error.URLError('boom')
+
+        client = self._client(urlopen)
+        self.assertIsNone(
+            client.get_text('https://sources.debian.org/p', cache_namespace='d', cache_key='k', ttl_seconds=100))
