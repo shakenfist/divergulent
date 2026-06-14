@@ -65,6 +65,15 @@ class NewestVersionTestCase(testtools.TestCase):
         entries = [_entry('a', '9.9', 'ignored'), _entry('b', '5.5', 'incorrect')]
         self.assertIsNone(_source(entries).newest_version(entries))
 
+    def test_skips_versions_that_are_not_valid_debian_versions(self):
+        # '5.3_p15' (Gentoo scheme) cannot be ordered with Debian semantics.
+        entries = [_entry('gentoo', '5.3_p15', 'newest'), _entry('debian', '5.2', 'outdated')]
+        self.assertEqual('5.2', _source(entries).newest_version(entries))
+
+    def test_none_when_only_unparseable_versions(self):
+        entries = [_entry('gentoo', '5.3_p15', 'newest')]
+        self.assertIsNone(_source(entries).newest_version(entries))
+
 
 class StalenessTestCase(testtools.TestCase):
 
@@ -104,6 +113,14 @@ class StalenessTestCase(testtools.TestCase):
         entries = [_entry('arch', '2.3.5', 'newest')]
         result = _source(entries).staleness('foo', debversion.parse('1:2.3.4-2'))
         self.assertEqual(StalenessState.BEHIND, result.state)
+
+    def test_unparseable_repology_version_does_not_crash(self):
+        # Regression: a Gentoo-style "5.3_p15" newest entry must be skipped, not
+        # crash the comparison. The usable newest is 5.2; installed 5.2.15 is
+        # current against it.
+        entries = [_entry('gentoo', '5.3_p15', 'newest'), _entry('debian', '5.2', 'outdated')]
+        result = _source(entries).staleness('bash', debversion.parse('5.2.15-2'))
+        self.assertEqual(StalenessState.CURRENT, result.state)
 
 
 class FixtureTestCase(testtools.TestCase):

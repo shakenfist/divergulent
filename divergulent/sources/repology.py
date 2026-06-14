@@ -86,9 +86,14 @@ class RepologySource:
         to the maximum valid version. Entries with an ignored/incorrect/
         untrusted/noscheme status are skipped.
         '''
+        # Skip entries whose version is not a valid Debian version: other
+        # distributions' schemes (e.g. Gentoo's "5.3_p15") cannot be ordered
+        # with Debian semantics, and feeding them to the comparator would raise.
         usable = [
             entry for entry in entries
-            if entry.get('version') and entry.get('status') not in _IGNORED_STATUSES]
+            if entry.get('version')
+            and entry.get('status') not in _IGNORED_STATUSES
+            and debversion.try_parse(entry['version']) is not None]
         if not usable:
             return None
 
@@ -113,7 +118,10 @@ class RepologySource:
 
         # Repology versions are upstream-only; compare against the upstream part
         # of the installed version, not its full epoch:upstream-revision form.
-        if debversion.compare(installed_version.upstream_version, newest) < 0:
+        installed_upstream = installed_version.upstream_version
+        if debversion.try_parse(installed_upstream) is None:
+            return StalenessResult(source_package, installed_version, newest, StalenessState.UNKNOWN)
+        if debversion.compare(installed_upstream, newest) < 0:
             state = StalenessState.BEHIND
         else:
             state = StalenessState.CURRENT
