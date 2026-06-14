@@ -62,12 +62,27 @@ divergulent inventory          # aligned table
 divergulent inventory --json   # machine-readable
 ```
 
+Report packages that are behind upstream (the staleness axis, via
+[Repology](https://repology.org/)):
+
+```bash
+divergulent staleness          # packages behind upstream, worst first
+divergulent staleness --all    # also show current and unknown
+divergulent staleness --json   # machine-readable
+```
+
+Staleness is heuristic: it relies on Repology resolving your Debian
+source package to an upstream project, and reports `unknown` (never
+"behind") when it cannot. Results are cached locally and Repology is
+queried politely (≤1 request/second).
+
 ## Status
 
-Early. Phase 1 is implemented: `divergulent inventory` reads the
-installed-package set from `dpkg` and maps each package to its source
-package and version. The staleness and divergence axes are not built
-yet. The plan for the first implementation lives in
+Early. Phases 1 and 2 are implemented: `divergulent inventory` reads the
+installed-package set from `dpkg`, and `divergulent staleness` reports
+which packages are behind pure upstream. The divergence axis (carried
+distro patches) and a combined whole-machine score are not built yet.
+The plan for the first implementation lives in
 [docs/plans/PLAN-initial.md](docs/plans/PLAN-initial.md); see
 [docs/plans/index.md](docs/plans/index.md) for the plan index.
 

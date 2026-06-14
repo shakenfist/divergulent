@@ -6,6 +6,11 @@ the politeness layer the whole project depends on, and the
 first axis of drift — and the version-comparison and
 honest-uncertainty details are where correctness lives.
 
+**Status: complete.** All steps (2a HTTP/politeness client, 2b
+Repology adapter + staleness model, 2c `staleness` CLI, 2d
+docs) are implemented and committed; `divergulent staleness`
+works and the suite passes via `tox -epy3`.
+
 ## Prompt
 
 Phase 1 is merged; explore the existing code before adding to
