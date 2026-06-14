@@ -53,10 +53,21 @@ on the local machine:
 The local-package inventory is sensitive (it fingerprints the host), so
 the default posture is local-only — nothing leaves the machine.
 
+## Usage
+
+List the installed packages mapped to their source packages:
+
+```bash
+divergulent inventory          # aligned table
+divergulent inventory --json   # machine-readable
+```
+
 ## Status
 
-Greenfield. Nothing is implemented yet. The plan for the first
-implementation lives in
+Early. Phase 1 is implemented: `divergulent inventory` reads the
+installed-package set from `dpkg` and maps each package to its source
+package and version. The staleness and divergence axes are not built
+yet. The plan for the first implementation lives in
 [docs/plans/PLAN-initial.md](docs/plans/PLAN-initial.md); see
 [docs/plans/index.md](docs/plans/index.md) for the plan index.
 

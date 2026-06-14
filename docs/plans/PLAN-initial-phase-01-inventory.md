@@ -5,6 +5,11 @@ Part of [PLAN-initial.md](PLAN-initial.md). Plan this phase at
 version-comparison foundation that every later correctness
 claim rests on.
 
+**Status: complete.** All steps (1a bootstrap, 1b debversion,
+1c inventory, 1d cache/source-interface, 1e CLI, 1f docs) are
+implemented and committed; `divergulent inventory` works and
+the suite passes via `tox -epy3`.
+
 ## Prompt
 
 This phase has no existing code to explore — it creates the
