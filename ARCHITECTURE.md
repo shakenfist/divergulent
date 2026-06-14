@@ -31,8 +31,18 @@ installed-package inventory never leaves the machine.
   (path-traversal safe), writes are atomic, and the clock is injectable.
   `default_cache_dir()` honours `DIVERGULENT_CACHE_DIR` then
   `XDG_CACHE_HOME`.
+- `divergulent/http.py` — `HttpClient`, the polite HTTP layer all
+  network-backed sources fetch through: identifying User-Agent, request
+  timeout, ≤1 request/second rate limiting, on-disk caching, and
+  graceful degradation (failures return `None`). Stdlib `urllib`; the
+  urlopen/clock/sleep are injectable for offline tests.
 - `divergulent/sources/base.py` — the `Source` protocol that
   data-source adapters implement.
+- `divergulent/sources/repology.py` — the Repology adapter (staleness
+  axis). Resolves a Debian source name to its Repology project via the
+  `project-by` resolver, picks the newest stable upstream version, and
+  compares it against the installed *upstream* version. Yields CURRENT /
+  BEHIND / UNKNOWN (unresolved is UNKNOWN, never BEHIND).
 - `divergulent/tests/` — testtools tests run via stestr/tox; every
   external effect is mocked or driven from a fixture so the suite runs
   offline.
@@ -40,15 +50,15 @@ installed-package inventory never leaves the machine.
 ## Data flow (today)
 
 ```
-dpkg-query  ->  inventory.list_installed()  ->  [InstalledPackage]  ->  cli (table / JSON)
+inventory:  dpkg-query  ->  inventory.list_installed()  ->  [InstalledPackage]  ->  cli (table / JSON)
+
+staleness:  inventory  ->  dedup by source  ->  RepologySource.staleness()  ->  cli (ranked table / JSON)
+                                                      |
+                                          HttpClient (cache + politeness)  ->  repology.org
 ```
 
 ## Planned
 
-- **Phase 2** — a Repology adapter (the first `Source`) for the
-  staleness axis, plus the shared HTTP client and politeness layer
-  (descriptive User-Agent, timeouts, rate limiting, graceful
-  degradation) routed through the cache.
 - **Phase 3** — a sources.debian.org adapter for the divergence axis
   (`debian/patches` + DEP-3 classification).
 - **Phase 4** — a scoring model combining the two axes into a ranked,

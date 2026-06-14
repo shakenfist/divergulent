@@ -9,4 +9,4 @@ master plan's Execution table.
 
 | Plan | Phases | Status | Description |
 |------|--------|--------|-------------|
-| [PLAN-initial.md](PLAN-initial.md) | 1. Skeleton & dpkg inventory ✓ · 2. Repology staleness · 3. debian/patches divergence · 4. Scoring & ranked report | Phase 1 complete | First swing: a local CLI that reports staleness and carried-patch divergence for installed packages, ranked, with a whole-machine summary. |
+| [PLAN-initial.md](PLAN-initial.md) | 1. Skeleton & dpkg inventory ✓ · 2. Repology staleness ✓ · 3. debian/patches divergence · 4. Scoring & ranked report | Phases 1–2 complete | First swing: a local CLI that reports staleness and carried-patch divergence for installed packages, ranked, with a whole-machine summary. |

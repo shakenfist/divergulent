@@ -45,3 +45,10 @@ class DebVersionTestCase(testtools.TestCase):
 
     def test_hash_consistent_with_equality(self):
         self.assertEqual(hash(debversion.parse('1.0-1')), hash(debversion.parse('1.0-1')))
+
+    def test_try_parse_valid(self):
+        self.assertIsNotNone(debversion.try_parse('1.2-3'))
+
+    def test_try_parse_invalid_returns_none(self):
+        # Gentoo-style version: '_' is not valid in a Debian version.
+        self.assertIsNone(debversion.try_parse('5.3_p15'))

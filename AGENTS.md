@@ -19,6 +19,17 @@
 - The installed-package inventory is sensitive; do not transmit it
   off-box without an explicit, opt-in, documented path.
 
+## Network access
+
+All outbound HTTP goes through `divergulent.http.HttpClient`, never raw
+`urllib`/sockets in a source. It enforces the politeness external
+services require: an identifying User-Agent (with the repo + issue
+tracker link Repology mandates), a request timeout, ≤1 request per
+second, on-disk caching (default 24h TTL), and graceful degradation —
+any failure returns `None` and is surfaced to the user as *unknown*,
+never as a confirmed finding. HTTP uses the standard library (no
+`requests`/`httpx`).
+
 ## Dependencies
 
 divergulent audits dependency/patch divergence, so it keeps its own

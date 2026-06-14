@@ -61,6 +61,19 @@ def parse(version_str: str) -> DebianVersion:
     return DebianVersion(version_str)
 
 
+def try_parse(version_str: str) -> DebianVersion | None:
+    '''Parse a version string, returning None if it is not a valid Debian version.
+
+    External sources such as Repology report versions in other distributions'
+    schemes (for example Gentoo's ``5.3_p15``) that are not valid Debian
+    versions and cannot be ordered with Debian semantics.
+    '''
+    try:
+        return DebianVersion(version_str)
+    except ValueError:
+        return None
+
+
 def compare(a: str | DebianVersion, b: str | DebianVersion) -> int:
     '''Compare two versions, returning -1, 0, or 1.
 
