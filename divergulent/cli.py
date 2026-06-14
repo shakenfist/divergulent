@@ -6,6 +6,7 @@ from divergulent import __version__
 from divergulent import inventory
 from divergulent.cache import Cache, default_cache_dir
 from divergulent.http import HttpClient
+from divergulent.sources.debian_patches import DebianPatchesSource, DivergenceState
 from divergulent.sources.repology import RepologySource, StalenessState
 
 
@@ -30,6 +31,17 @@ def _build_parser():
     stale.add_argument(
         '--all', action='store_true', dest='show_all',
         help='Include current and unknown packages, not just those behind.')
+
+    diverge = subparsers.add_parser(
+        'divergence', help='Report packages carrying Debian-only patches (via sources.debian.org).')
+    diverge.add_argument(
+        '--json', action='store_true', help='Emit the report as JSON.')
+    diverge.add_argument(
+        '--all', action='store_true', dest='show_all',
+        help='Include packages with no Debian-only patches (clean/native/unknown).')
+    diverge.add_argument(
+        '--limit', type=int, default=None,
+        help='Process at most this many source packages (each is one or more network requests).')
 
     return parser
 
@@ -134,6 +146,58 @@ def _staleness_command(args):
     return 0
 
 
+def _gather_divergence(source, packages, limit=None):
+    items = list(_dedup_sources(packages).items())
+    if limit is not None:
+        items = items[:limit]
+    return [source.divergence(name, str(version)) for name, version in items]
+
+
+def _select_divergence(results, show_all):
+    chosen = results if show_all else [r for r in results if r.debian_only > 0]
+    return sorted(chosen, key=lambda r: (-r.debian_only, -r.total, r.source_package))
+
+
+def _summarise_divergence(results):
+    patched = sum(1 for r in results if r.state == DivergenceState.PATCHED)
+    debian_only = sum(r.debian_only for r in results)
+    print(
+        '%d source packages: %d carry patches, %d Debian-only patches total' % (
+            len(results), patched, debian_only),
+        file=sys.stderr)
+
+
+def _divergence_command(args):
+    packages = inventory.list_installed()
+    source = DebianPatchesSource(HttpClient(Cache(default_cache_dir())))
+    results = _gather_divergence(source, packages, limit=args.limit)
+    _summarise_divergence(results)
+
+    selected = _select_divergence(results, args.show_all)
+    if args.json:
+        data = [
+            {
+                'source': r.source_package,
+                'version': r.version,
+                'format': r.source_format,
+                'total': r.total,
+                'debian_only': r.debian_only,
+                'forwarded': r.forwarded,
+                'unknown': r.unknown,
+                'state': r.state.value,
+            }
+            for r in selected]
+        print(json.dumps(data, indent=2))
+    else:
+        rows = [
+            (r.source_package, r.version, str(r.total), str(r.debian_only),
+             str(r.forwarded), str(r.unknown), r.state.value)
+            for r in selected]
+        print(_table(
+            ('SOURCE', 'VERSION', 'TOTAL', 'DEBIAN-ONLY', 'FORWARDED', 'UNKNOWN', 'STATE'), rows))
+    return 0
+
+
 def main(argv=None):
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -142,6 +206,8 @@ def main(argv=None):
         return _inventory_command(args)
     if args.command == 'staleness':
         return _staleness_command(args)
+    if args.command == 'divergence':
+        return _divergence_command(args)
 
     parser.print_help()
     return 1
