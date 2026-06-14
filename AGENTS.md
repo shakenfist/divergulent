@@ -53,6 +53,16 @@ or read as alarming on its own. The score only orders packages; the two
 axes are always shown so the output is never an opaque verdict, and a
 package that could not be assessed is reported as such, never as clean.
 
+## Per-package detail (`show`)
+
+`divergulent show <package>` is the per-package counterpart to `score`:
+it lists each carried patch with its classification, description, and
+the Debian/upstream bug references the patch *declares* (Debian refs are
+linkified to bugs.debian.org). A patch with no declared bug shows "none
+declared" — that means the patch does not reference a bug, not that no
+bug exists. Querying the Debian BTS for bugs a patch does not reference
+is deliberately out of scope (a Future work item).
+
 ## Dependencies
 
 divergulent audits dependency/patch divergence, so it keeps its own

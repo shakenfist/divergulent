@@ -41,6 +41,8 @@ installed-package inventory never leaves the machine.
   headers. Classifies a patch as FORWARDED, DEBIAN_ONLY, or UNKNOWN;
   when DEP-3 metadata is absent it falls back to Debian-authored
   heuristics (the old `# DP:` convention and deb-*/debian-* filenames).
+  `bug_references()` extracts the `Bug`/`Bug-<vendor>` references a
+  patch declares.
 - `divergulent/sources/base.py` — the `Source` protocol that
   data-source adapters implement.
 - `divergulent/sources/repology.py` — the Repology adapter (staleness
@@ -51,9 +53,11 @@ installed-package inventory never leaves the machine.
 - `divergulent/sources/debian_patches.py` — the sources.debian.org
   adapter (divergence axis). Reads a source package's quilt series from
   the patches API, fetches each patch under its pool `raw_url`, and
-  classifies it with `dep3`. Yields PATCHED (with per-class counts) /
-  CLEAN / NATIVE / UNKNOWN. Version-pinned patch content is cached with
-  a long TTL.
+  classifies it with `dep3`. `details()` returns per-patch records
+  (`PatchDetail`: classification, description, bug references) and
+  `divergence()` is a tally over it, yielding PATCHED (with per-class
+  counts) / CLEAN / NATIVE / UNKNOWN. Version-pinned patch content is
+  cached with a long TTL.
 - `divergulent/score.py` — combines a package's staleness and
   divergence into a `PackageDrift` with a transparent weighted score
   (used only for ranking; both axes are retained for display). Pure, no
@@ -77,11 +81,13 @@ divergence: inventory  ->  dedup by source  ->  DebianPatchesSource.divergence()
 
 score:      inventory  ->  dedup by source  ->  staleness + divergence (one shared HttpClient)
                                             ->  score.combine()  ->  cli (ranked report + whole-machine summary)
+
+show:       resolve one installed package  ->  staleness + details (one shared HttpClient)
+                                            ->  cli (per-patch detail + Debian bug links)
 ```
 
 ## Planned
 
-- **Phase 5** — a per-package `show` detail view (each carried patch
-  with its classification, description, and Debian bug references).
-- See `docs/plans/` Future work for BTS cross-referencing and the
-  candidate "patch hygiene & justification" master plan.
+- See `docs/plans/` Future work for BTS cross-referencing (open Debian
+  bugs a package's patches do not reference) and the candidate "patch
+  hygiene & justification" master plan.

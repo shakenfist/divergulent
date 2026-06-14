@@ -9,6 +9,15 @@ reference the Debian bug that justified it?) lives here.
 This phase extends beyond the original first swing (phases
 1–4).
 
+**Status: complete.** All steps (5a per-patch detail +
+`dep3.bug_references`, 5b the `show` CLI, 5c docs) are
+implemented and committed; `divergulent show <package>` works
+on real data and the suite passes via `tox -epy3`. The
+`divergence()` refactor onto `details()` left its behaviour
+and tests unchanged. The header also shows the combined drift
+score (the open question resolved in favour of a per-package
+dashboard).
+
 ## Prompt
 
 The first swing is merged; explore the existing code before

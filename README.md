@@ -110,17 +110,29 @@ the other commands populate, and supports `--limit`. The score only
 upstream is expected on a stable Debian release and is weighted lightly
 — carried, undocumented distro-only patches are the stronger signal.
 
+Drill into a single installed package:
+
+```bash
+divergulent show bash          # per-patch detail with Debian bug links
+divergulent show bash --json   # machine-readable
+```
+
+`show` lists each carried patch with its classification, description,
+and any bug references the patch declares (Debian references are linked
+to bugs.debian.org). A patch that declares no bug shows "none declared"
+— it means the patch does not reference one, not that none exists.
+
 ## Status
 
-The first swing is complete. Four commands work against real data:
-`divergulent inventory` (installed packages → source packages),
-`divergulent staleness` (behind pure upstream, via Repology),
-`divergulent divergence` (carried distro-only patches, via
-sources.debian.org), and `divergulent score` (both axes combined into a
-ranked, whole-machine drift report). The plan lives in
-[docs/plans/PLAN-initial.md](docs/plans/PLAN-initial.md); see
+Five commands work against real data: `divergulent inventory` (installed
+packages → source packages), `divergulent staleness` (behind pure
+upstream, via Repology), `divergulent divergence` (carried distro-only
+patches, via sources.debian.org), `divergulent score` (both axes
+combined into a ranked, whole-machine drift report), and `divergulent
+show` (per-package patch detail with Debian bug references). The plan
+lives in [docs/plans/PLAN-initial.md](docs/plans/PLAN-initial.md); see
 [docs/plans/index.md](docs/plans/index.md) for the plan index, including
-planned next steps (a per-package detail view, and a patch-hygiene
+planned next steps (Debian BTS cross-referencing, and a patch-hygiene
 assessment).
 
 ## Development
