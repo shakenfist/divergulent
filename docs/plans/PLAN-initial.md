@@ -136,14 +136,17 @@ recorded under Future work.
 The first swing is a single vertical tool delivered in four
 phases. Phases 1–2 deliver an end-to-end staleness MVP
 (prove the pipeline works); Phases 3–4 add the divergence
-axis and the combined ranked report.
+axis and the combined ranked report. Phase 5 (per-package
+detail) extends beyond the original first swing and is tracked
+here for continuity.
 
 | Phase | Plan | Status |
 |-------|------|--------|
 | 1. Project skeleton & dpkg inventory | PLAN-initial-phase-01-inventory.md | Complete |
 | 2. Repology adapter & staleness axis | PLAN-initial-phase-02-staleness.md | Complete |
 | 3. Divergence axis (debian/patches + DEP-3) | PLAN-initial-phase-03-divergence.md | Complete |
-| 4. Scoring & ranked report | PLAN-initial-phase-04-scoring.md | Not started |
+| 4. Scoring & ranked report | PLAN-initial-phase-04-scoring.md | Complete |
+| 5. Per-package detail view (`show`) | PLAN-initial-phase-05-show.md | Not started |
 
 ### Phase 1 — Project skeleton & dpkg inventory
 
@@ -258,6 +261,34 @@ implemented because:
 - **Fleet view** — aggregate divergence across many machines.
 - **Richer scoring** — patch-content analysis, age-weighting,
   trust tiers per source.
+- **BTS cross-referencing** — for the per-package detail view
+  (Phase 5), surface open Debian bug-tracker issues for a
+  source package even when its patches do not reference them
+  (via UDD or the BTS API), in addition to the `Bug`/
+  `Bug-Debian` references the patches do declare.
+- **Patch hygiene & justification** (candidate separate master
+  plan) — note that Debian *Policy* does not mandate patch
+  justification; the real bar is best-practice and Lintian
+  (e.g. `quilt-patch-missing-description`,
+  `patch-not-forwarded-upstream`). Surface these deterministic
+  compliance signals (Lintian results are stored per package in
+  UDD, so no reimplementation), then optionally layer an
+  **opt-in, clearly-labelled "AI-assessed (advisory)"** LLM
+  categorization of patch intent and whether the stated
+  justification holds — kept strictly separate from the
+  deterministic, verifiable signals so it never muddies the
+  no-cry-wolf core.
+- **CI sample-output artifact** — add a CI job that runs on a
+  `debian:13` image, computes divergulent's output for that
+  sample machine (e.g. `score`/`divergence`), and uploads the
+  rendered report as a build artifact, so reviewers can see how
+  the output renders on a real system (and as a live end-to-end
+  smoke test). Caveat: a full-machine run is thousands of
+  packages and many polite (≥1 req/s) requests to Repology and
+  sources.debian.org — so this job must scope itself (a
+  curated package subset or `--limit`, warm/committed cache) to
+  stay fast and a good API citizen, rather than scanning the
+  whole image.
 
 ### Bugs fixed during this work
 

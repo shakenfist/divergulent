@@ -94,15 +94,34 @@ Debian-authored signals (the old `# DP:` convention and `deb-*` /
 unknown rather than assumed divergent. This axis makes one request per
 patch, so it caches aggressively and supports `--limit`.
 
+Combine both axes into one ranked, whole-machine answer:
+
+```bash
+divergulent score                 # ranked drift report + whole-machine summary
+divergulent score --all           # include packages with no detected drift
+divergulent score --limit 50      # cap how many source packages are queried
+divergulent score --json          # machine-readable
+```
+
+`score` is the heaviest command (it queries both axes for every source
+package), so it shares one rate-limited HTTP client, reuses the caches
+the other commands populate, and supports `--limit`. The score only
+*ranks*; both axes are always shown. Note that being behind pure
+upstream is expected on a stable Debian release and is weighted lightly
+— carried, undocumented distro-only patches are the stronger signal.
+
 ## Status
 
-Early. Phases 1–3 are implemented: `divergulent inventory` reads the
-installed-package set from `dpkg`, `divergulent staleness` reports which
-packages are behind pure upstream, and `divergulent divergence` reports
-which packages carry distro-only patches. A combined whole-machine score
-is not built yet. The plan for the first implementation lives in
+The first swing is complete. Four commands work against real data:
+`divergulent inventory` (installed packages → source packages),
+`divergulent staleness` (behind pure upstream, via Repology),
+`divergulent divergence` (carried distro-only patches, via
+sources.debian.org), and `divergulent score` (both axes combined into a
+ranked, whole-machine drift report). The plan lives in
 [docs/plans/PLAN-initial.md](docs/plans/PLAN-initial.md); see
-[docs/plans/index.md](docs/plans/index.md) for the plan index.
+[docs/plans/index.md](docs/plans/index.md) for the plan index, including
+planned next steps (a per-package detail view, and a patch-hygiene
+assessment).
 
 ## Development
 
