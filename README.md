@@ -60,7 +60,20 @@ implementation lives in
 [docs/plans/PLAN-initial.md](docs/plans/PLAN-initial.md); see
 [docs/plans/index.md](docs/plans/index.md) for the plan index.
 
-## Development conventions
+## Development
+
+Tests and linting run through `tox`:
+
+```bash
+tox -epy3      # unit tests (stestr + testtools)
+tox -eflake8   # style checks on the current change
+```
+
+CI runs the same checks on push and pull requests
+(`.github/workflows/unit-tests.yml`). Releases are tag-driven
+(`v*`) and publish to PyPI via Sigstore-signed tags and PyPI trusted
+publishing — see [RELEASE-SETUP.md](RELEASE-SETUP.md) for the one-time
+configuration.
 
 Planning and pre-push workflow templates live at the repository root:
 [PLAN-TEMPLATE.md](PLAN-TEMPLATE.md) and

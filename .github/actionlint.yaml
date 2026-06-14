@@ -1,0 +1,8 @@
+# Declare the self-hosted runner labels used in this repo so actionlint
+# does not flag them as unknown.
+self-hosted-runner:
+  labels:
+    - static
+    - vm
+    - debian-12
+    - s
