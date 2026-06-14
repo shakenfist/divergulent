@@ -4,6 +4,7 @@ import sys
 
 from divergulent import __version__
 from divergulent import inventory
+from divergulent import score
 from divergulent.cache import Cache, default_cache_dir
 from divergulent.http import HttpClient
 from divergulent.sources.debian_patches import DebianPatchesSource, DivergenceState
@@ -42,6 +43,17 @@ def _build_parser():
     diverge.add_argument(
         '--limit', type=int, default=None,
         help='Process at most this many source packages (each is one or more network requests).')
+
+    scorecmd = subparsers.add_parser(
+        'score', help='Combine staleness and divergence into a ranked, whole-machine drift report.')
+    scorecmd.add_argument(
+        '--json', action='store_true', help='Emit the report as JSON.')
+    scorecmd.add_argument(
+        '--all', action='store_true', dest='show_all',
+        help='Include packages with no detected drift (score 0).')
+    scorecmd.add_argument(
+        '--limit', type=int, default=None,
+        help='Process at most this many source packages (this command queries both axes per package).')
 
     return parser
 
@@ -198,6 +210,78 @@ def _divergence_command(args):
     return 0
 
 
+def _gather_score(repology, patches, packages, limit=None):
+    items = list(_dedup_sources(packages).items())
+    if limit is not None:
+        items = items[:limit]
+    drifts = []
+    for name, version in items:
+        staleness = repology.staleness(name, version)
+        divergence = patches.divergence(name, str(version))
+        drifts.append(score.combine(staleness, divergence))
+    return drifts
+
+
+def _select_score(drifts, show_all):
+    chosen = drifts if show_all else [d for d in drifts if d.score > 0]
+    return sorted(chosen, key=lambda d: (-d.score, -d.divergence.debian_only, d.source_package))
+
+
+def _summarise_score(drifts):
+    behind = sum(1 for d in drifts if d.staleness.state == StalenessState.BEHIND)
+    carrying = sum(1 for d in drifts if d.divergence.debian_only > 0)
+    both = sum(
+        1 for d in drifts
+        if d.staleness.state == StalenessState.BEHIND and d.divergence.debian_only > 0)
+    total_debian_only = sum(d.divergence.debian_only for d in drifts)
+    stale_unknown = sum(1 for d in drifts if d.staleness.state == StalenessState.UNKNOWN)
+    diverge_unknown = sum(1 for d in drifts if d.divergence.state == DivergenceState.UNKNOWN)
+    print(
+        '%d source packages assessed: %d behind upstream, %d carry Debian-only patches, '
+        '%d both; %d Debian-only patches total' % (
+            len(drifts), behind, carrying, both, total_debian_only),
+        file=sys.stderr)
+    print(
+        'could not assess: staleness for %d, divergence for %d' % (stale_unknown, diverge_unknown),
+        file=sys.stderr)
+
+
+def _score_command(args):
+    packages = inventory.list_installed()
+    http = HttpClient(Cache(default_cache_dir()))
+    repology = RepologySource(http)
+    patches = DebianPatchesSource(http)
+
+    drifts = _gather_score(repology, patches, packages, limit=args.limit)
+    _summarise_score(drifts)
+
+    selected = _select_score(drifts, args.show_all)
+    if args.json:
+        data = [
+            {
+                'source': d.source_package,
+                'version': d.version,
+                'score': d.score,
+                'staleness': d.staleness.state.value,
+                'newest': d.staleness.newest_version,
+                'divergence': d.divergence.state.value,
+                'debian_only': d.divergence.debian_only,
+                'forwarded': d.divergence.forwarded,
+                'unknown_patches': d.divergence.unknown,
+                'total_patches': d.divergence.total,
+            }
+            for d in selected]
+        print(json.dumps(data, indent=2))
+    else:
+        rows = [
+            (d.source_package, d.version, d.staleness.state.value, d.staleness.newest_version or '?',
+             str(d.divergence.debian_only), str(d.divergence.total), str(d.score))
+            for d in selected]
+        print(_table(
+            ('SOURCE', 'VERSION', 'STALENESS', 'NEWEST', 'DEB-ONLY', 'PATCHES', 'SCORE'), rows))
+    return 0
+
+
 def main(argv=None):
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -208,6 +292,8 @@ def main(argv=None):
         return _staleness_command(args)
     if args.command == 'divergence':
         return _divergence_command(args)
+    if args.command == 'score':
+        return _score_command(args)
 
     parser.print_help()
     return 1
