@@ -85,3 +85,27 @@ class ClassifyTestCase(testtools.TestCase):
     def test_non_standard_not_yet_is_debian_only(self):
         text = 'Description: x\nForwarded: not yet\n\n' + DIFF_BODY
         self.assertEqual(PatchClass.DEBIAN_ONLY, dep3.classify(text))
+
+
+class HeuristicTestCase(testtools.TestCase):
+
+    def test_dp_marker_is_debian_only(self):
+        text = '# DP: tweak for Debian\n\n' + DIFF_BODY
+        self.assertEqual(PatchClass.DEBIAN_ONLY, dep3.classify(text))
+
+    def test_deb_filename_is_debian_only(self):
+        self.assertEqual(PatchClass.DEBIAN_ONLY, dep3.classify(DIFF_BODY, name='deb-config.diff'))
+
+    def test_debian_changes_filename_is_debian_only(self):
+        self.assertEqual(PatchClass.DEBIAN_ONLY, dep3.classify(DIFF_BODY, name='debian-changes'))
+
+    def test_plain_filename_stays_unknown(self):
+        self.assertEqual(PatchClass.UNKNOWN, dep3.classify(DIFF_BODY, name='fix-upstream.patch'))
+
+    def test_no_name_and_no_marker_is_unknown(self):
+        self.assertEqual(PatchClass.UNKNOWN, dep3.classify(DIFF_BODY))
+
+    def test_explicit_dep3_overrides_heuristic(self):
+        # A deb-* filename with an explicit "Forwarded: yes" is still forwarded.
+        text = 'Forwarded: yes\n\n' + DIFF_BODY
+        self.assertEqual(PatchClass.FORWARDED, dep3.classify(text, name='deb-thing.diff'))

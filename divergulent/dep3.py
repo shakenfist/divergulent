@@ -12,6 +12,7 @@ actually justify, not to cry wolf.
 from __future__ import annotations
 
 import enum
+import re
 
 
 class PatchClass(enum.Enum):
@@ -51,8 +52,16 @@ def parse_header(text: str) -> dict[str, str]:
     return fields
 
 
-def classify(text: str) -> PatchClass:
-    '''Classify a patch as FORWARDED, DEBIAN_ONLY, or UNKNOWN by its DEP-3 header.'''
+# The old dpatch convention prefixes its description lines with "# DP:"
+# ("Debian Patch"); its presence marks a Debian-authored patch.
+_DP_MARKER = re.compile(r'(?mi)^\s*#+\s*DP:')
+# Patch filenames that conventionally denote Debian-authored changes, including
+# the auto-generated debian-changes patch from 3.0 (quilt).
+_DEBIAN_NAME_PREFIXES = ('deb-', 'debian-')
+
+
+def _classify_dep3(text: str) -> PatchClass:
+    '''Classify a patch purely from explicit DEP-3 metadata.'''
     fields = parse_header(text)
     if not fields:
         return PatchClass.UNKNOWN
@@ -78,4 +87,40 @@ def classify(text: str) -> PatchClass:
     if any(key == 'bug' or key.startswith('bug-') for key in fields):
         return PatchClass.FORWARDED
 
+    return PatchClass.UNKNOWN
+
+
+def _header_block(text: str) -> str:
+    lines = []
+    for line in text.splitlines():
+        if line.strip() == '---' or line.startswith(_DIFF_MARKERS):
+            break
+        lines.append(line)
+    return '\n'.join(lines)
+
+
+def _looks_debian_authored(text: str, name: str | None) -> bool:
+    '''Heuristic Debian-authored signals, used only when DEP-3 is silent.'''
+    if _DP_MARKER.search(_header_block(text)):
+        return True
+    if name:
+        base = name.rsplit('/', 1)[-1]
+        if base.startswith(_DEBIAN_NAME_PREFIXES):
+            return True
+    return False
+
+
+def classify(text: str, name: str | None = None) -> PatchClass:
+    '''Classify a patch as FORWARDED, DEBIAN_ONLY, or UNKNOWN.
+
+    Explicit DEP-3 metadata wins. When DEP-3 is silent (which is common, as many
+    Debian patches predate or omit it), the old "# DP:" comment convention and
+    deb-*/debian-* patch filenames mark a patch as Debian-only; anything else
+    remains UNKNOWN rather than being assumed divergent.
+    '''
+    explicit = _classify_dep3(text)
+    if explicit is not PatchClass.UNKNOWN:
+        return explicit
+    if _looks_debian_authored(text, name):
+        return PatchClass.DEBIAN_ONLY
     return PatchClass.UNKNOWN

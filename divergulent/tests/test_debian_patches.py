@@ -125,6 +125,18 @@ class DivergenceTestCase(testtools.TestCase):
         self.assertEqual(2, result.total)
         self.assertEqual(2, result.unknown)
 
+    def test_filename_heuristic_marks_debian_only(self):
+        # A bare diff with no DEP-3, but a deb-* filename, is Debian-only.
+        http = FakeHttp(
+            json_by_key={
+                'foo:1.2-1': {'format': '3.0 (quilt)', 'patches': ['deb-tweak.diff']},
+                'base:foo:1.2-1': _raw_url('foo', '1.2-1', 'deb-tweak.diff'),
+            },
+            text_by_key={'foo:1.2-1:deb-tweak.diff': BARE})
+        result = DebianPatchesSource(http).divergence('foo', '1.2-1')
+        self.assertEqual(1, result.debian_only)
+        self.assertEqual(0, result.unknown)
+
     def test_is_a_source(self):
         self.assertIsInstance(DebianPatchesSource(FakeHttp()), Source)
         self.assertEqual('debian-patches', debian_patches.DebianPatchesSource.name)

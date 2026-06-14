@@ -112,7 +112,7 @@ class DebianPatchesSource:
             ttl_seconds=CACHE_TTL_SECONDS)
         if text is None:
             return PatchClass.UNKNOWN
-        return dep3.classify(text)
+        return dep3.classify(text, patch_name)
 
     def divergence(self, source_package: str, version: str) -> DivergenceResult:
         '''Classify the carried patches of an installed source package version.'''
