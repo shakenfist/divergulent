@@ -7,6 +7,11 @@ with DEP-3 to count carried Debian-only patches versus forwarded ones.
 Native packages have no upstream/Debian split (NATIVE). Packages we cannot
 resolve, or whose source format is not a quilt series, are UNKNOWN — never
 reported as zero-divergence.
+
+Raw patch content lives under the Debian pool path (e.g.
+/data/main/b/bash/<version>/debian/patches/...). Rather than reconstruct that
+pool prefix (area + hashed directory) ourselves, we ask the file-info API for
+one patch's ``raw_url`` and derive the shared directory base from it.
 '''
 from __future__ import annotations
 
@@ -21,7 +26,9 @@ from divergulent.http import HttpClient
 
 SOURCES_BASE = 'https://sources.debian.org'
 SERIES_NAMESPACE = 'debian-patches-series'
+BASE_NAMESPACE = 'debian-patches-base'
 PATCH_NAMESPACE = 'debian-patches-file'
+PATCHES_MARKER = '/debian/patches/'
 # Patch content for a fixed (package, version) is immutable, so cache it for a
 # long time.
 CACHE_TTL_SECONDS = 30 * 24 * 60 * 60  # 30 days
@@ -50,6 +57,10 @@ def _unknown(source_package: str, version: str, source_format: str | None = None
     return DivergenceResult(source_package, version, source_format, 0, 0, 0, 0, DivergenceState.UNKNOWN)
 
 
+def _quote(value: str) -> str:
+    return urllib.parse.quote(value, safe='')
+
+
 class DebianPatchesSource:
     '''Measure carried-patch divergence of a source package via sources.debian.org.'''
 
@@ -59,16 +70,13 @@ class DebianPatchesSource:
         self._http = http_client
 
     def _series_url(self, source_package: str, version: str) -> str:
-        pkg = urllib.parse.quote(source_package, safe='')
-        ver = urllib.parse.quote(version, safe='')
-        return f'{SOURCES_BASE}/patches/api/{pkg}/{ver}/'
+        return f'{SOURCES_BASE}/patches/api/{_quote(source_package)}/{_quote(version)}/'
 
-    def _patch_url(self, source_package: str, version: str, patch_name: str) -> str:
-        pkg = urllib.parse.quote(source_package, safe='')
-        ver = urllib.parse.quote(version, safe='')
-        # Patch names can contain subdirectories; keep the slashes.
+    def _file_api_url(self, source_package: str, version: str, patch_name: str) -> str:
+        # The file-info API requires a trailing slash. Patch names may contain
+        # subdirectories, so keep their slashes.
         name = urllib.parse.quote(patch_name)
-        return f'{SOURCES_BASE}/data/{pkg}/{ver}/debian/patches/{name}'
+        return f'{SOURCES_BASE}/api/src/{_quote(source_package)}/{_quote(version)}/debian/patches/{name}/'
 
     def lookup(self, source_package: str, version: str) -> dict | None:
         '''Return the patches-API JSON for one source package version, or None.'''
@@ -79,9 +87,26 @@ class DebianPatchesSource:
             ttl_seconds=CACHE_TTL_SECONDS)
         return data if isinstance(data, dict) else None
 
-    def _classify_patch(self, source_package: str, version: str, patch_name: str) -> PatchClass:
+    def _raw_base(self, source_package: str, version: str, sample_patch: str) -> str | None:
+        '''Discover the raw-content directory base via one patch's raw_url.'''
+        info = self._http.get_json(
+            self._file_api_url(source_package, version, sample_patch),
+            cache_namespace=BASE_NAMESPACE,
+            cache_key=f'base:{source_package}:{version}',
+            ttl_seconds=CACHE_TTL_SECONDS)
+        if not isinstance(info, dict):
+            return None
+        raw_url = info.get('raw_url')
+        if not isinstance(raw_url, str) or PATCHES_MARKER not in raw_url:
+            return None
+        base_path = raw_url[:raw_url.index(PATCHES_MARKER) + len(PATCHES_MARKER)]
+        return SOURCES_BASE + base_path
+
+    def _classify_patch(self, base: str | None, source_package: str, version: str, patch_name: str) -> PatchClass:
+        if base is None:
+            return PatchClass.UNKNOWN
         text = self._http.get_text(
-            self._patch_url(source_package, version, patch_name),
+            base + urllib.parse.quote(patch_name),
             cache_namespace=PATCH_NAMESPACE,
             cache_key=f'{source_package}:{version}:{patch_name}',
             ttl_seconds=CACHE_TTL_SECONDS)
@@ -111,9 +136,10 @@ class DebianPatchesSource:
             return DivergenceResult(source_package, version, source_format, 0, 0, 0, 0, DivergenceState.NATIVE)
 
         if patches:
+            base = self._raw_base(source_package, effective, patches[0])
             counts = {PatchClass.DEBIAN_ONLY: 0, PatchClass.FORWARDED: 0, PatchClass.UNKNOWN: 0}
             for patch_name in patches:
-                counts[self._classify_patch(source_package, effective, patch_name)] += 1
+                counts[self._classify_patch(base, source_package, effective, patch_name)] += 1
             return DivergenceResult(
                 source_package, version, source_format,
                 total=len(patches),
