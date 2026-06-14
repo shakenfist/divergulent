@@ -141,7 +141,7 @@ axis and the combined ranked report.
 | Phase | Plan | Status |
 |-------|------|--------|
 | 1. Project skeleton & dpkg inventory | PLAN-initial-phase-01-inventory.md | Complete |
-| 2. Repology adapter & staleness axis | PLAN-initial-phase-02-staleness.md | Not started |
+| 2. Repology adapter & staleness axis | PLAN-initial-phase-02-staleness.md | Planned |
 | 3. Divergence axis (debian/patches + DEP-3) | PLAN-initial-phase-03-divergence.md | Not started |
 | 4. Scoring & ranked report | PLAN-initial-phase-04-scoring.md | Not started |
 
