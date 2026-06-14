@@ -76,13 +76,31 @@ source package to an upstream project, and reports `unknown` (never
 "behind") when it cannot. Results are cached locally and Repology is
 queried politely (≤1 request/second).
 
+Report packages carrying distro-only patches (the divergence axis, via
+[sources.debian.org](https://sources.debian.org/)):
+
+```bash
+divergulent divergence            # packages carrying Debian-only patches
+divergulent divergence --all      # also show clean / native / unknown
+divergulent divergence --limit 50 # cap how many source packages are queried
+divergulent divergence --json     # machine-readable
+```
+
+Each patch is classified from its [DEP-3](https://dep-team.pages.debian.net/deps/dep3/)
+header as forwarded-upstream, Debian-only, or unknown. Because DEP-3 is
+not universally used, patches without it are also checked for
+Debian-authored signals (the old `# DP:` convention and `deb-*` /
+`debian-*` filenames); anything still unattributed is reported as
+unknown rather than assumed divergent. This axis makes one request per
+patch, so it caches aggressively and supports `--limit`.
+
 ## Status
 
-Early. Phases 1 and 2 are implemented: `divergulent inventory` reads the
-installed-package set from `dpkg`, and `divergulent staleness` reports
-which packages are behind pure upstream. The divergence axis (carried
-distro patches) and a combined whole-machine score are not built yet.
-The plan for the first implementation lives in
+Early. Phases 1–3 are implemented: `divergulent inventory` reads the
+installed-package set from `dpkg`, `divergulent staleness` reports which
+packages are behind pure upstream, and `divergulent divergence` reports
+which packages carry distro-only patches. A combined whole-machine score
+is not built yet. The plan for the first implementation lives in
 [docs/plans/PLAN-initial.md](docs/plans/PLAN-initial.md); see
 [docs/plans/index.md](docs/plans/index.md) for the plan index.
 
