@@ -20,7 +20,7 @@ import urllib.parse
 from dataclasses import dataclass
 
 from divergulent import dep3
-from divergulent.dep3 import PatchClass
+from divergulent.dep3 import BugRef, PatchClass
 from divergulent.http import HttpClient
 
 
@@ -53,8 +53,22 @@ class DivergenceResult:
     state: DivergenceState
 
 
-def _unknown(source_package: str, version: str, source_format: str | None = None) -> 'DivergenceResult':
-    return DivergenceResult(source_package, version, source_format, 0, 0, 0, 0, DivergenceState.UNKNOWN)
+@dataclass(frozen=True)
+class PatchDetail:
+    name: str
+    patch_class: PatchClass
+    description: str | None
+    forwarded: str | None
+    bugs: list[BugRef]
+
+
+@dataclass(frozen=True)
+class PackagePatches:
+    source_package: str
+    version: str
+    source_format: str | None
+    state: DivergenceState
+    patches: list[PatchDetail]
 
 
 def _quote(value: str) -> str:
@@ -102,58 +116,74 @@ class DebianPatchesSource:
         base_path = raw_url[:raw_url.index(PATCHES_MARKER) + len(PATCHES_MARKER)]
         return SOURCES_BASE + base_path
 
-    def _classify_patch(self, base: str | None, source_package: str, version: str, patch_name: str) -> PatchClass:
-        if base is None:
-            return PatchClass.UNKNOWN
-        text = self._http.get_text(
-            base + urllib.parse.quote(patch_name),
-            cache_namespace=PATCH_NAMESPACE,
-            cache_key=f'{source_package}:{version}:{patch_name}',
-            ttl_seconds=CACHE_TTL_SECONDS)
-        if text is None:
-            return PatchClass.UNKNOWN
-        return dep3.classify(text, patch_name)
+    def _series(self, source_package: str, version: str):
+        '''Resolve the patches-API info and the version the API accepted.
 
-    def divergence(self, source_package: str, version: str) -> DivergenceResult:
-        '''Classify the carried patches of an installed source package version.'''
-        info = None
-        effective = version
-        # sources.debian.org may or may not include the epoch in the path; try
-        # the version as installed, then with the epoch stripped.
+        sources.debian.org may or may not include the epoch in the path, so we
+        try the version as installed, then with the epoch stripped.
+        '''
         for candidate in self._candidate_versions(version):
             info = self.lookup(source_package, candidate)
             if info is not None:
-                effective = candidate
-                break
+                return info, candidate
+        return None, version
+
+    def _detail(self, base: str | None, source_package: str, version: str, patch_name: str) -> PatchDetail:
+        text = None
+        if base is not None:
+            text = self._http.get_text(
+                base + urllib.parse.quote(patch_name),
+                cache_namespace=PATCH_NAMESPACE,
+                cache_key=f'{source_package}:{version}:{patch_name}',
+                ttl_seconds=CACHE_TTL_SECONDS)
+        if text is None:
+            return PatchDetail(patch_name, PatchClass.UNKNOWN, None, None, [])
+        fields = dep3.parse_header(text)
+        return PatchDetail(
+            name=patch_name,
+            patch_class=dep3.classify(text, patch_name),
+            description=fields.get('description') or fields.get('subject'),
+            forwarded=fields.get('forwarded'),
+            bugs=dep3.bug_references(text))
+
+    def details(self, source_package: str, version: str) -> PackagePatches:
+        '''Return per-patch detail for an installed source package version.'''
+        info, effective = self._series(source_package, version)
         if info is None:
-            return _unknown(source_package, version)
+            return PackagePatches(source_package, version, None, DivergenceState.UNKNOWN, [])
 
         source_format = info.get('format')
         fmt = (source_format or '').lower()
-        patches = info.get('patches') or []
+        names = info.get('patches') or []
 
         if 'native' in fmt:
-            return DivergenceResult(source_package, version, source_format, 0, 0, 0, 0, DivergenceState.NATIVE)
+            return PackagePatches(source_package, version, source_format, DivergenceState.NATIVE, [])
 
-        if patches:
-            base = self._raw_base(source_package, effective, patches[0])
-            counts = {PatchClass.DEBIAN_ONLY: 0, PatchClass.FORWARDED: 0, PatchClass.UNKNOWN: 0}
-            for patch_name in patches:
-                counts[self._classify_patch(base, source_package, effective, patch_name)] += 1
-            return DivergenceResult(
-                source_package, version, source_format,
-                total=len(patches),
-                debian_only=counts[PatchClass.DEBIAN_ONLY],
-                forwarded=counts[PatchClass.FORWARDED],
-                unknown=counts[PatchClass.UNKNOWN],
-                state=DivergenceState.PATCHED)
+        if names:
+            base = self._raw_base(source_package, effective, names[0])
+            patches = [self._detail(base, source_package, effective, name) for name in names]
+            return PackagePatches(source_package, version, source_format, DivergenceState.PATCHED, patches)
 
         if 'quilt' in fmt:
-            return DivergenceResult(source_package, version, source_format, 0, 0, 0, 0, DivergenceState.CLEAN)
+            return PackagePatches(source_package, version, source_format, DivergenceState.CLEAN, [])
 
         # A non-quilt, non-native format (e.g. 1.0): divergence is not captured
         # by a quilt series, so we do not claim it is clean.
-        return _unknown(source_package, version, source_format)
+        return PackagePatches(source_package, version, source_format, DivergenceState.UNKNOWN, [])
+
+    def divergence(self, source_package: str, version: str) -> DivergenceResult:
+        '''Classify the carried patches of an installed source package version.'''
+        package = self.details(source_package, version)
+        counts = {PatchClass.DEBIAN_ONLY: 0, PatchClass.FORWARDED: 0, PatchClass.UNKNOWN: 0}
+        for patch in package.patches:
+            counts[patch.patch_class] += 1
+        return DivergenceResult(
+            source_package, version, package.source_format,
+            total=len(package.patches),
+            debian_only=counts[PatchClass.DEBIAN_ONLY],
+            forwarded=counts[PatchClass.FORWARDED],
+            unknown=counts[PatchClass.UNKNOWN],
+            state=package.state)
 
     @staticmethod
     def _candidate_versions(version: str):
