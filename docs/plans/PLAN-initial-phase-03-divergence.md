@@ -6,6 +6,16 @@ honest handling of unknowns are the correctness core, and this
 is the axis closest to the project's motivating concern —
 surfacing distro-only carried patches.
 
+**Status: complete.** All steps (3a get_text, 3b dep3, 3c
+adapter, 3d divergence CLI, 3e docs) are implemented and
+committed; `divergulent divergence` works and the suite passes
+via `tox -epy3`. Two issues found by live smoke testing were
+fixed: the raw patch URL needed the Debian pool path (and the
+file-info API a trailing slash), and — per the operator's
+decision — DEP-3 classification was supplemented with
+Debian-authored heuristics (`# DP:` convention, deb-*/debian-*
+filenames) because DEP-3 adoption is sparse.
+
 ## Prompt
 
 Phases 1–2 are merged; explore the existing code before adding

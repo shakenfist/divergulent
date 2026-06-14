@@ -30,6 +30,18 @@ any failure returns `None` and is surfaced to the user as *unknown*,
 never as a confirmed finding. HTTP uses the standard library (no
 `requests`/`httpx`).
 
+The divergence axis is request-heavy (one series request plus one per
+patch, per source package), so it caches version-pinned patch content
+with a long TTL (30 days) — that content is immutable — and the
+`divergence` command takes `--limit`. Do not run an unbounded
+full-machine divergence scan against sources.debian.org as a casual
+test.
+
+DEP-3 metadata is sparse in real Debian patches, so `dep3.classify`
+supplements explicit DEP-3 fields with Debian-authored heuristics (the
+old `# DP:` convention and deb-*/debian-* filenames). Explicit DEP-3
+always wins; patches with neither are UNKNOWN, not assumed divergent.
+
 ## Dependencies
 
 divergulent audits dependency/patch divergence, so it keeps its own
