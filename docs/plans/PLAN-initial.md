@@ -146,7 +146,7 @@ here for continuity.
 | 2. Repology adapter & staleness axis | PLAN-initial-phase-02-staleness.md | Complete |
 | 3. Divergence axis (debian/patches + DEP-3) | PLAN-initial-phase-03-divergence.md | Complete |
 | 4. Scoring & ranked report | PLAN-initial-phase-04-scoring.md | Complete |
-| 5. Per-package detail view (`show`) | PLAN-initial-phase-05-show.md | Not started |
+| 5. Per-package detail view (`show`) | PLAN-initial-phase-05-show.md | Planned |
 
 ### Phase 1 — Project skeleton & dpkg inventory
 
