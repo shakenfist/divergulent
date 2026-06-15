@@ -24,11 +24,14 @@
 All outbound HTTP goes through `divergulent.http.HttpClient`, never raw
 `urllib`/sockets in a source. It enforces the politeness external
 services require: an identifying User-Agent (with the repo + issue
-tracker link Repology mandates), a request timeout, ≤1 request per
-second, on-disk caching (default 24h TTL), and graceful degradation —
+tracker link Repology mandates), a request timeout, rate limiting **per
+host**, on-disk caching (default 24h TTL), and graceful degradation —
 any failure returns `None` and is surfaced to the user as *unknown*,
 never as a confirmed finding. HTTP uses the standard library (no
-`requests`/`httpx`).
+`requests`/`httpx`). The default interval is ≤1 request/second; the CLI
+overrides sources.debian.org to run a few requests/second (it has no
+documented limit), while Repology stays at the mandated 1 req/s — see
+`cli._http_client` / `SOURCES_DEBIAN_INTERVAL`.
 
 The whole-machine divergence overview uses `summary()` — one request per
 source (patch count + state), no patch-body fetches — so a full

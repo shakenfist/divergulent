@@ -4,6 +4,13 @@ Part of [PLAN-faster-full-run.md](PLAN-faster-full-run.md).
 Medium effort: small and well-understood, but it changes how
 politely we hit a real service, so pick the interval carefully.
 
+**Status: complete.** `HttpClient` takes a per-host
+`host_intervals` map, and the CLI builds its clients via
+`cli._http_client()`, which sets sources.debian.org to
+`SOURCES_DEBIAN_INTERVAL` (0.34 s, ~3 req/s) while Repology
+keeps the mandated ≤1 req/s default. Suite passes via
+`tox -epy3`.
+
 ## Prompt
 
 Read `divergulent/http.py` (the `HttpClient` per-host throttle:

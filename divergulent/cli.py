@@ -17,6 +17,16 @@ _CLASSIFY_UNAVAILABLE = (
     'divergulent: --classify needs deb-src source indices; enable deb-src and run '
     "'apt-get update'. Falling back to patch counts.")
 
+# sources.debian.org has no documented rate limit (unlike Repology, which
+# mandates <=1 req/s), so we let it run a few requests per second.
+SOURCES_DEBIAN_INTERVAL = 0.34
+
+
+def _http_client():
+    return HttpClient(
+        Cache(default_cache_dir()),
+        host_intervals={'sources.debian.org': SOURCES_DEBIAN_INTERVAL})
+
 
 def _build_parser():
     parser = argparse.ArgumentParser(
@@ -157,7 +167,7 @@ def _summarise(results):
 
 def _staleness_command(args):
     packages = inventory.list_installed()
-    source = RepologySource(HttpClient(Cache(default_cache_dir())))
+    source = RepologySource(_http_client())
     results = _gather_staleness(source, packages)
     _summarise(results)
 
@@ -248,7 +258,7 @@ def _divergence_command(args):
         if apt.available():
             return _divergence_classified(apt, packages, args)
         print(_CLASSIFY_UNAVAILABLE, file=sys.stderr)
-    source = DebianPatchesSource(HttpClient(Cache(default_cache_dir())))
+    source = DebianPatchesSource(_http_client())
     results = _gather_divergence(source, packages, limit=args.limit)
     _summarise_divergence(results)
 
@@ -309,7 +319,7 @@ def _summarise_score(drifts):
 
 
 def _score_classified(apt, packages, args):
-    repology = RepologySource(HttpClient(Cache(default_cache_dir())))
+    repology = RepologySource(_http_client())
     items = list(_dedup_sources(packages).items())
     if args.limit is not None:
         items = items[:args.limit]
@@ -363,7 +373,7 @@ def _score_command(args):
         if apt.available():
             return _score_classified(apt, packages, args)
         print(_CLASSIFY_UNAVAILABLE, file=sys.stderr)
-    http = HttpClient(Cache(default_cache_dir()))
+    http = _http_client()
     repology = RepologySource(http)
     patches = DebianPatchesSource(http)
 
@@ -465,7 +475,7 @@ def _show_command(args):
         return 1
     source_name, source_version = resolved
 
-    http = HttpClient(Cache(default_cache_dir()))
+    http = _http_client()
     staleness = RepologySource(http).staleness(source_name, source_version)
     patches = DebianPatchesSource(http)
     package = patches.details(source_name, str(source_version))
