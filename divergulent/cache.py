@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -56,7 +57,17 @@ class Cache:
         self.root.mkdir(parents=True, exist_ok=True)
         path = self._path(namespace, key)
         entry = {'stored_at': self._clock(), 'ttl': ttl_seconds, 'value': value}
-        tmp = path.with_name(path.name + '.tmp')
-        with open(tmp, 'w') as handle:
-            json.dump(entry, handle)
-        os.replace(tmp, path)
+        # Write via a uniquely named temp file in the same directory before the
+        # atomic rename, so concurrent writers cannot clobber a shared temp.
+        fd, tmp = tempfile.mkstemp(dir=self.root, prefix=path.stem + '.', suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'w') as handle:
+                json.dump(entry, handle)
+            os.replace(tmp, path)
+        except BaseException:
+            # Do not leave a stray temp file behind if writing or renaming fails.
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise

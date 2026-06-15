@@ -29,9 +29,16 @@ host**, on-disk caching (default 24h TTL), and graceful degradation —
 any failure returns `None` and is surfaced to the user as *unknown*,
 never as a confirmed finding. HTTP uses the standard library (no
 `requests`/`httpx`). The default interval is ≤1 request/second; the CLI
-overrides sources.debian.org to run a few requests/second (it has no
-documented limit), while Repology stays at the mandated 1 req/s — see
-`cli._http_client` / `SOURCES_DEBIAN_INTERVAL`.
+sets sources.debian.org's interval to 0 (it has no documented limit) and
+instead bounds it with concurrency, while Repology stays at the mandated
+1 req/s — see `cli._http_client` / `SOURCES_DEBIAN_INTERVAL` /
+`DEFAULT_WORKERS`. The per-host throttle is a thread-safe "ticket"
+reservation, so it stays correct under concurrent workers: each host's
+requests stay spaced (Repology ≤1 req/s in aggregate) while different
+hosts overlap. The `divergence`/`score` commands gather over deduped
+sources through `cli._concurrent_map` on a thread pool sized by
+`--workers` (default 8); `--workers 1` is serial. `Cache.set` writes via
+a uniquely named temp file so concurrent writers cannot clobber.
 
 The whole-machine divergence overview uses `summary()` — one request per
 source (patch count + state), no patch-body fetches — so a full
@@ -40,12 +47,14 @@ source (patch count + state), no patch-body fetches — so a full
 version-pinned content with a long TTL (30 days), since that content is
 immutable. The `divergence`/`score` commands still take `--limit`.
 
-Whole-machine **staleness** uses `repology.build_staleness_map` — one
-cached sweep of the entire Repology archive (`/api/v1/projects/`
-paginated, `RepologyBulkSource`) instead of a request per source. The
-map is cached ~24h and shared across commands, so the staleness cost is
-per-archive, not per-machine. Per-package staleness (`show`) still uses
-the per-package `project-by` resolver.
+Whole-machine **staleness** uses the per-package `project-by` resolver
+(`RepologySource`), caching each result ~24h. A whole-archive bulk sweep
+(`/api/v1/projects/`) was tried and reverted: for one machine it
+downloaded ~600 MB to answer ~570 lookups and made a cold run *slower*
+(~22 min vs ~9.5 min) — see
+`docs/plans/PLAN-faster-full-run-phase-04-revert-bulk.md`. The real
+cold-run win is the planned published precomputed cache (Future work in
+`PLAN-faster-full-run.md`), with concurrency covering the live fallback.
 
 `--classify` (Tier 2) classifies the whole machine via
 `divergulent.sources.apt_patches.AptSourcePatches`: it resolves each

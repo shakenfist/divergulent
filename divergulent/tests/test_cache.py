@@ -1,4 +1,5 @@
 import tempfile
+import threading
 from pathlib import Path
 
 import testtools
@@ -60,3 +61,27 @@ class CacheTestCase(testtools.TestCase):
         self.assertEqual('safe', self.cache.get('ns', evil))
         for child in self.root.iterdir():
             self.assertEqual(self.root, child.parent)
+
+    def test_concurrent_writes_do_not_corrupt(self):
+        # Many threads writing distinct keys, plus several hammering one shared
+        # key, must all land as valid JSON with no leftover temp files (the
+        # unique-temp-file write makes this safe under concurrency).
+        def writer(index):
+            self.cache.set('ns', 'key-%d' % index, {'n': index}, ttl_seconds=100)
+
+        def shared_writer(index):
+            self.cache.set('ns', 'shared', {'n': index}, ttl_seconds=100)
+
+        threads = [threading.Thread(target=writer, args=(i,)) for i in range(40)]
+        threads += [threading.Thread(target=shared_writer, args=(i,)) for i in range(10)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        for index in range(40):
+            self.assertEqual({'n': index}, self.cache.get('ns', 'key-%d' % index))
+        # The shared key resolved to exactly one of the written values.
+        self.assertIn(self.cache.get('ns', 'shared')['n'], range(10))
+        # No stray temp files were left behind.
+        self.assertEqual([], [p.name for p in self.root.iterdir() if p.name.endswith('.tmp')])

@@ -24,7 +24,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from divergulent import debversion
-from divergulent.cache import Cache
 from divergulent.debversion import DebianVersion
 from divergulent.http import HttpClient
 
@@ -32,16 +31,6 @@ from divergulent.http import HttpClient
 REPOLOGY_BASE = 'https://repology.org'
 CACHE_NAMESPACE = 'repology'
 CACHE_TTL_SECONDS = 24 * 60 * 60  # 24 hours
-
-# Bulk staleness (whole-repo sweep) caches.
-BULK_NAMESPACE = 'repology-bulk'
-BULK_PAGE_NAMESPACE = 'repology-bulk-page'
-BULK_TTL_SECONDS = 24 * 60 * 60
-PROJECTS_PER_PAGE = 200
-# Safety bound on the bulk sweep. debian_unstable is ~175 pages at 200/page;
-# this caps an unbounded loop if a server response keeps the pager moving but
-# never signals the end (the no-forward-progress check handles the stuck case).
-BULK_MAX_PAGES = 1000
 
 # Repology statuses that do not represent a usable, trusted version.
 _IGNORED_STATUSES = frozenset({'ignored', 'incorrect', 'untrusted', 'noscheme'})
@@ -145,75 +134,3 @@ def _state_for(installed_version: DebianVersion, newest: str | None) -> Stalenes
     if debversion.compare(installed_upstream, newest) < 0:
         return StalenessState.BEHIND
     return StalenessState.CURRENT
-
-
-def _projects_url(repo: str, start: str | None) -> str:
-    if start:
-        base = '%s/api/v1/projects/%s/' % (REPOLOGY_BASE, urllib.parse.quote(start))
-    else:
-        base = '%s/api/v1/projects/' % REPOLOGY_BASE
-    return '%s?inrepo=%s' % (base, urllib.parse.quote(repo))
-
-
-def build_staleness_map(http_client: HttpClient, cache: Cache, repo: str = 'debian_unstable',
-                        page_size: int = PROJECTS_PER_PAGE,
-                        max_pages: int = BULK_MAX_PAGES) -> dict[str, str]:
-    '''Return {Debian srcname: newest version} for the whole repo, cached ~24h.
-
-    Instead of one Repology request per source package, page through the entire
-    repo's project set once (cheap per-archive, not per-machine) and cache the
-    assembled map. Repology mandates <=1 req/s, so this is the slow part of a
-    cold run, but it is built once and reused.
-    '''
-    cached = cache.get(BULK_NAMESPACE, repo)
-    if cached is not None:
-        return cached
-
-    mapping: dict[str, str] = {}
-    start = None
-    for _ in range(max_pages):
-        page = http_client.get_json(
-            _projects_url(repo, start),
-            cache_namespace=BULK_PAGE_NAMESPACE,
-            cache_key='%s:%s' % (repo, start or ''),
-            ttl_seconds=BULK_TTL_SECONDS)
-        if not isinstance(page, dict) or not page:
-            break
-        for entries in page.values():
-            # External data is untrusted: a project value that is not a list of
-            # entry dicts is skipped rather than crashing the whole sweep.
-            if not isinstance(entries, list):
-                continue
-            newest = _select_newest(entries)
-            if newest is None:
-                continue
-            for entry in entries:
-                if isinstance(entry, dict) and entry.get('repo') == repo and entry.get('srcname'):
-                    mapping[entry['srcname']] = newest
-        if len(page) < page_size:
-            break
-        next_start = sorted(page)[-1]
-        if next_start == start:  # safety: no forward progress
-            break
-        start = next_start
-
-    cache.set(BULK_NAMESPACE, repo, mapping, ttl_seconds=BULK_TTL_SECONDS)
-    return mapping
-
-
-class RepologyBulkSource:
-    '''Staleness from a prebuilt {srcname: newest} map (bulk Repology data).
-
-    Drop-in for RepologySource in the whole-machine commands: a source absent
-    from the map is UNKNOWN (no per-package fallback request).
-    '''
-
-    name = 'repology'
-
-    def __init__(self, staleness_map: dict[str, str]) -> None:
-        self._map = staleness_map
-
-    def staleness(self, source_package: str, installed_version: DebianVersion) -> StalenessResult:
-        newest = self._map.get(source_package)
-        return StalenessResult(
-            source_package, installed_version, newest, _state_for(installed_version, newest))

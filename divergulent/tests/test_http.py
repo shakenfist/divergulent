@@ -1,4 +1,6 @@
 import tempfile
+import threading
+import time
 import urllib.error
 from pathlib import Path
 
@@ -189,3 +191,59 @@ class HttpClientTestCase(testtools.TestCase):
             min_interval=1.0, max_bytes=8, user_agent='ua/1')
         self.assertIsNone(
             client.get_json('https://repology.org/x', cache_namespace='r', cache_key='k', ttl_seconds=100))
+
+
+class ThrottleConcurrencyTestCase(testtools.TestCase):
+    '''The per-host throttle must stay correct under concurrent fetches.'''
+
+    def setUp(self):
+        super().setUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.cache = Cache(Path(tmp.name), clock=lambda: 0.0)
+
+    def _real_client(self, **kwargs):
+        # Real clock/sleep so we exercise actual thread timing, with a fast
+        # urlopen so only the throttle contributes measurable delay.
+        return http.HttpClient(
+            self.cache, urlopen=lambda request, timeout=None: FakeResponse(b'{}'),
+            user_agent='ua/1', **kwargs)
+
+    def test_same_host_requests_are_spaced_across_threads(self):
+        interval = 0.05
+        client = self._real_client(min_interval=interval)
+
+        def fetch(index):
+            client.get_json(
+                'https://repology.org/p', cache_namespace='r', cache_key='k-%d' % index, ttl_seconds=100)
+
+        threads = [threading.Thread(target=fetch, args=(i,)) for i in range(5)]
+        start = time.monotonic()
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        elapsed = time.monotonic() - start
+        # Five same-host requests reserve sequential slots, so the run takes at
+        # least (5 - 1) intervals even though they were launched concurrently.
+        self.assertGreaterEqual(elapsed, 4 * interval * 0.8)
+
+    def test_different_hosts_do_not_block_each_other(self):
+        interval = 0.2
+        client = self._real_client(min_interval=interval)
+
+        def fetch(host):
+            client.get_json(
+                'https://%s/p' % host, cache_namespace='r', cache_key=host, ttl_seconds=100)
+
+        hosts = ['a.example', 'b.example', 'c.example', 'd.example']
+        threads = [threading.Thread(target=fetch, args=(h,)) for h in hosts]
+        start = time.monotonic()
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        elapsed = time.monotonic() - start
+        # Each host's first request has no predecessor, so distinct hosts run in
+        # parallel and the batch finishes well under a single interval.
+        self.assertLess(elapsed, interval)
