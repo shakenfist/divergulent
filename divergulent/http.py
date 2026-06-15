@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from typing import Any
@@ -37,7 +38,9 @@ class HttpClient:
         self._urlopen = urlopen
         self._clock = clock
         self._sleep = sleep
-        self._last_request: float | None = None
+        # Last request time per host, so different hosts do not serialise
+        # against each other while each still gets at most one request/second.
+        self._last_request: dict[str, float] = {}
 
     def get_json(self, url: str, *, cache_namespace: str, cache_key: str,
                  ttl_seconds: float) -> Any:
@@ -75,7 +78,7 @@ class HttpClient:
         return value
 
     def _fetch(self, url: str) -> bytes | None:
-        self._throttle()
+        self._throttle(url)
         try:
             request = urllib.request.Request(url, headers={'User-Agent': self._user_agent})
             with self._urlopen(request, timeout=self._timeout) as response:
@@ -83,11 +86,13 @@ class HttpClient:
         except (urllib.error.URLError, TimeoutError, OSError):
             return None
 
-    def _throttle(self) -> None:
+    def _throttle(self, url: str) -> None:
+        host = urllib.parse.urlparse(url).netloc
         now = self._clock()
-        if self._last_request is not None:
-            wait = self._min_interval - (now - self._last_request)
+        last = self._last_request.get(host)
+        if last is not None:
+            wait = self._min_interval - (now - last)
             if wait > 0:
                 self._sleep(wait)
                 now = self._clock()
-        self._last_request = now
+        self._last_request[host] = now
