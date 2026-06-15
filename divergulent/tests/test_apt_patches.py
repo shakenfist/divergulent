@@ -2,12 +2,21 @@ import io
 import os
 import subprocess
 import tarfile
+import tempfile
 
 import testtools
 
 from divergulent.dep3 import PatchClass
-from divergulent.sources.apt_patches import AptSourcePatches, deb_src_available
+from divergulent.sources.apt_patches import AptSourcePatches, _download_source, _source_uris, deb_src_available
 from divergulent.sources.debian_patches import DivergenceState
+
+
+SAMPLE_URIS = (
+    "'http://deb.debian.org/debian/pool/main/b/bash/bash_5.2.37.orig.tar.xz' bash_5.2.37.orig.tar.xz 9999 SHA256:a\n"
+    "'http://deb.debian.org/debian/pool/main/b/bash/bash_5.2.37-2.debian.tar.xz' "
+    "bash_5.2.37-2.debian.tar.xz 50 SHA256:b\n"
+    "'http://deb.debian.org/debian/pool/main/b/bash/bash_5.2.37-2.dsc' bash_5.2.37-2.dsc 20 SHA256:c\n"
+)
 
 
 DEBIAN_ONLY = 'Description: distro tweak\nForwarded: not-needed\nOrigin: vendor\n\n--- a/x\n'
@@ -70,6 +79,38 @@ class AptSourcePatchesTestCase(testtools.TestCase):
 
     def test_name(self):
         self.assertEqual('apt-source', AptSourcePatches.name)
+
+
+class DownloadTestCase(testtools.TestCase):
+
+    @staticmethod
+    def _run(stdout, returncode=0):
+        def run(args, cwd=None):
+            return subprocess.CompletedProcess(args, returncode, stdout, '')
+        return run
+
+    def test_source_uris_picks_dsc_and_debian_tar(self):
+        dsc, debian = _source_uris('bash', '5.2.37-2', run=self._run(SAMPLE_URIS))
+        self.assertTrue(dsc.endswith('.dsc'))
+        self.assertIn('.debian.tar.xz', debian)
+
+    def test_source_uris_failure(self):
+        self.assertEqual((None, None), _source_uris('bash', '5.2.37-2', run=self._run('', returncode=100)))
+
+    def test_download_fetches_dsc_and_debian_tar_only(self):
+        fetched = []
+
+        def fetch(url, dest_path):
+            fetched.append(url)
+            open(dest_path, 'w').close()
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        ok = _download_source('bash', '5.2.37-2', tmp.name, run=self._run(SAMPLE_URIS), fetch=fetch)
+        self.assertTrue(ok)
+        # The .dsc and .debian.tar.xz are fetched; the large .orig tarball is skipped.
+        self.assertEqual(2, len(fetched))
+        self.assertFalse(any('.orig.' in url for url in fetched))
 
 
 class DebSrcAvailableTestCase(testtools.TestCase):

@@ -13,13 +13,16 @@ from __future__ import annotations
 
 import glob
 import os
+import shutil
 import subprocess
 import tarfile
 import tempfile
+import urllib.request
 from collections.abc import Callable
 
 from debian import deb822  # type: ignore[import-untyped]
 
+from divergulent.http import DEFAULT_USER_AGENT
 from divergulent.sources.debian_patches import (
     DivergenceState, PackagePatches, PatchDetail, patch_detail)
 
@@ -37,13 +40,51 @@ def deb_src_available(run: Callable[..., subprocess.CompletedProcess] = _run) ->
     return result.returncode == 0 and 'Sources' in result.stdout
 
 
+def _source_uris(source_package: str, version: str,
+                 run: Callable[..., subprocess.CompletedProcess] = _run) -> tuple[str | None, str | None]:
+    '''Resolve the (.dsc, .debian.tar.*) mirror URLs for a source version.
+
+    Uses ``apt-get source --print-uris`` (the user's configured mirror) without
+    downloading, so we can fetch only the small packaging files and skip the
+    potentially huge .orig tarball. Returns (None, None) if it cannot resolve.
+    '''
+    result = run(['apt-get', 'source', '--print-uris', '--only-source', '%s=%s' % (source_package, version)])
+    if result.returncode != 0:
+        return None, None
+    dsc_url = debian_url = None
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("'"):
+            continue
+        url = line.split("'")[1]
+        if url.endswith('.dsc'):
+            dsc_url = url
+        elif '.debian.tar.' in url:
+            debian_url = url
+    return dsc_url, debian_url
+
+
+def _fetch_file(url: str, dest_path: str) -> None:
+    request = urllib.request.Request(url, headers={'User-Agent': DEFAULT_USER_AGENT})
+    with urllib.request.urlopen(request, timeout=30) as response, open(dest_path, 'wb') as out:
+        shutil.copyfileobj(response, out)
+
+
 def _download_source(source_package: str, version: str, dest_dir: str,
-                     run: Callable[..., subprocess.CompletedProcess] = _run) -> bool:
-    '''Download a source package into dest_dir; False if it could not be fetched.'''
-    result = run(
-        ['apt-get', 'source', '--download-only', '--only-source', '%s=%s' % (source_package, version)],
-        cwd=dest_dir)
-    return result.returncode == 0
+                     run: Callable[..., subprocess.CompletedProcess] = _run,
+                     fetch: Callable[[str, str], None] = _fetch_file) -> bool:
+    '''Fetch only the .dsc and .debian.tar.* into dest_dir; False if unresolved.
+
+    Deliberately skips the .orig tarball: we only need the packaging to read
+    debian/patches, and downloading upstream source per package would be huge.
+    '''
+    dsc_url, debian_url = _source_uris(source_package, version, run=run)
+    if dsc_url is None:
+        return False
+    fetch(dsc_url, os.path.join(dest_dir, os.path.basename(dsc_url)))
+    if debian_url is not None:
+        fetch(debian_url, os.path.join(dest_dir, os.path.basename(debian_url)))
+    return True
 
 
 def _read_format(dest_dir: str) -> str | None:
