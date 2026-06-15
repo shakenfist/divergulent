@@ -5,6 +5,16 @@ Plan this phase at **medium effort**: it is CI/infra plumbing,
 but it is also the proof that the Tier 1 full run is polite.
 Depends on phase 1.
 
+**Status: complete.** `tools/generate-sample-output.sh` and
+`.github/workflows/sample-output.yml` are implemented and
+committed: on `workflow_dispatch` and `pull_request` to `main`,
+a `[self-hosted, debian-13, s]` runner runs a full
+`divergulent score --all` (plus a small `--classify` sample)
+and uploads the rendered text/JSON as an artifact, with the
+cache persisted via `actions/cache`. Validated with actionlint
+and shellcheck; the full run is exercised when the workflow
+runs on the PR. This completes the full-machine-run plan.
+
 ## Prompt
 
 Explore before changing: `.github/workflows/unit-tests.yml` and

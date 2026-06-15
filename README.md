@@ -155,7 +155,11 @@ tox -eflake8   # style checks on the current change
 ```
 
 CI runs the same checks on push and pull requests
-(`.github/workflows/unit-tests.yml`). Releases are tag-driven
+(`.github/workflows/unit-tests.yml`). A separate workflow
+(`.github/workflows/sample-output.yml`) runs a full `divergulent score`
+on a Debian 13 runner and uploads the rendered report as a build
+artifact, so reviewers can see how the output looks on a real machine
+(and as a live end-to-end check). Releases are tag-driven
 (`v*`) and publish to PyPI via Sigstore-signed tags and PyPI trusted
 publishing — see [RELEASE-SETUP.md](RELEASE-SETUP.md) for the one-time
 configuration.

@@ -90,6 +90,13 @@ publishing, running on self-hosted runners. The package version is
 derived from the git tag by `setuptools_scm`. One-time configuration is
 documented in [RELEASE-SETUP.md](RELEASE-SETUP.md).
 
+The `sample-output.yml` workflow runs a full `divergulent score` on a
+Debian 13 runner and uploads the rendered report as an artifact (its
+logic lives in `tools/generate-sample-output.sh`, per the scripts-in-
+tools rule). It runs Tier 1 in full (no `--limit`) — the polite full run
+is the point — plus a small `--limit`ed `--classify` sample, and
+persists `DIVERGULENT_CACHE_DIR` via `actions/cache`.
+
 ## Planning workflow
 
 Plans live in `docs/plans/` — a master plan plus one file per phase,
