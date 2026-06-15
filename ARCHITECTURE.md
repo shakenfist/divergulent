@@ -69,6 +69,10 @@ installed-package inventory never leaves the machine.
   `.orig` tarball), extracts `debian/patches`, and classifies with
   `dep3` — the full breakdown across the machine via the mirror network.
   Requires `deb-src` (`deb_src_available()`).
+- `divergulent/progress.py` — `Progress`, a terminal-aware progress
+  reporter (stderr; animates on a TTY, periodic lines off-TTY, silent
+  when disabled) used by the long whole-machine commands; `--quiet`
+  disables it.
 - `divergulent/score.py` — combines a package's staleness and
   divergence into a `PackageDrift` with a transparent weighted score
   (used only for ranking; both axes are retained for display).

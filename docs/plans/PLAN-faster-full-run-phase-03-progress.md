@@ -4,6 +4,13 @@ Part of [PLAN-faster-full-run.md](PLAN-faster-full-run.md).
 Medium effort: small, but the terminal/CI behaviour and output
 hygiene need care.
 
+**Status: complete.** `divergulent/progress.py` provides a
+terminal-aware `Progress` (stderr; animates on a TTY, periodic
+lines off-TTY, silent when disabled), wired into the
+`staleness`/`divergence`/`score` loops (incl. `--classify`),
+with a `--quiet` flag. Verified live: progress prints to stderr
+while stdout/JSON stay clean. Suite passes via `tox -epy3`.
+
 ## Prompt
 
 Read `divergulent/cli.py` — the whole-machine gather loops

@@ -120,6 +120,12 @@ upstream is expected on a stable Debian release and is weighted lightly
 — carried patches are the stronger signal. (Use `show` for the per-patch
 Debian-only/forwarded classification of any package.)
 
+The long whole-machine commands (`staleness`, `divergence`, `score`)
+show live progress on a terminal (and periodic lines in logs); pass
+`--quiet` to suppress it. The first run is slower while it builds a
+~24h-cached snapshot of upstream versions; later runs reuse it and are
+near-instant.
+
 Drill into a single installed package:
 
 ```bash

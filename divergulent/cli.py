@@ -8,6 +8,7 @@ from divergulent import score
 from divergulent.cache import Cache, default_cache_dir
 from divergulent.dep3 import PatchClass
 from divergulent.http import HttpClient
+from divergulent.progress import Progress
 from divergulent.sources.apt_patches import AptSourcePatches
 from divergulent.sources.debian_patches import DebianPatchesSource, DivergenceState, DivergenceSummary
 from divergulent.sources.repology import RepologyBulkSource, RepologySource, StalenessState, build_staleness_map
@@ -62,6 +63,7 @@ def _build_parser():
     stale.add_argument(
         '--all', action='store_true', dest='show_all',
         help='Include current and unknown packages, not just those behind.')
+    stale.add_argument('--quiet', action='store_true', help='Suppress progress output.')
 
     diverge = subparsers.add_parser(
         'divergence',
@@ -79,6 +81,7 @@ def _build_parser():
         '--classify', action='store_true',
         help='Classify patches (Debian-only/forwarded/unknown) by fetching source packages '
              'via apt. Needs deb-src indices.')
+    diverge.add_argument('--quiet', action='store_true', help='Suppress progress output.')
 
     scorecmd = subparsers.add_parser(
         'score', help='Combine staleness and divergence into a ranked, whole-machine drift report.')
@@ -94,6 +97,7 @@ def _build_parser():
         '--classify', action='store_true',
         help='Classify carried patches (via apt source packages) and weight Debian-only patches. '
              'Needs deb-src indices.')
+    scorecmd.add_argument('--quiet', action='store_true', help='Suppress progress output.')
 
     showcmd = subparsers.add_parser(
         'show', help='Show per-patch detail (with Debian bug references) for one installed package.')
@@ -149,8 +153,15 @@ def _dedup_sources(packages):
     return seen
 
 
-def _gather_staleness(source, packages):
-    return [source.staleness(name, version) for name, version in _dedup_sources(packages).items()]
+def _gather_staleness(source, packages, progress_enabled=False):
+    items = list(_dedup_sources(packages).items())
+    progress = Progress(len(items), enabled=progress_enabled)
+    results = []
+    for name, version in items:
+        progress.step(name)
+        results.append(source.staleness(name, version))
+    progress.finish()
+    return results
 
 
 _STATE_ORDER = {
@@ -181,7 +192,7 @@ def _summarise(results):
 def _staleness_command(args):
     packages = inventory.list_installed()
     source = _bulk_repology()
-    results = _gather_staleness(source, packages)
+    results = _gather_staleness(source, packages, progress_enabled=not args.quiet)
     _summarise(results)
 
     selected = _select(results, args.show_all)
@@ -203,11 +214,17 @@ def _staleness_command(args):
     return 0
 
 
-def _gather_divergence(source, packages, limit=None):
+def _gather_divergence(source, packages, limit=None, progress_enabled=False):
     items = list(_dedup_sources(packages).items())
     if limit is not None:
         items = items[:limit]
-    return [source.summary(name, str(version)) for name, version in items]
+    progress = Progress(len(items), enabled=progress_enabled)
+    results = []
+    for name, version in items:
+        progress.step(name)
+        results.append(source.summary(name, str(version)))
+    progress.finish()
+    return results
 
 
 def _select_divergence(results, show_all):
@@ -228,7 +245,13 @@ def _divergence_classified(apt, packages, args):
     items = list(_dedup_sources(packages).items())
     if args.limit is not None:
         items = items[:args.limit]
-    results = [(p, _patch_class_counts(p)) for p in (apt.details(n, str(v)) for n, v in items)]
+    progress = Progress(len(items), enabled=not args.quiet)
+    results = []
+    for name, version in items:
+        progress.step(name)
+        package = apt.details(name, str(version))
+        results.append((package, _patch_class_counts(package)))
+    progress.finish()
 
     patched = sum(1 for p, _ in results if p.state == DivergenceState.PATCHED)
     total_debian_only = sum(counts[0] for _, counts in results)
@@ -272,7 +295,7 @@ def _divergence_command(args):
             return _divergence_classified(apt, packages, args)
         print(_CLASSIFY_UNAVAILABLE, file=sys.stderr)
     source = DebianPatchesSource(_http_client())
-    results = _gather_divergence(source, packages, limit=args.limit)
+    results = _gather_divergence(source, packages, limit=args.limit, progress_enabled=not args.quiet)
     _summarise_divergence(results)
 
     selected = _select_divergence(results, args.show_all)
@@ -295,15 +318,18 @@ def _divergence_command(args):
     return 0
 
 
-def _gather_score(repology, patches, packages, limit=None):
+def _gather_score(repology, patches, packages, limit=None, progress_enabled=False):
     items = list(_dedup_sources(packages).items())
     if limit is not None:
         items = items[:limit]
+    progress = Progress(len(items), enabled=progress_enabled)
     drifts = []
     for name, version in items:
+        progress.step(name)
         staleness = repology.staleness(name, version)
         divergence = patches.summary(name, str(version))
         drifts.append(score.combine(staleness, divergence))
+    progress.finish()
     return drifts
 
 
@@ -337,11 +363,14 @@ def _score_classified(apt, packages, args):
     if args.limit is not None:
         items = items[:args.limit]
 
+    progress = Progress(len(items), enabled=not args.quiet)
     rows = []
     for name, version in items:
+        progress.step(name)
         staleness = repology.staleness(name, version)
         package = apt.details(name, str(version))
         rows.append((staleness, package, score.classified_score(staleness, package), _patch_class_counts(package)))
+    progress.finish()
 
     behind = sum(1 for staleness, _, _, _ in rows if staleness.state == StalenessState.BEHIND)
     carrying = sum(1 for _, package, _, _ in rows if package.state == DivergenceState.PATCHED)
@@ -389,7 +418,7 @@ def _score_command(args):
     repology = _bulk_repology()
     patches = DebianPatchesSource(_http_client())
 
-    drifts = _gather_score(repology, patches, packages, limit=args.limit)
+    drifts = _gather_score(repology, patches, packages, limit=args.limit, progress_enabled=not args.quiet)
     _summarise_score(drifts)
 
     selected = _select_score(drifts, args.show_all)

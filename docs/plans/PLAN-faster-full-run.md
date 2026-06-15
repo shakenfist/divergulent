@@ -96,7 +96,7 @@ they can land in any order.
 |-------|------|--------|
 | 1. Per-host rate-limit tuning | PLAN-faster-full-run-phase-01-rate-limits.md | Complete |
 | 2. Repology bulk staleness | PLAN-faster-full-run-phase-02-repology-bulk.md | Complete |
-| 3. Progress reporting for long-running commands | PLAN-faster-full-run-phase-03-progress.md | Not started |
+| 3. Progress reporting for long-running commands | PLAN-faster-full-run-phase-03-progress.md | Complete |
 
 ## Agent guidance
 
