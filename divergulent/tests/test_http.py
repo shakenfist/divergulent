@@ -96,6 +96,21 @@ class HttpClientTestCase(testtools.TestCase):
         # Different hosts must not wait on each other.
         self.assertEqual([], self.slept)
 
+    def test_per_host_interval_override(self):
+        payloads = [b'{"n": 1}', b'{"n": 2}']
+
+        def urlopen(request, timeout=None):
+            return FakeResponse(payloads.pop(0))
+
+        client = http.HttpClient(
+            self.cache, urlopen=urlopen, clock=self._clock, sleep=self._sleep,
+            min_interval=1.0, host_intervals={'fast.example': 0.25}, user_agent='ua/1')
+        client.get_json('https://fast.example/a', cache_namespace='r', cache_key='a', ttl_seconds=100)
+        client.get_json('https://fast.example/b', cache_namespace='r', cache_key='b', ttl_seconds=100)
+        # The override host waits its shorter interval, not the 1.0s default.
+        self.assertEqual(1, len(self.slept))
+        self.assertAlmostEqual(0.25, self.slept[0])
+
     def test_url_error_returns_none(self):
         def urlopen(request, timeout=None):
             raise urllib.error.URLError('boom')

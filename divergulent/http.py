@@ -28,6 +28,7 @@ class HttpClient:
 
     def __init__(self, cache: Cache, *, user_agent: str = DEFAULT_USER_AGENT,
                  timeout: float = 10.0, min_interval: float = 1.0,
+                 host_intervals: dict[str, float] | None = None,
                  urlopen: Callable[..., Any] = urllib.request.urlopen,
                  clock: Callable[[], float] = time.monotonic,
                  sleep: Callable[[float], None] = time.sleep) -> None:
@@ -35,11 +36,15 @@ class HttpClient:
         self._user_agent = user_agent
         self._timeout = timeout
         self._min_interval = min_interval
+        # Optional per-host minimum interval overriding min_interval, so a host
+        # with no documented rate limit can run faster than the conservative
+        # default while a rate-limited host (e.g. Repology) stays slow.
+        self._host_intervals = host_intervals or {}
         self._urlopen = urlopen
         self._clock = clock
         self._sleep = sleep
         # Last request time per host, so different hosts do not serialise
-        # against each other while each still gets at most one request/second.
+        # against each other while each still gets its own interval.
         self._last_request: dict[str, float] = {}
 
     def get_json(self, url: str, *, cache_namespace: str, cache_key: str,
@@ -88,10 +93,11 @@ class HttpClient:
 
     def _throttle(self, url: str) -> None:
         host = urllib.parse.urlparse(url).netloc
+        interval = self._host_intervals.get(host, self._min_interval)
         now = self._clock()
         last = self._last_request.get(host)
         if last is not None:
-            wait = self._min_interval - (now - last)
+            wait = interval - (now - last)
             if wait > 0:
                 self._sleep(wait)
                 now = self._clock()
