@@ -5,4 +5,5 @@ self-hosted-runner:
     - static
     - vm
     - debian-12
+    - debian-13
     - s

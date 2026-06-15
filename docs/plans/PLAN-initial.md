@@ -278,17 +278,12 @@ implemented because:
   justification holds — kept strictly separate from the
   deterministic, verifiable signals so it never muddies the
   no-cry-wolf core.
-- **CI sample-output artifact** — add a CI job that runs on a
-  `debian:13` image, computes divergulent's output for that
-  sample machine (e.g. `score`/`divergence`), and uploads the
-  rendered report as a build artifact, so reviewers can see how
-  the output renders on a real system (and as a live end-to-end
-  smoke test). Caveat: a full-machine run is thousands of
-  packages and many polite (≥1 req/s) requests to Repology and
-  sources.debian.org — so this job must scope itself (a
-  curated package subset or `--limit`, warm/committed cache) to
-  stay fast and a good API citizen, rather than scanning the
-  whole image.
+- **CI sample-output artifact** — *done*, via
+  [PLAN-full-machine-run.md](PLAN-full-machine-run.md): a
+  self-hosted Debian 13 runner runs a full Tier-1 `score`
+  (made polite by the count-based overview rather than scoping
+  with `--limit`) and uploads the rendered report as an
+  artifact, with the cache persisted across runs.
 
 ### Bugs fixed during this work
 
