@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import enum
 import re
+from dataclasses import dataclass
 
 
 class PatchClass(enum.Enum):
@@ -124,3 +125,25 @@ def classify(text: str, name: str | None = None) -> PatchClass:
     if _looks_debian_authored(text, name):
         return PatchClass.DEBIAN_ONLY
     return PatchClass.UNKNOWN
+
+
+@dataclass(frozen=True)
+class BugRef:
+    tracker: str  # 'debian', 'ubuntu', 'upstream', ...
+    ref: str      # a bug number, "#number", or a URL, as declared
+
+
+def bug_references(text: str) -> list[BugRef]:
+    '''Return the bug references a patch declares via DEP-3 Bug/Bug-<vendor> fields.
+
+    ``Bug`` is the generic/upstream tracker; ``Bug-Debian`` etc. name a vendor.
+    The raw value is returned as-is; linkifying (e.g. to bugs.debian.org) is the
+    caller's job.
+    '''
+    refs = []
+    for key, value in parse_header(text).items():
+        if key == 'bug':
+            refs.append(BugRef('upstream', value))
+        elif key.startswith('bug-'):
+            refs.append(BugRef(key[len('bug-'):], value))
+    return refs

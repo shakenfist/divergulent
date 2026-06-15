@@ -1,5 +1,6 @@
 import testtools
 
+from divergulent.dep3 import PatchClass
 from divergulent.sources import debian_patches
 from divergulent.sources.base import Source
 from divergulent.sources.debian_patches import DebianPatchesSource, DivergenceState
@@ -7,6 +8,7 @@ from divergulent.sources.debian_patches import DebianPatchesSource, DivergenceSt
 
 DEBIAN_ONLY = 'Description: distro tweak\nForwarded: not-needed\nOrigin: vendor\n\n--- a/x\n'
 FORWARDED = 'Description: upstreamable\nForwarded: https://lists.example/1\n\n--- a/x\n'
+WITH_BUG = 'Description: fix thing\nForwarded: yes\nBug-Debian: https://bugs.debian.org/123\n\n--- a/x\n'
 BARE = '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n'
 
 
@@ -140,3 +142,39 @@ class DivergenceTestCase(testtools.TestCase):
     def test_is_a_source(self):
         self.assertIsInstance(DebianPatchesSource(FakeHttp()), Source)
         self.assertEqual('debian-patches', debian_patches.DebianPatchesSource.name)
+
+
+class DetailsTestCase(testtools.TestCase):
+
+    def test_per_patch_detail_with_bug(self):
+        http = FakeHttp(
+            json_by_key={
+                'foo:1.2-1': {'format': '3.0 (quilt)', 'patches': ['a.patch', 'b.patch']},
+                'base:foo:1.2-1': _raw_url('foo', '1.2-1', 'a.patch'),
+            },
+            text_by_key={'foo:1.2-1:a.patch': WITH_BUG, 'foo:1.2-1:b.patch': BARE})
+        package = DebianPatchesSource(http).details('foo', '1.2-1')
+        self.assertEqual(DivergenceState.PATCHED, package.state)
+        self.assertEqual(2, len(package.patches))
+
+        first = package.patches[0]
+        self.assertEqual('a.patch', first.name)
+        self.assertEqual(PatchClass.FORWARDED, first.patch_class)
+        self.assertEqual('fix thing', first.description)
+        self.assertEqual(1, len(first.bugs))
+        self.assertEqual('debian', first.bugs[0].tracker)
+
+        second = package.patches[1]
+        self.assertEqual(PatchClass.UNKNOWN, second.patch_class)
+        self.assertEqual([], second.bugs)
+
+    def test_native_has_no_patches(self):
+        http = FakeHttp(json_by_key={'foo:1.2': {'format': '3.0 (native)', 'patches': []}})
+        package = DebianPatchesSource(http).details('foo', '1.2')
+        self.assertEqual(DivergenceState.NATIVE, package.state)
+        self.assertEqual([], package.patches)
+
+    def test_unresolved_has_no_patches(self):
+        package = DebianPatchesSource(FakeHttp()).details('foo', '1.2-1')
+        self.assertEqual(DivergenceState.UNKNOWN, package.state)
+        self.assertEqual([], package.patches)

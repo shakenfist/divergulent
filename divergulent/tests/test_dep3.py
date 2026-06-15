@@ -109,3 +109,21 @@ class HeuristicTestCase(testtools.TestCase):
         # A deb-* filename with an explicit "Forwarded: yes" is still forwarded.
         text = 'Forwarded: yes\n\n' + DIFF_BODY
         self.assertEqual(PatchClass.FORWARDED, dep3.classify(text, name='deb-thing.diff'))
+
+
+class BugReferencesTestCase(testtools.TestCase):
+
+    def test_debian_and_upstream_bugs(self):
+        text = 'Description: x\nBug-Debian: https://bugs.debian.org/123\nBug: https://up/2\n\n' + DIFF_BODY
+        refs = dep3.bug_references(text)
+        self.assertEqual([('debian', 'https://bugs.debian.org/123'), ('upstream', 'https://up/2')],
+                         [(r.tracker, r.ref) for r in refs])
+
+    def test_vendor_bug(self):
+        text = 'Description: x\nBug-Ubuntu: https://launchpad.net/bugs/9\n\n' + DIFF_BODY
+        refs = dep3.bug_references(text)
+        self.assertEqual(1, len(refs))
+        self.assertEqual('ubuntu', refs[0].tracker)
+
+    def test_no_bugs(self):
+        self.assertEqual([], dep3.bug_references(DIFF_BODY))

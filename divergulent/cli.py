@@ -55,6 +55,11 @@ def _build_parser():
         '--limit', type=int, default=None,
         help='Process at most this many source packages (this command queries both axes per package).')
 
+    showcmd = subparsers.add_parser(
+        'show', help='Show per-patch detail (with Debian bug references) for one installed package.')
+    showcmd.add_argument('package', help='A binary or source package name that is installed.')
+    showcmd.add_argument('--json', action='store_true', help='Emit the detail as JSON.')
+
     return parser
 
 
@@ -282,6 +287,104 @@ def _score_command(args):
     return 0
 
 
+def _resolve_package(name, packages):
+    by_binary = {}
+    by_source = {}
+    for package in packages:
+        by_binary.setdefault(package.binary_name, (package.source_name, package.source_version))
+        by_source.setdefault(package.source_name, (package.source_name, package.source_version))
+    if name in by_binary:
+        return by_binary[name]
+    if name in by_source:
+        return by_source[name]
+    return None
+
+
+def _bug_link(bug):
+    ref = bug.ref.strip()
+    if ref.startswith('http://') or ref.startswith('https://'):
+        return ref
+    if bug.tracker == 'debian':
+        number = ref.lstrip('#')
+        if number.isdigit():
+            return 'https://bugs.debian.org/%s' % number
+    return ref
+
+
+_PATCH_STATE_NOTE = {
+    DivergenceState.NATIVE: 'native package (no upstream/Debian split)',
+    DivergenceState.CLEAN: 'no carried patches',
+    DivergenceState.UNKNOWN: 'could not assess patches',
+}
+
+
+def _render_show(source, version, staleness, package, divergence, drift):
+    newest = ' -> newest %s' % staleness.newest_version if staleness.newest_version else ''
+    lines = [
+        '%s %s' % (source, version),
+        '  staleness: %s%s' % (staleness.state.value, newest),
+        '  drift score: %d' % drift.score,
+    ]
+    if package.patches:
+        lines.append('  patches: %d total (%d Debian-only, %d forwarded, %d unknown)' % (
+            divergence.total, divergence.debian_only, divergence.forwarded, divergence.unknown))
+        for patch in package.patches:
+            lines.append('')
+            lines.append('  %s  [%s]' % (patch.name, patch.patch_class.value))
+            if patch.description:
+                lines.append('      %s' % patch.description)
+            if patch.bugs:
+                for bug in patch.bugs:
+                    lines.append('      bug (%s): %s' % (bug.tracker, _bug_link(bug)))
+            else:
+                lines.append('      bug: none declared')
+    else:
+        lines.append('  patches: %s' % _PATCH_STATE_NOTE.get(package.state, 'none'))
+    return '\n'.join(lines)
+
+
+def _show_command(args):
+    resolved = _resolve_package(args.package, inventory.list_installed())
+    if resolved is None:
+        print("divergulent: '%s' is not an installed package" % args.package, file=sys.stderr)
+        return 1
+    source_name, source_version = resolved
+
+    http = HttpClient(Cache(default_cache_dir()))
+    staleness = RepologySource(http).staleness(source_name, source_version)
+    patches = DebianPatchesSource(http)
+    package = patches.details(source_name, str(source_version))
+    divergence = patches.divergence(source_name, str(source_version))
+    drift = score.combine(staleness, divergence)
+
+    if args.json:
+        print(json.dumps({
+            'source': source_name,
+            'version': str(source_version),
+            'score': drift.score,
+            'staleness': {'state': staleness.state.value, 'newest': staleness.newest_version},
+            'divergence': {
+                'state': package.state.value,
+                'total': divergence.total,
+                'debian_only': divergence.debian_only,
+                'forwarded': divergence.forwarded,
+                'unknown': divergence.unknown,
+            },
+            'patches': [
+                {
+                    'name': p.name,
+                    'class': p.patch_class.value,
+                    'description': p.description,
+                    'forwarded': p.forwarded,
+                    'bugs': [{'tracker': b.tracker, 'ref': b.ref, 'url': _bug_link(b)} for b in p.bugs],
+                }
+                for p in package.patches],
+        }, indent=2))
+    else:
+        print(_render_show(source_name, str(source_version), staleness, package, divergence, drift))
+    return 0
+
+
 def main(argv=None):
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -294,6 +397,8 @@ def main(argv=None):
         return _divergence_command(args)
     if args.command == 'score':
         return _score_command(args)
+    if args.command == 'show':
+        return _show_command(args)
 
     parser.print_help()
     return 1
