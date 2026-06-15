@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from divergulent.sources.debian_patches import DivergenceSummary
+from divergulent.dep3 import PatchClass
+from divergulent.sources.debian_patches import DivergenceSummary, PackagePatches
 from divergulent.sources.repology import StalenessResult, StalenessState
 
 
@@ -18,8 +19,12 @@ from divergulent.sources.repology import StalenessResult, StalenessState
 # forwarded ones (that needs patch bodies; see `show` / `--classify`), so it
 # weights total carried patches. Being behind upstream is weighted low: it is
 # expected on a stable Debian release.
-W_PATCH = 1    # a carried patch
-W_BEHIND = 2   # behind pure upstream (mild: expected on a stable release)
+W_PATCH = 1          # a carried patch (default view: class unknown)
+W_BEHIND = 2         # behind pure upstream (mild: expected on a stable release)
+# Under --classify we know each patch's class, so we weight the signal:
+W_DEBIAN_ONLY = 3    # an undocumented distro-only carried patch: strongest signal
+W_UNKNOWN_PATCH = 1  # a carried patch we could not classify
+# Forwarded patches are benign drift headed upstream and score 0.
 
 
 @dataclass(frozen=True)
@@ -44,3 +49,15 @@ def combine(staleness: StalenessResult, divergence: DivergenceSummary) -> Packag
         staleness=staleness,
         divergence=divergence,
         score=score)
+
+
+def classified_score(staleness: StalenessResult, package: PackagePatches) -> int:
+    '''Score using the per-patch classification available under --classify.
+
+    Debian-only patches dominate (the supply-chain signal); forwarded patches
+    score 0; unclassified patches count mildly; being behind is mild.
+    '''
+    debian_only = sum(1 for p in package.patches if p.patch_class == PatchClass.DEBIAN_ONLY)
+    unknown = sum(1 for p in package.patches if p.patch_class == PatchClass.UNKNOWN)
+    score = W_BEHIND if staleness.state == StalenessState.BEHIND else 0
+    return score + debian_only * W_DEBIAN_ONLY + unknown * W_UNKNOWN_PATCH

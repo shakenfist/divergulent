@@ -8,8 +8,14 @@ from divergulent import score
 from divergulent.cache import Cache, default_cache_dir
 from divergulent.dep3 import PatchClass
 from divergulent.http import HttpClient
+from divergulent.sources.apt_patches import AptSourcePatches
 from divergulent.sources.debian_patches import DebianPatchesSource, DivergenceState, DivergenceSummary
 from divergulent.sources.repology import RepologySource, StalenessState
+
+
+_CLASSIFY_UNAVAILABLE = (
+    'divergulent: --classify needs deb-src source indices; enable deb-src and run '
+    "'apt-get update'. Falling back to patch counts.")
 
 
 def _build_parser():
@@ -46,6 +52,10 @@ def _build_parser():
     diverge.add_argument(
         '--limit', type=int, default=None,
         help='Process at most this many source packages (each is one or more network requests).')
+    diverge.add_argument(
+        '--classify', action='store_true',
+        help='Classify patches (Debian-only/forwarded/unknown) by fetching source packages '
+             'via apt. Needs deb-src indices.')
 
     scorecmd = subparsers.add_parser(
         'score', help='Combine staleness and divergence into a ranked, whole-machine drift report.')
@@ -57,6 +67,10 @@ def _build_parser():
     scorecmd.add_argument(
         '--limit', type=int, default=None,
         help='Process at most this many source packages (this command queries both axes per package).')
+    scorecmd.add_argument(
+        '--classify', action='store_true',
+        help='Classify carried patches (via apt source packages) and weight Debian-only patches. '
+             'Needs deb-src indices.')
 
     showcmd = subparsers.add_parser(
         'show', help='Show per-patch detail (with Debian bug references) for one installed package.')
@@ -187,8 +201,53 @@ def _summarise_divergence(results):
         file=sys.stderr)
 
 
+def _divergence_classified(apt, packages, args):
+    items = list(_dedup_sources(packages).items())
+    if args.limit is not None:
+        items = items[:args.limit]
+    results = [(p, _patch_class_counts(p)) for p in (apt.details(n, str(v)) for n, v in items)]
+
+    patched = sum(1 for p, _ in results if p.state == DivergenceState.PATCHED)
+    total_debian_only = sum(counts[0] for _, counts in results)
+    print(
+        '%d source packages: %d carry patches, %d Debian-only patches total' % (
+            len(results), patched, total_debian_only),
+        file=sys.stderr)
+
+    selected = results if args.show_all else [pc for pc in results if pc[1][0] > 0]
+    selected = sorted(selected, key=lambda pc: (-pc[1][0], -len(pc[0].patches), pc[0].source_package))
+
+    if args.json:
+        data = [
+            {
+                'source': p.source_package,
+                'version': p.version,
+                'format': p.source_format,
+                'total': len(p.patches),
+                'debian_only': counts[0],
+                'forwarded': counts[1],
+                'unknown': counts[2],
+                'state': p.state.value,
+            }
+            for p, counts in selected]
+        print(json.dumps(data, indent=2))
+    else:
+        rows = [
+            (p.source_package, p.version, str(len(p.patches)),
+             str(counts[0]), str(counts[1]), str(counts[2]), p.state.value)
+            for p, counts in selected]
+        print(_table(
+            ('SOURCE', 'VERSION', 'TOTAL', 'DEBIAN-ONLY', 'FORWARDED', 'UNKNOWN', 'STATE'), rows))
+    return 0
+
+
 def _divergence_command(args):
     packages = inventory.list_installed()
+    if args.classify:
+        apt = AptSourcePatches()
+        if apt.available():
+            return _divergence_classified(apt, packages, args)
+        print(_CLASSIFY_UNAVAILABLE, file=sys.stderr)
     source = DebianPatchesSource(HttpClient(Cache(default_cache_dir())))
     results = _gather_divergence(source, packages, limit=args.limit)
     _summarise_divergence(results)
@@ -249,8 +308,61 @@ def _summarise_score(drifts):
         file=sys.stderr)
 
 
+def _score_classified(apt, packages, args):
+    repology = RepologySource(HttpClient(Cache(default_cache_dir())))
+    items = list(_dedup_sources(packages).items())
+    if args.limit is not None:
+        items = items[:args.limit]
+
+    rows = []
+    for name, version in items:
+        staleness = repology.staleness(name, version)
+        package = apt.details(name, str(version))
+        rows.append((staleness, package, score.classified_score(staleness, package), _patch_class_counts(package)))
+
+    behind = sum(1 for staleness, _, _, _ in rows if staleness.state == StalenessState.BEHIND)
+    carrying = sum(1 for _, package, _, _ in rows if package.state == DivergenceState.PATCHED)
+    total_debian_only = sum(counts[0] for _, _, _, counts in rows)
+    print(
+        '%d source packages assessed: %d behind upstream, %d carry patches, '
+        '%d Debian-only patches total' % (len(rows), behind, carrying, total_debian_only),
+        file=sys.stderr)
+
+    selected = rows if args.show_all else [r for r in rows if r[2] > 0]
+    selected = sorted(selected, key=lambda r: (-r[2], -r[3][0], r[1].source_package))
+
+    if args.json:
+        data = [
+            {
+                'source': package.source_package,
+                'version': package.version,
+                'score': drift_score,
+                'staleness': staleness.state.value,
+                'newest': staleness.newest_version,
+                'debian_only': counts[0],
+                'forwarded': counts[1],
+                'unknown': counts[2],
+                'total_patches': len(package.patches),
+            }
+            for staleness, package, drift_score, counts in selected]
+        print(json.dumps(data, indent=2))
+    else:
+        out_rows = [
+            (package.source_package, package.version, staleness.state.value, staleness.newest_version or '?',
+             str(counts[0]), str(counts[1]), str(counts[2]), str(drift_score))
+            for staleness, package, drift_score, counts in selected]
+        print(_table(
+            ('SOURCE', 'VERSION', 'STALENESS', 'NEWEST', 'DEB-ONLY', 'FORWARDED', 'UNKNOWN', 'SCORE'), out_rows))
+    return 0
+
+
 def _score_command(args):
     packages = inventory.list_installed()
+    if args.classify:
+        apt = AptSourcePatches()
+        if apt.available():
+            return _score_classified(apt, packages, args)
+        print(_CLASSIFY_UNAVAILABLE, file=sys.stderr)
     http = HttpClient(Cache(default_cache_dir()))
     repology = RepologySource(http)
     patches = DebianPatchesSource(http)

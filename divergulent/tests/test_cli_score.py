@@ -7,8 +7,9 @@ import testtools
 
 from divergulent import cli
 from divergulent import debversion
+from divergulent.dep3 import PatchClass
 from divergulent.inventory import InstalledPackage
-from divergulent.sources.debian_patches import DivergenceState, DivergenceSummary
+from divergulent.sources.debian_patches import DivergenceState, DivergenceSummary, PackagePatches, PatchDetail
 from divergulent.sources.repology import StalenessResult, StalenessState
 
 
@@ -136,3 +137,45 @@ class ScoreCommandTestCase(testtools.TestCase):
         self.assertEqual(0, rc)
         self.assertIn('bash', output)
         self.assertIn('glibc', output)
+
+
+def _pp(name, classes, state=DivergenceState.PATCHED):
+    patches = [PatchDetail('p%d.patch' % i, c, None, None, []) for i, c in enumerate(classes)]
+    return PackagePatches(name, '1.0-1', '3.0 (quilt)', state, patches)
+
+
+class FakeApt:
+    def __init__(self, by_name, available=True):
+        self.by_name = by_name
+        self._available = available
+
+    def available(self):
+        return self._available
+
+    def details(self, name, version):
+        return self.by_name[name]
+
+
+class ScoreClassifyTestCase(testtools.TestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.packages = [_pkg('bash', 'bash', '5.2-1')]
+        self.repology = FakeRepology({'bash': _stale('bash', StalenessState.BEHIND)})
+        self.apt = FakeApt({
+            'bash': _pp('bash', [PatchClass.DEBIAN_ONLY, PatchClass.DEBIAN_ONLY, PatchClass.UNKNOWN]),
+        })
+
+    def test_classify_weights_debian_only(self):
+        out = io.StringIO()
+        with mock.patch('divergulent.cli.inventory.list_installed', return_value=self.packages), \
+                mock.patch('divergulent.cli.RepologySource', return_value=self.repology), \
+                mock.patch('divergulent.cli.AptSourcePatches', return_value=self.apt), \
+                contextlib.redirect_stdout(out):
+            rc = cli.main(['score', '--classify', '--json'])
+        self.assertEqual(0, rc)
+        data = json.loads(out.getvalue())
+        self.assertEqual(1, len(data))
+        expected = cli.score.W_BEHIND + 2 * cli.score.W_DEBIAN_ONLY + 1 * cli.score.W_UNKNOWN_PATCH
+        self.assertEqual(expected, data[0]['score'])
+        self.assertEqual(2, data[0]['debian_only'])
