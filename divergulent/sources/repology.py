@@ -38,6 +38,10 @@ BULK_NAMESPACE = 'repology-bulk'
 BULK_PAGE_NAMESPACE = 'repology-bulk-page'
 BULK_TTL_SECONDS = 24 * 60 * 60
 PROJECTS_PER_PAGE = 200
+# Safety bound on the bulk sweep. debian_unstable is ~175 pages at 200/page;
+# this caps an unbounded loop if a server response keeps the pager moving but
+# never signals the end (the no-forward-progress check handles the stuck case).
+BULK_MAX_PAGES = 1000
 
 # Repology statuses that do not represent a usable, trusted version.
 _IGNORED_STATUSES = frozenset({'ignored', 'incorrect', 'untrusted', 'noscheme'})
@@ -109,7 +113,8 @@ def _select_newest(entries: Sequence[dict[str, Any]]) -> str | None:
     '''
     usable = [
         entry for entry in entries
-        if entry.get('version')
+        if isinstance(entry, dict)
+        and entry.get('version')
         and entry.get('status') not in _IGNORED_STATUSES
         and debversion.try_parse(entry['version']) is not None]
     if not usable:
@@ -151,7 +156,8 @@ def _projects_url(repo: str, start: str | None) -> str:
 
 
 def build_staleness_map(http_client: HttpClient, cache: Cache, repo: str = 'debian_unstable',
-                        page_size: int = PROJECTS_PER_PAGE) -> dict[str, str]:
+                        page_size: int = PROJECTS_PER_PAGE,
+                        max_pages: int = BULK_MAX_PAGES) -> dict[str, str]:
     '''Return {Debian srcname: newest version} for the whole repo, cached ~24h.
 
     Instead of one Repology request per source package, page through the entire
@@ -165,7 +171,7 @@ def build_staleness_map(http_client: HttpClient, cache: Cache, repo: str = 'debi
 
     mapping: dict[str, str] = {}
     start = None
-    while True:
+    for _ in range(max_pages):
         page = http_client.get_json(
             _projects_url(repo, start),
             cache_namespace=BULK_PAGE_NAMESPACE,
@@ -174,11 +180,15 @@ def build_staleness_map(http_client: HttpClient, cache: Cache, repo: str = 'debi
         if not isinstance(page, dict) or not page:
             break
         for entries in page.values():
+            # External data is untrusted: a project value that is not a list of
+            # entry dicts is skipped rather than crashing the whole sweep.
+            if not isinstance(entries, list):
+                continue
             newest = _select_newest(entries)
             if newest is None:
                 continue
             for entry in entries:
-                if entry.get('repo') == repo and entry.get('srcname'):
+                if isinstance(entry, dict) and entry.get('repo') == repo and entry.get('srcname'):
                     mapping[entry['srcname']] = newest
         if len(page) < page_size:
             break

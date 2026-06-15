@@ -12,8 +12,12 @@ class FakeResponse:
     def __init__(self, payload):
         self._payload = payload
 
-    def read(self):
-        return self._payload
+    def read(self, amt=None):
+        # urllib's response.read(amt) reads at most amt bytes; mirror that so the
+        # client's size-cap probe (read(max_bytes + 1)) behaves like the real one.
+        if amt is None:
+            return self._payload
+        return self._payload[:amt]
 
     def __enter__(self):
         return self
@@ -165,3 +169,23 @@ class HttpClientTestCase(testtools.TestCase):
         client = self._client(urlopen)
         self.assertIsNone(
             client.get_text('https://sources.debian.org/p', cache_namespace='d', cache_key='k', ttl_seconds=100))
+
+    def test_response_at_size_cap_is_accepted(self):
+        def urlopen(request, timeout=None):
+            return FakeResponse(b'{"a": 1}')
+
+        client = http.HttpClient(
+            self.cache, urlopen=urlopen, clock=self._clock, sleep=self._sleep,
+            min_interval=1.0, max_bytes=8, user_agent='ua/1')
+        data = client.get_json('https://repology.org/x', cache_namespace='r', cache_key='k', ttl_seconds=100)
+        self.assertEqual({'a': 1}, data)
+
+    def test_oversized_response_returns_none(self):
+        def urlopen(request, timeout=None):
+            return FakeResponse(b'{"a": 1, "b": 2}')
+
+        client = http.HttpClient(
+            self.cache, urlopen=urlopen, clock=self._clock, sleep=self._sleep,
+            min_interval=1.0, max_bytes=8, user_agent='ua/1')
+        self.assertIsNone(
+            client.get_json('https://repology.org/x', cache_namespace='r', cache_key='k', ttl_seconds=100))

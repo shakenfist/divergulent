@@ -22,6 +22,10 @@ from divergulent.cache import Cache
 
 DEFAULT_USER_AGENT = f'divergulent/{__version__} (+https://github.com/shakenfist/divergulent)'
 
+# Refuse responses larger than this; external data is untrusted and we never
+# need a body this big.
+MAX_RESPONSE_BYTES = 64 * 1024 * 1024
+
 
 class HttpClient:
     '''Fetch resources politely, caching results and rate-limiting the network.'''
@@ -29,6 +33,7 @@ class HttpClient:
     def __init__(self, cache: Cache, *, user_agent: str = DEFAULT_USER_AGENT,
                  timeout: float = 10.0, min_interval: float = 1.0,
                  host_intervals: dict[str, float] | None = None,
+                 max_bytes: int = MAX_RESPONSE_BYTES,
                  urlopen: Callable[..., Any] = urllib.request.urlopen,
                  clock: Callable[[], float] = time.monotonic,
                  sleep: Callable[[float], None] = time.sleep) -> None:
@@ -36,6 +41,7 @@ class HttpClient:
         self._user_agent = user_agent
         self._timeout = timeout
         self._min_interval = min_interval
+        self._max_bytes = max_bytes
         # Optional per-host minimum interval overriding min_interval, so a host
         # with no documented rate limit can run faster than the conservative
         # default while a rate-limited host (e.g. Repology) stays slow.
@@ -87,7 +93,12 @@ class HttpClient:
         try:
             request = urllib.request.Request(url, headers={'User-Agent': self._user_agent})
             with self._urlopen(request, timeout=self._timeout) as response:
-                return response.read()
+                # Read one byte past the cap so we can tell "exactly at the cap"
+                # from "over it"; an over-cap body is treated as a failure.
+                data = response.read(self._max_bytes + 1)
+                if len(data) > self._max_bytes:
+                    return None
+                return data
         except (urllib.error.URLError, TimeoutError, OSError):
             return None
 

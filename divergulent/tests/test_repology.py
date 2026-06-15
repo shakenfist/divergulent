@@ -193,6 +193,39 @@ class BulkMapTestCase(testtools.TestCase):
         self.assertEqual({'x': '9'}, repology.build_staleness_map(http, cache, repo='debian_unstable'))
         self.assertEqual(0, http.calls)
 
+    def test_malformed_page_values_are_skipped(self):
+        # External data is untrusted: project values that are not lists of dicts,
+        # and non-dict entries within a list, must be skipped, not crash.
+        page = {
+            'good': [_entry('debian_unstable', '3.0', 'newest', 'good')],
+            'not_a_list': 'oops',
+            'null': None,
+            'mixed': ['junk', _entry('debian_unstable', '4.0', 'newest', 'mixed')],
+        }
+        mapping = repology.build_staleness_map(
+            FakePagedHttp([page]), FakeCache(), repo='debian_unstable', page_size=10)
+        self.assertEqual('3.0', mapping['good'])
+        self.assertEqual('4.0', mapping['mixed'])
+        self.assertNotIn('not_a_list', mapping)
+        self.assertNotIn('null', mapping)
+
+    def test_max_pages_caps_the_sweep(self):
+        # A server that always returns a full page and keeps the pager moving
+        # must not loop forever; max_pages bounds it.
+        class EndlessHttp:
+            def __init__(self):
+                self.calls = 0
+
+            def get_json(self, url, *, cache_namespace, cache_key, ttl_seconds):
+                self.calls += 1
+                # A fresh full page each time, keyed so next_start always advances.
+                name = 'pkg%05d' % self.calls
+                return {name: [_entry('debian_unstable', '1.0', 'newest', name)]}
+
+        http = EndlessHttp()
+        repology.build_staleness_map(http, FakeCache(), repo='debian_unstable', page_size=1, max_pages=5)
+        self.assertEqual(5, http.calls)
+
 
 class RepologyBulkSourceTestCase(testtools.TestCase):
 
