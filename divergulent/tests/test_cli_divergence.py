@@ -167,3 +167,12 @@ class DivergenceClassifyTestCase(testtools.TestCase):
         self.assertIn('deb-src', err.getvalue())
         # Fell back to the Tier 1 count view (bash carries 2 patches).
         self.assertIn('bash', out.getvalue())
+
+
+class HttpClientFactoryTestCase(testtools.TestCase):
+
+    def test_sources_debian_interval_override(self):
+        client = cli._http_client()
+        self.assertEqual(cli.SOURCES_DEBIAN_INTERVAL, client._host_intervals['sources.debian.org'])
+        # Repology is not overridden; it keeps the conservative default.
+        self.assertNotIn('repology.org', client._host_intervals)

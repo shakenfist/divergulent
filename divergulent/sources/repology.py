@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from divergulent import debversion
+from divergulent.cache import Cache
 from divergulent.debversion import DebianVersion
 from divergulent.http import HttpClient
 
@@ -31,6 +32,16 @@ from divergulent.http import HttpClient
 REPOLOGY_BASE = 'https://repology.org'
 CACHE_NAMESPACE = 'repology'
 CACHE_TTL_SECONDS = 24 * 60 * 60  # 24 hours
+
+# Bulk staleness (whole-repo sweep) caches.
+BULK_NAMESPACE = 'repology-bulk'
+BULK_PAGE_NAMESPACE = 'repology-bulk-page'
+BULK_TTL_SECONDS = 24 * 60 * 60
+PROJECTS_PER_PAGE = 200
+# Safety bound on the bulk sweep. debian_unstable is ~175 pages at 200/page;
+# this caps an unbounded loop if a server response keeps the pager moving but
+# never signals the end (the no-forward-progress check handles the stuck case).
+BULK_MAX_PAGES = 1000
 
 # Repology statuses that do not represent a usable, trusted version.
 _IGNORED_STATUSES = frozenset({'ignored', 'incorrect', 'untrusted', 'noscheme'})
@@ -80,49 +91,129 @@ class RepologySource:
         return data
 
     def newest_version(self, entries: Sequence[dict[str, Any]]) -> str | None:
-        '''Return the newest stable upstream version among project entries.
-
-        Prefer entries flagged "newest" (the latest stable). Otherwise fall back
-        to the maximum valid version. Entries with an ignored/incorrect/
-        untrusted/noscheme status are skipped.
-        '''
-        # Skip entries whose version is not a valid Debian version: other
-        # distributions' schemes (e.g. Gentoo's "5.3_p15") cannot be ordered
-        # with Debian semantics, and feeding them to the comparator would raise.
-        usable = [
-            entry for entry in entries
-            if entry.get('version')
-            and entry.get('status') not in _IGNORED_STATUSES
-            and debversion.try_parse(entry['version']) is not None]
-        if not usable:
-            return None
-
-        stable = [entry['version'] for entry in usable if entry.get('status') == 'newest']
-        candidates = stable or [entry['version'] for entry in usable]
-
-        best = candidates[0]
-        for version in candidates[1:]:
-            if debversion.compare(version, best) > 0:
-                best = version
-        return best
+        '''Return the newest stable upstream version among project entries.'''
+        return _select_newest(entries)
 
     def staleness(self, source_package: str, installed_version: DebianVersion) -> StalenessResult:
         '''Decide whether ``installed_version`` of ``source_package`` is behind.'''
         entries = self.lookup(source_package)
-        if entries is None:
-            return StalenessResult(source_package, installed_version, None, StalenessState.UNKNOWN)
+        newest = _select_newest(entries) if entries is not None else None
+        return StalenessResult(
+            source_package, installed_version, newest, _state_for(installed_version, newest))
 
-        newest = self.newest_version(entries)
-        if newest is None:
-            return StalenessResult(source_package, installed_version, None, StalenessState.UNKNOWN)
 
-        # Repology versions are upstream-only; compare against the upstream part
-        # of the installed version, not its full epoch:upstream-revision form.
-        installed_upstream = installed_version.upstream_version
-        if debversion.try_parse(installed_upstream) is None:
-            return StalenessResult(source_package, installed_version, newest, StalenessState.UNKNOWN)
-        if debversion.compare(installed_upstream, newest) < 0:
-            state = StalenessState.BEHIND
-        else:
-            state = StalenessState.CURRENT
-        return StalenessResult(source_package, installed_version, newest, state)
+def _select_newest(entries: Sequence[dict[str, Any]]) -> str | None:
+    '''The newest stable upstream version among a project's Repology entries.
+
+    Prefer entries flagged "newest" (the latest stable); else the maximum valid
+    version. Entries with ignored/incorrect/untrusted/noscheme status, or a
+    version that is not a valid Debian version (other distros' schemes, e.g.
+    Gentoo's "5.3_p15", which cannot be ordered with Debian semantics), are
+    skipped.
+    '''
+    usable = [
+        entry for entry in entries
+        if isinstance(entry, dict)
+        and entry.get('version')
+        and entry.get('status') not in _IGNORED_STATUSES
+        and debversion.try_parse(entry['version']) is not None]
+    if not usable:
+        return None
+
+    stable = [entry['version'] for entry in usable if entry.get('status') == 'newest']
+    candidates = stable or [entry['version'] for entry in usable]
+
+    best = candidates[0]
+    for version in candidates[1:]:
+        if debversion.compare(version, best) > 0:
+            best = version
+    return best
+
+
+def _state_for(installed_version: DebianVersion, newest: str | None) -> StalenessState:
+    '''Classify staleness of an installed version against a newest version.
+
+    Repology versions are upstream-only, so compare against the upstream part of
+    the installed version, not its full epoch:upstream-revision form. Anything
+    not comparable is UNKNOWN, never a false BEHIND.
+    '''
+    if newest is None:
+        return StalenessState.UNKNOWN
+    installed_upstream = installed_version.upstream_version
+    if debversion.try_parse(installed_upstream) is None:
+        return StalenessState.UNKNOWN
+    if debversion.compare(installed_upstream, newest) < 0:
+        return StalenessState.BEHIND
+    return StalenessState.CURRENT
+
+
+def _projects_url(repo: str, start: str | None) -> str:
+    if start:
+        base = '%s/api/v1/projects/%s/' % (REPOLOGY_BASE, urllib.parse.quote(start))
+    else:
+        base = '%s/api/v1/projects/' % REPOLOGY_BASE
+    return '%s?inrepo=%s' % (base, urllib.parse.quote(repo))
+
+
+def build_staleness_map(http_client: HttpClient, cache: Cache, repo: str = 'debian_unstable',
+                        page_size: int = PROJECTS_PER_PAGE,
+                        max_pages: int = BULK_MAX_PAGES) -> dict[str, str]:
+    '''Return {Debian srcname: newest version} for the whole repo, cached ~24h.
+
+    Instead of one Repology request per source package, page through the entire
+    repo's project set once (cheap per-archive, not per-machine) and cache the
+    assembled map. Repology mandates <=1 req/s, so this is the slow part of a
+    cold run, but it is built once and reused.
+    '''
+    cached = cache.get(BULK_NAMESPACE, repo)
+    if cached is not None:
+        return cached
+
+    mapping: dict[str, str] = {}
+    start = None
+    for _ in range(max_pages):
+        page = http_client.get_json(
+            _projects_url(repo, start),
+            cache_namespace=BULK_PAGE_NAMESPACE,
+            cache_key='%s:%s' % (repo, start or ''),
+            ttl_seconds=BULK_TTL_SECONDS)
+        if not isinstance(page, dict) or not page:
+            break
+        for entries in page.values():
+            # External data is untrusted: a project value that is not a list of
+            # entry dicts is skipped rather than crashing the whole sweep.
+            if not isinstance(entries, list):
+                continue
+            newest = _select_newest(entries)
+            if newest is None:
+                continue
+            for entry in entries:
+                if isinstance(entry, dict) and entry.get('repo') == repo and entry.get('srcname'):
+                    mapping[entry['srcname']] = newest
+        if len(page) < page_size:
+            break
+        next_start = sorted(page)[-1]
+        if next_start == start:  # safety: no forward progress
+            break
+        start = next_start
+
+    cache.set(BULK_NAMESPACE, repo, mapping, ttl_seconds=BULK_TTL_SECONDS)
+    return mapping
+
+
+class RepologyBulkSource:
+    '''Staleness from a prebuilt {srcname: newest} map (bulk Repology data).
+
+    Drop-in for RepologySource in the whole-machine commands: a source absent
+    from the map is UNKNOWN (no per-package fallback request).
+    '''
+
+    name = 'repology'
+
+    def __init__(self, staleness_map: dict[str, str]) -> None:
+        self._map = staleness_map
+
+    def staleness(self, source_package: str, installed_version: DebianVersion) -> StalenessResult:
+        newest = self._map.get(source_package)
+        return StalenessResult(
+            source_package, installed_version, newest, _state_for(installed_version, newest))

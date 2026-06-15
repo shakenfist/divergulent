@@ -82,7 +82,7 @@ class StalenessCommandTestCase(testtools.TestCase):
     def _run(self, argv):
         out = io.StringIO()
         with mock.patch('divergulent.cli.inventory.list_installed', return_value=self.packages), \
-                mock.patch('divergulent.cli.RepologySource', return_value=self.source), \
+                mock.patch('divergulent.cli._bulk_repology', return_value=self.source), \
                 contextlib.redirect_stdout(out):
             rc = cli.main(argv)
         return rc, out.getvalue()

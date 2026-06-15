@@ -116,7 +116,7 @@ class ScoreCommandTestCase(testtools.TestCase):
     def _run(self, argv):
         out = io.StringIO()
         with mock.patch('divergulent.cli.inventory.list_installed', return_value=self.packages), \
-                mock.patch('divergulent.cli.RepologySource', return_value=self.repology), \
+                mock.patch('divergulent.cli._bulk_repology', return_value=self.repology), \
                 mock.patch('divergulent.cli.DebianPatchesSource', return_value=self.patches), \
                 contextlib.redirect_stdout(out):
             rc = cli.main(argv)
@@ -137,6 +137,26 @@ class ScoreCommandTestCase(testtools.TestCase):
         self.assertEqual(0, rc)
         self.assertIn('bash', output)
         self.assertIn('glibc', output)
+
+    def _run_capturing_stderr(self, argv):
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch('divergulent.cli.inventory.list_installed', return_value=self.packages), \
+                mock.patch('divergulent.cli._bulk_repology', return_value=self.repology), \
+                mock.patch('divergulent.cli.DebianPatchesSource', return_value=self.patches), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            cli.main(argv)
+        return out.getvalue(), err.getvalue()
+
+    def test_progress_on_stderr_not_stdout(self):
+        out, err = self._run_capturing_stderr(['score', '--json'])
+        self.assertIn('[2/2]', err)        # progress went to stderr
+        self.assertNotIn('[2/2]', out)     # stdout stays clean
+        json.loads(out)                    # ...and is still valid JSON
+
+    def test_quiet_suppresses_progress(self):
+        _out, err = self._run_capturing_stderr(['score', '--quiet'])
+        self.assertNotIn('[2/2]', err)     # no progress
+        self.assertIn('assessed', err)     # but the summary still prints
 
 
 def _pp(name, classes, state=DivergenceState.PATCHED):
@@ -169,7 +189,7 @@ class ScoreClassifyTestCase(testtools.TestCase):
     def test_classify_weights_debian_only(self):
         out = io.StringIO()
         with mock.patch('divergulent.cli.inventory.list_installed', return_value=self.packages), \
-                mock.patch('divergulent.cli.RepologySource', return_value=self.repology), \
+                mock.patch('divergulent.cli._bulk_repology', return_value=self.repology), \
                 mock.patch('divergulent.cli.AptSourcePatches', return_value=self.apt), \
                 contextlib.redirect_stdout(out):
             rc = cli.main(['score', '--classify', '--json'])

@@ -16,6 +16,8 @@ if test "$1" = "-HEAD" ; then
     shift
     files=$(git diff --name-only HEAD~1 | tr '\n' ' ')
     echo "Running flake8 on ${files}"
+    # Word splitting of the file list is intentional (multiple filenames).
+    # shellcheck disable=SC2086
     diff -u --from-file /dev/null ${files} | $FLAKE_COMMAND "$@"
 else
     echo "Running flake8 on all files"

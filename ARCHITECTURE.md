@@ -46,10 +46,14 @@ installed-package inventory never leaves the machine.
 - `divergulent/sources/base.py` — the `Source` protocol that
   data-source adapters implement.
 - `divergulent/sources/repology.py` — the Repology adapter (staleness
-  axis). Resolves a Debian source name to its Repology project via the
-  `project-by` resolver, picks the newest stable upstream version, and
-  compares it against the installed *upstream* version. Yields CURRENT /
-  BEHIND / UNKNOWN (unresolved is UNKNOWN, never BEHIND).
+  axis). Picks the newest stable upstream version and compares it
+  against the installed *upstream* version; yields CURRENT / BEHIND /
+  UNKNOWN (unresolved is UNKNOWN, never BEHIND). `RepologySource`
+  resolves one package at a time via the `project-by` resolver (used by
+  `show`); `build_staleness_map` + `RepologyBulkSource` build one cached
+  whole-archive `{srcname: newest}` map (`/api/v1/projects/` paginated)
+  for the whole-machine commands, so staleness is per-archive not
+  per-source. Both share the newest-selection/comparison logic.
 - `divergulent/sources/debian_patches.py` — the sources.debian.org
   adapter (divergence axis). Reads a source package's quilt series from
   the patches API, fetches each patch under its pool `raw_url`, and
@@ -65,6 +69,10 @@ installed-package inventory never leaves the machine.
   `.orig` tarball), extracts `debian/patches`, and classifies with
   `dep3` — the full breakdown across the machine via the mirror network.
   Requires `deb-src` (`deb_src_available()`).
+- `divergulent/progress.py` — `Progress`, a terminal-aware progress
+  reporter (stderr; animates on a TTY, periodic lines off-TTY, silent
+  when disabled) used by the long whole-machine commands; `--quiet`
+  disables it.
 - `divergulent/score.py` — combines a package's staleness and
   divergence into a `PackageDrift` with a transparent weighted score
   (used only for ranking; both axes are retained for display).
@@ -79,15 +87,18 @@ installed-package inventory never leaves the machine.
 ```
 inventory:  dpkg-query  ->  inventory.list_installed()  ->  [InstalledPackage]  ->  cli (table / JSON)
 
-staleness:  inventory  ->  dedup by source  ->  RepologySource.staleness()  ->  cli (ranked table / JSON)
+staleness:  inventory  ->  dedup by source  ->  RepologyBulkSource.staleness()  ->  cli (ranked table / JSON)
+                                                      |
+                              build_staleness_map(): one cached paged sweep of debian_unstable
                                                       |
                                           HttpClient (cache + politeness)  ->  repology.org
+                              (show uses RepologySource: a per-package project-by lookup instead)
 
 divergence: inventory  ->  dedup by source  ->  DebianPatchesSource.summary()  ->  cli (count table / JSON)
                                                       |
                                           HttpClient (per-host throttle)  ->  sources.debian.org patches API
 
-score:      inventory  ->  dedup by source  ->  staleness + divergence summary (one shared HttpClient)
+score:      inventory  ->  dedup by source  ->  staleness (cached bulk map) + divergence summary
                                             ->  score.combine()  ->  cli (ranked report + whole-machine summary)
 
 --classify: inventory  ->  dedup by source  ->  AptSourcePatches.details() (apt mirror, per source)
