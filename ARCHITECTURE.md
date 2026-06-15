@@ -33,8 +33,8 @@ installed-package inventory never leaves the machine.
   `XDG_CACHE_HOME`.
 - `divergulent/http.py` — `HttpClient`, the polite HTTP layer all
   network-backed sources fetch through (`get_json` and `get_text`):
-  identifying User-Agent, request timeout, ≤1 request/second rate
-  limiting, on-disk caching, and graceful degradation (failures return
+  identifying User-Agent, request timeout, ≤1 request/second **per host**
+  rate limiting, on-disk caching, and graceful degradation (failures return
   `None`). Stdlib `urllib`; the urlopen/clock/sleep are injectable for
   offline tests.
 - `divergulent/dep3.py` — a pure parser/classifier for DEP-3 patch
@@ -53,10 +53,11 @@ installed-package inventory never leaves the machine.
 - `divergulent/sources/debian_patches.py` — the sources.debian.org
   adapter (divergence axis). Reads a source package's quilt series from
   the patches API, fetches each patch under its pool `raw_url`, and
-  classifies it with `dep3`. `details()` returns per-patch records
-  (`PatchDetail`: classification, description, bug references) and
-  `divergence()` is a tally over it, yielding PATCHED (with per-class
-  counts) / CLEAN / NATIVE / UNKNOWN. Version-pinned patch content is
+  classifies it with `dep3`. `summary()` is the cheap one-request
+  overview (patch count + state) used by the whole-machine commands;
+  `details()` fetches and classifies every patch body (`PatchDetail`:
+  classification, description, bug references) for `show`. Both yield
+  PATCHED / CLEAN / NATIVE / UNKNOWN. Version-pinned patch content is
   cached with a long TTL.
 - `divergulent/score.py` — combines a package's staleness and
   divergence into a `PackageDrift` with a transparent weighted score
@@ -75,11 +76,11 @@ staleness:  inventory  ->  dedup by source  ->  RepologySource.staleness()  ->  
                                                       |
                                           HttpClient (cache + politeness)  ->  repology.org
 
-divergence: inventory  ->  dedup by source  ->  DebianPatchesSource.divergence()  ->  cli (ranked table / JSON)
+divergence: inventory  ->  dedup by source  ->  DebianPatchesSource.summary()  ->  cli (count table / JSON)
                                                       |
-                                          HttpClient  ->  sources.debian.org  ->  dep3.classify() per patch
+                                          HttpClient (per-host throttle)  ->  sources.debian.org patches API
 
-score:      inventory  ->  dedup by source  ->  staleness + divergence (one shared HttpClient)
+score:      inventory  ->  dedup by source  ->  staleness + divergence summary (one shared HttpClient)
                                             ->  score.combine()  ->  cli (ranked report + whole-machine summary)
 
 show:       resolve one installed package  ->  staleness + details (one shared HttpClient)
