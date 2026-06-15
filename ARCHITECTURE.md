@@ -87,9 +87,12 @@ installed-package inventory never leaves the machine.
 ```
 inventory:  dpkg-query  ->  inventory.list_installed()  ->  [InstalledPackage]  ->  cli (table / JSON)
 
-staleness:  inventory  ->  dedup by source  ->  RepologySource.staleness()  ->  cli (ranked table / JSON)
+staleness:  inventory  ->  dedup by source  ->  RepologyBulkSource.staleness()  ->  cli (ranked table / JSON)
+                                                      |
+                              build_staleness_map(): one cached paged sweep of debian_unstable
                                                       |
                                           HttpClient (cache + politeness)  ->  repology.org
+                              (show uses RepologySource: a per-package project-by lookup instead)
 
 divergence: inventory  ->  dedup by source  ->  DebianPatchesSource.summary()  ->  cli (count table / JSON)
                                                       |

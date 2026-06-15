@@ -73,8 +73,12 @@ divergulent staleness --json   # machine-readable
 
 Staleness is heuristic: it relies on Repology resolving your Debian
 source package to an upstream project, and reports `unknown` (never
-"behind") when it cannot. Results are cached locally and Repology is
-queried politely (≤1 request/second).
+"behind") when it cannot. The whole-machine `staleness` and `score`
+commands fetch one cached sweep of the entire `debian_unstable`
+project set and match your packages against it locally, so the cost is
+per-archive rather than per-package; `show` instead does a single
+per-package lookup. Results are cached locally and Repology is queried
+politely (≤1 request/second).
 
 Report how many patches each package carries (the divergence axis, via
 [sources.debian.org](https://sources.debian.org/)):
