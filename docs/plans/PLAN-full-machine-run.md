@@ -112,8 +112,8 @@ docs (PR C, depends on phase 1).
 
 | Phase | Plan | Status |
 |-------|------|--------|
-| 1. Tier 1 — polite default overview | PLAN-full-machine-run-phase-01-overview.md | Not started |
-| 2. Tier 2 — opt-in `--classify` via apt source packages | PLAN-full-machine-run-phase-02-classify.md | Not started |
+| 1. Tier 1 — polite default overview | PLAN-full-machine-run-phase-01-overview.md | Complete |
+| 2. Tier 2 — opt-in `--classify` via apt source packages | PLAN-full-machine-run-phase-02-classify.md | Complete |
 | 3. CI full-run sample output + docs | PLAN-full-machine-run-phase-03-ci.md | Not started |
 
 ## Agent guidance

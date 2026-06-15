@@ -5,6 +5,14 @@ Plan this phase at **high effort**: it adds a new data source
 with an external precondition (`deb-src`) and reintroduces the
 classified breakdown at whole-machine scale.
 
+**Status: complete.** All steps (2a apt source provider, 2b
+`--classify` CLI) are implemented and committed; `score
+--classify` / `divergence --classify` work on real data and the
+suite passes via `tox -epy3`. The provider fetches only the
+`.dsc` + `.debian.tar.*` (skipping the `.orig` tarball) via
+`apt-get source --print-uris`, and falls back to patch counts
+with a clear message when `deb-src` is unavailable.
+
 ## Prompt
 
 Explore before changing: `divergulent/dep3.py` (the classifier
