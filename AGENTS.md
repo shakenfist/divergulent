@@ -37,6 +37,15 @@ source (patch count + state), no patch-body fetches — so a full
 version-pinned content with a long TTL (30 days), since that content is
 immutable. The `divergence`/`score` commands still take `--limit`.
 
+`--classify` (Tier 2) classifies the whole machine via
+`divergulent.sources.apt_patches.AptSourcePatches`: it resolves each
+source package's URLs with `apt-get source --print-uris` and fetches only
+the `.dsc` and `.debian.tar.*` from the configured mirror (never the
+`.orig` tarball), extracting `debian/patches` and classifying with the
+same `dep3` logic. It needs `deb-src` indices; `deb_src_available()`
+gates it and the CLI falls back to patch counts with a clear message when
+they are absent.
+
 DEP-3 metadata is sparse in real Debian patches, so `dep3.classify`
 supplements explicit DEP-3 fields with Debian-authored heuristics (the
 old `# DP:` convention and deb-*/debian-* filenames). Explicit DEP-3

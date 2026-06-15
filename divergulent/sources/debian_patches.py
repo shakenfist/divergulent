@@ -68,6 +68,17 @@ class PackagePatches:
     patches: list[PatchDetail]
 
 
+def patch_detail(name: str, text: str) -> PatchDetail:
+    '''Build a PatchDetail from a patch's raw text via DEP-3.'''
+    fields = dep3.parse_header(text)
+    return PatchDetail(
+        name=name,
+        patch_class=dep3.classify(text, name),
+        description=fields.get('description') or fields.get('subject'),
+        forwarded=fields.get('forwarded'),
+        bugs=dep3.bug_references(text))
+
+
 def _quote(value: str) -> str:
     return urllib.parse.quote(value, safe='')
 
@@ -135,13 +146,7 @@ class DebianPatchesSource:
                 ttl_seconds=CACHE_TTL_SECONDS)
         if text is None:
             return PatchDetail(patch_name, PatchClass.UNKNOWN, None, None, [])
-        fields = dep3.parse_header(text)
-        return PatchDetail(
-            name=patch_name,
-            patch_class=dep3.classify(text, patch_name),
-            description=fields.get('description') or fields.get('subject'),
-            forwarded=fields.get('forwarded'),
-            bugs=dep3.bug_references(text))
+        return patch_detail(patch_name, text)
 
     @staticmethod
     def _interpret(info: dict):

@@ -59,10 +59,17 @@ installed-package inventory never leaves the machine.
   classification, description, bug references) for `show`. Both yield
   PATCHED / CLEAN / NATIVE / UNKNOWN. Version-pinned patch content is
   cached with a long TTL.
+- `divergulent/sources/apt_patches.py` — the Tier 2 classification
+  provider. Resolves a source package's mirror URLs via `apt-get source
+  --print-uris`, fetches only the `.dsc` and `.debian.tar.*` (not the
+  `.orig` tarball), extracts `debian/patches`, and classifies with
+  `dep3` — the full breakdown across the machine via the mirror network.
+  Requires `deb-src` (`deb_src_available()`).
 - `divergulent/score.py` — combines a package's staleness and
   divergence into a `PackageDrift` with a transparent weighted score
-  (used only for ranking; both axes are retained for display). Pure, no
-  I/O.
+  (used only for ranking; both axes are retained for display).
+  `classified_score()` weights Debian-only patches under `--classify`.
+  Pure, no I/O.
 - `divergulent/tests/` — testtools tests run via stestr/tox; every
   external effect is mocked or driven from a fixture so the suite runs
   offline.
@@ -82,6 +89,9 @@ divergence: inventory  ->  dedup by source  ->  DebianPatchesSource.summary()  -
 
 score:      inventory  ->  dedup by source  ->  staleness + divergence summary (one shared HttpClient)
                                             ->  score.combine()  ->  cli (ranked report + whole-machine summary)
+
+--classify: inventory  ->  dedup by source  ->  AptSourcePatches.details() (apt mirror, per source)
+                                            ->  dep3.classify() per patch  ->  cli (per-class breakdown)
 
 show:       resolve one installed package  ->  staleness + details (one shared HttpClient)
                                             ->  cli (per-patch detail + Debian bug links)

@@ -89,8 +89,19 @@ divergulent divergence --json     # machine-readable
 The whole-machine view reports a patch *count* per package, using one
 request per source so a full run stays fast and polite. For the
 per-patch [DEP-3](https://dep-team.pages.debian.net/deps/dep3/)
-classification (forwarded-upstream vs Debian-only vs unknown), use
-`divergulent show <package>` (see below).
+classification (forwarded-upstream vs Debian-only vs unknown), either
+drill into one package with `divergulent show <package>` (see below), or
+classify the whole machine with `--classify`:
+
+```bash
+divergulent divergence --classify   # Debian-only/forwarded/unknown per package
+divergulent score --classify        # ranked, weighting Debian-only patches
+```
+
+`--classify` fetches each source package's packaging (the `.debian.tar.*`,
+not the upstream source) from your configured apt mirror — so it needs
+`deb-src` indices enabled (`apt-get update` after adding them). Without
+them it prints a notice and falls back to patch counts.
 
 Combine both axes into one ranked, whole-machine answer:
 
