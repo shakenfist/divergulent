@@ -6,8 +6,9 @@ from divergulent import __version__
 from divergulent import inventory
 from divergulent import score
 from divergulent.cache import Cache, default_cache_dir
+from divergulent.dep3 import PatchClass
 from divergulent.http import HttpClient
-from divergulent.sources.debian_patches import DebianPatchesSource, DivergenceState
+from divergulent.sources.debian_patches import DebianPatchesSource, DivergenceState, DivergenceSummary
 from divergulent.sources.repology import RepologySource, StalenessState
 
 
@@ -34,12 +35,14 @@ def _build_parser():
         help='Include current and unknown packages, not just those behind.')
 
     diverge = subparsers.add_parser(
-        'divergence', help='Report packages carrying Debian-only patches (via sources.debian.org).')
+        'divergence',
+        help='Report how many patches each package carries (via sources.debian.org). '
+             'Use `show` for the per-patch classification.')
     diverge.add_argument(
         '--json', action='store_true', help='Emit the report as JSON.')
     diverge.add_argument(
         '--all', action='store_true', dest='show_all',
-        help='Include packages with no Debian-only patches (clean/native/unknown).')
+        help='Include packages carrying no patches (clean/native/unknown).')
     diverge.add_argument(
         '--limit', type=int, default=None,
         help='Process at most this many source packages (each is one or more network requests).')
@@ -167,20 +170,20 @@ def _gather_divergence(source, packages, limit=None):
     items = list(_dedup_sources(packages).items())
     if limit is not None:
         items = items[:limit]
-    return [source.divergence(name, str(version)) for name, version in items]
+    return [source.summary(name, str(version)) for name, version in items]
 
 
 def _select_divergence(results, show_all):
-    chosen = results if show_all else [r for r in results if r.debian_only > 0]
-    return sorted(chosen, key=lambda r: (-r.debian_only, -r.total, r.source_package))
+    chosen = results if show_all else [r for r in results if r.total > 0]
+    return sorted(chosen, key=lambda r: (-r.total, r.source_package))
 
 
 def _summarise_divergence(results):
     patched = sum(1 for r in results if r.state == DivergenceState.PATCHED)
-    debian_only = sum(r.debian_only for r in results)
+    total = sum(r.total for r in results)
     print(
-        '%d source packages: %d carry patches, %d Debian-only patches total' % (
-            len(results), patched, debian_only),
+        '%d source packages: %d carry patches, %d patches carried total' % (
+            len(results), patched, total),
         file=sys.stderr)
 
 
@@ -198,20 +201,15 @@ def _divergence_command(args):
                 'version': r.version,
                 'format': r.source_format,
                 'total': r.total,
-                'debian_only': r.debian_only,
-                'forwarded': r.forwarded,
-                'unknown': r.unknown,
                 'state': r.state.value,
             }
             for r in selected]
         print(json.dumps(data, indent=2))
     else:
         rows = [
-            (r.source_package, r.version, str(r.total), str(r.debian_only),
-             str(r.forwarded), str(r.unknown), r.state.value)
+            (r.source_package, r.version, str(r.total), r.state.value)
             for r in selected]
-        print(_table(
-            ('SOURCE', 'VERSION', 'TOTAL', 'DEBIAN-ONLY', 'FORWARDED', 'UNKNOWN', 'STATE'), rows))
+        print(_table(('SOURCE', 'VERSION', 'PATCHES', 'STATE'), rows))
     return 0
 
 
@@ -222,29 +220,29 @@ def _gather_score(repology, patches, packages, limit=None):
     drifts = []
     for name, version in items:
         staleness = repology.staleness(name, version)
-        divergence = patches.divergence(name, str(version))
+        divergence = patches.summary(name, str(version))
         drifts.append(score.combine(staleness, divergence))
     return drifts
 
 
 def _select_score(drifts, show_all):
     chosen = drifts if show_all else [d for d in drifts if d.score > 0]
-    return sorted(chosen, key=lambda d: (-d.score, -d.divergence.debian_only, d.source_package))
+    return sorted(chosen, key=lambda d: (-d.score, -d.divergence.total, d.source_package))
 
 
 def _summarise_score(drifts):
     behind = sum(1 for d in drifts if d.staleness.state == StalenessState.BEHIND)
-    carrying = sum(1 for d in drifts if d.divergence.debian_only > 0)
+    carrying = sum(1 for d in drifts if d.divergence.state == DivergenceState.PATCHED)
     both = sum(
         1 for d in drifts
-        if d.staleness.state == StalenessState.BEHIND and d.divergence.debian_only > 0)
-    total_debian_only = sum(d.divergence.debian_only for d in drifts)
+        if d.staleness.state == StalenessState.BEHIND and d.divergence.state == DivergenceState.PATCHED)
+    total_patches = sum(d.divergence.total for d in drifts)
     stale_unknown = sum(1 for d in drifts if d.staleness.state == StalenessState.UNKNOWN)
     diverge_unknown = sum(1 for d in drifts if d.divergence.state == DivergenceState.UNKNOWN)
     print(
-        '%d source packages assessed: %d behind upstream, %d carry Debian-only patches, '
-        '%d both; %d Debian-only patches total' % (
-            len(drifts), behind, carrying, both, total_debian_only),
+        '%d source packages assessed: %d behind upstream, %d carry patches, '
+        '%d both; %d patches carried total' % (
+            len(drifts), behind, carrying, both, total_patches),
         file=sys.stderr)
     print(
         'could not assess: staleness for %d, divergence for %d' % (stale_unknown, diverge_unknown),
@@ -270,9 +268,6 @@ def _score_command(args):
                 'staleness': d.staleness.state.value,
                 'newest': d.staleness.newest_version,
                 'divergence': d.divergence.state.value,
-                'debian_only': d.divergence.debian_only,
-                'forwarded': d.divergence.forwarded,
-                'unknown_patches': d.divergence.unknown,
                 'total_patches': d.divergence.total,
             }
             for d in selected]
@@ -280,10 +275,10 @@ def _score_command(args):
     else:
         rows = [
             (d.source_package, d.version, d.staleness.state.value, d.staleness.newest_version or '?',
-             str(d.divergence.debian_only), str(d.divergence.total), str(d.score))
+             str(d.divergence.total), str(d.score))
             for d in selected]
         print(_table(
-            ('SOURCE', 'VERSION', 'STALENESS', 'NEWEST', 'DEB-ONLY', 'PATCHES', 'SCORE'), rows))
+            ('SOURCE', 'VERSION', 'STALENESS', 'NEWEST', 'PATCHES', 'SCORE'), rows))
     return 0
 
 
@@ -318,7 +313,14 @@ _PATCH_STATE_NOTE = {
 }
 
 
-def _render_show(source, version, staleness, package, divergence, drift):
+def _patch_class_counts(package):
+    return (
+        sum(1 for p in package.patches if p.patch_class == PatchClass.DEBIAN_ONLY),
+        sum(1 for p in package.patches if p.patch_class == PatchClass.FORWARDED),
+        sum(1 for p in package.patches if p.patch_class == PatchClass.UNKNOWN))
+
+
+def _render_show(source, version, staleness, package, drift):
     newest = ' -> newest %s' % staleness.newest_version if staleness.newest_version else ''
     lines = [
         '%s %s' % (source, version),
@@ -326,8 +328,9 @@ def _render_show(source, version, staleness, package, divergence, drift):
         '  drift score: %d' % drift.score,
     ]
     if package.patches:
+        debian_only, forwarded, unknown = _patch_class_counts(package)
         lines.append('  patches: %d total (%d Debian-only, %d forwarded, %d unknown)' % (
-            divergence.total, divergence.debian_only, divergence.forwarded, divergence.unknown))
+            len(package.patches), debian_only, forwarded, unknown))
         for patch in package.patches:
             lines.append('')
             lines.append('  %s  [%s]' % (patch.name, patch.patch_class.value))
@@ -354,10 +357,12 @@ def _show_command(args):
     staleness = RepologySource(http).staleness(source_name, source_version)
     patches = DebianPatchesSource(http)
     package = patches.details(source_name, str(source_version))
-    divergence = patches.divergence(source_name, str(source_version))
-    drift = score.combine(staleness, divergence)
+    summary = DivergenceSummary(
+        source_name, str(source_version), package.source_format, len(package.patches), package.state)
+    drift = score.combine(staleness, summary)
 
     if args.json:
+        debian_only, forwarded, unknown = _patch_class_counts(package)
         print(json.dumps({
             'source': source_name,
             'version': str(source_version),
@@ -365,10 +370,10 @@ def _show_command(args):
             'staleness': {'state': staleness.state.value, 'newest': staleness.newest_version},
             'divergence': {
                 'state': package.state.value,
-                'total': divergence.total,
-                'debian_only': divergence.debian_only,
-                'forwarded': divergence.forwarded,
-                'unknown': divergence.unknown,
+                'total': len(package.patches),
+                'debian_only': debian_only,
+                'forwarded': forwarded,
+                'unknown': unknown,
             },
             'patches': [
                 {
@@ -381,7 +386,7 @@ def _show_command(args):
                 for p in package.patches],
         }, indent=2))
     else:
-        print(_render_show(source_name, str(source_version), staleness, package, divergence, drift))
+        print(_render_show(source_name, str(source_version), staleness, package, drift))
     return 0
 
 

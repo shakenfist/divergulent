@@ -42,18 +42,6 @@ class DivergenceState(enum.Enum):
 
 
 @dataclass(frozen=True)
-class DivergenceResult:
-    source_package: str
-    version: str
-    source_format: str | None
-    total: int
-    debian_only: int
-    forwarded: int
-    unknown: int
-    state: DivergenceState
-
-
-@dataclass(frozen=True)
 class DivergenceSummary:
     source_package: str
     version: str
@@ -198,20 +186,6 @@ class DebianPatchesSource:
             patches = [self._detail(base, source_package, effective, name) for name in names]
             return PackagePatches(source_package, version, source_format, state, patches)
         return PackagePatches(source_package, version, source_format, state, [])
-
-    def divergence(self, source_package: str, version: str) -> DivergenceResult:
-        '''Classify the carried patches of an installed source package version.'''
-        package = self.details(source_package, version)
-        counts = {PatchClass.DEBIAN_ONLY: 0, PatchClass.FORWARDED: 0, PatchClass.UNKNOWN: 0}
-        for patch in package.patches:
-            counts[patch.patch_class] += 1
-        return DivergenceResult(
-            source_package, version, package.source_format,
-            total=len(package.patches),
-            debian_only=counts[PatchClass.DEBIAN_ONLY],
-            forwarded=counts[PatchClass.FORWARDED],
-            unknown=counts[PatchClass.UNKNOWN],
-            state=package.state)
 
     @staticmethod
     def _candidate_versions(version: str):

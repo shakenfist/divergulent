@@ -8,7 +8,7 @@ import testtools
 from divergulent import cli
 from divergulent import debversion
 from divergulent.inventory import InstalledPackage
-from divergulent.sources.debian_patches import DivergenceResult, DivergenceState
+from divergulent.sources.debian_patches import DivergenceState, DivergenceSummary
 
 
 def _pkg(binary, source, source_version, arch='amd64'):
@@ -20,18 +20,18 @@ def _pkg(binary, source, source_version, arch='amd64'):
         architecture=arch)
 
 
-def _res(name, version, total, debian_only, forwarded, unknown, state):
-    return DivergenceResult(name, version, '3.0 (quilt)', total, debian_only, forwarded, unknown, state)
+def _sum(name, version, total, state=DivergenceState.PATCHED):
+    return DivergenceSummary(name, version, '3.0 (quilt)', total, state)
 
 
 class FakeSource:
-    def __init__(self, results_by_name):
-        self.results_by_name = results_by_name
+    def __init__(self, by_name):
+        self.by_name = by_name
         self.calls = []
 
-    def divergence(self, name, version):
-        self.calls.append((name, version))
-        return self.results_by_name[name]
+    def summary(self, name, version):
+        self.calls.append(name)
+        return self.by_name[name]
 
 
 class GatherTestCase(testtools.TestCase):
@@ -43,16 +43,16 @@ class GatherTestCase(testtools.TestCase):
             _pkg('bash', 'bash', '5.2-1'),
         ]
         source = FakeSource({
-            'glibc': _res('glibc', '2.36-9', 3, 2, 1, 0, DivergenceState.PATCHED),
-            'bash': _res('bash', '5.2-1', 0, 0, 0, 0, DivergenceState.CLEAN),
+            'glibc': _sum('glibc', '2.36-9', 3),
+            'bash': _sum('bash', '5.2-1', 0, DivergenceState.CLEAN),
         })
         results = cli._gather_divergence(source, packages)
         self.assertEqual(2, len(results))
-        self.assertEqual(['bash', 'glibc'], sorted(name for name, _ in source.calls))
+        self.assertEqual(['bash', 'glibc'], sorted(source.calls))
 
     def test_limit_caps_sources(self):
         packages = [_pkg('a', 'a', '1-1'), _pkg('b', 'b', '1-1'), _pkg('c', 'c', '1-1')]
-        source = FakeSource({n: _res(n, '1-1', 0, 0, 0, 0, DivergenceState.CLEAN) for n in 'abc'})
+        source = FakeSource({n: _sum(n, '1-1', 0, DivergenceState.CLEAN) for n in 'abc'})
         cli._gather_divergence(source, packages, limit=2)
         self.assertEqual(2, len(source.calls))
 
@@ -62,14 +62,13 @@ class SelectTestCase(testtools.TestCase):
     def setUp(self):
         super().setUp()
         self.results = [
-            _res('few', '1', 3, 1, 2, 0, DivergenceState.PATCHED),
-            _res('many', '1', 5, 4, 1, 0, DivergenceState.PATCHED),
-            _res('clean', '1', 0, 0, 0, 0, DivergenceState.CLEAN),
+            _sum('few', '1', 2),
+            _sum('many', '1', 5),
+            _sum('clean', '1', 0, DivergenceState.CLEAN),
         ]
 
-    def test_default_only_debian_only_ranked(self):
+    def test_default_only_carrying_ranked(self):
         selected = cli._select_divergence(self.results, show_all=False)
-        # Most Debian-only patches first; 'clean' (0) excluded.
         self.assertEqual(['many', 'few'], [r.source_package for r in selected])
 
     def test_all_includes_clean(self):
@@ -83,8 +82,8 @@ class DivergenceCommandTestCase(testtools.TestCase):
         super().setUp()
         self.packages = [_pkg('bash', 'bash', '5.2-1'), _pkg('libc6', 'glibc', '2.36-9')]
         self.source = FakeSource({
-            'bash': _res('bash', '5.2-1', 2, 1, 1, 0, DivergenceState.PATCHED),
-            'glibc': _res('glibc', '2.36-9', 0, 0, 0, 0, DivergenceState.CLEAN),
+            'bash': _sum('bash', '5.2-1', 2),
+            'glibc': _sum('glibc', '2.36-9', 0, DivergenceState.CLEAN),
         })
 
     def _run(self, argv):
@@ -95,13 +94,13 @@ class DivergenceCommandTestCase(testtools.TestCase):
             rc = cli.main(argv)
         return rc, out.getvalue()
 
-    def test_json_default_only_debian_only(self):
+    def test_json_default_only_carrying(self):
         rc, output = self._run(['divergence', '--json'])
         self.assertEqual(0, rc)
         data = json.loads(output)
         self.assertEqual(1, len(data))
         self.assertEqual('bash', data[0]['source'])
-        self.assertEqual(1, data[0]['debian_only'])
+        self.assertEqual(2, data[0]['total'])
 
     def test_all_table_includes_clean(self):
         rc, output = self._run(['divergence', '--all'])

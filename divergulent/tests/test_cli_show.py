@@ -9,7 +9,7 @@ from divergulent import cli
 from divergulent import debversion
 from divergulent.dep3 import BugRef, PatchClass
 from divergulent.inventory import InstalledPackage
-from divergulent.sources.debian_patches import DivergenceResult, DivergenceState, PackagePatches, PatchDetail
+from divergulent.sources.debian_patches import DivergenceState, PackagePatches, PatchDetail
 from divergulent.sources.repology import StalenessResult, StalenessState
 
 
@@ -34,15 +34,11 @@ class FakeRepology:
 
 
 class FakePatches:
-    def __init__(self, package, divergence):
+    def __init__(self, package):
         self.package = package
-        self.divergence_result = divergence
 
     def details(self, name, version):
         return self.package
-
-    def divergence(self, name, version):
-        return self.divergence_result
 
 
 class ResolveTestCase(testtools.TestCase):
@@ -82,14 +78,12 @@ class ShowCommandTestCase(testtools.TestCase):
                             [BugRef('debian', '123')]),
                 PatchDetail('misc.diff', PatchClass.UNKNOWN, None, None, []),
             ])
-        self.divergence = DivergenceResult('bash', '5.2-1', '3.0 (quilt)', 2, 1, 0, 1, DivergenceState.PATCHED)
 
     def _run(self, argv):
         out = io.StringIO()
         with mock.patch('divergulent.cli.inventory.list_installed', return_value=PACKAGES), \
                 mock.patch('divergulent.cli.RepologySource', return_value=FakeRepology(self.staleness)), \
-                mock.patch('divergulent.cli.DebianPatchesSource',
-                           return_value=FakePatches(self.package, self.divergence)), \
+                mock.patch('divergulent.cli.DebianPatchesSource', return_value=FakePatches(self.package)), \
                 contextlib.redirect_stdout(out):
             rc = cli.main(argv)
         return rc, out.getvalue()
@@ -116,3 +110,4 @@ class ShowCommandTestCase(testtools.TestCase):
         self.assertEqual('bash', data['source'])
         self.assertEqual(2, len(data['patches']))
         self.assertEqual('https://bugs.debian.org/123', data['patches'][0]['bugs'][0]['url'])
+        self.assertEqual(1, data['divergence']['debian_only'])
