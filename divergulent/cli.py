@@ -10,7 +10,7 @@ from divergulent.dep3 import PatchClass
 from divergulent.http import HttpClient
 from divergulent.sources.apt_patches import AptSourcePatches
 from divergulent.sources.debian_patches import DebianPatchesSource, DivergenceState, DivergenceSummary
-from divergulent.sources.repology import RepologySource, StalenessState
+from divergulent.sources.repology import RepologyBulkSource, RepologySource, StalenessState, build_staleness_map
 
 
 _CLASSIFY_UNAVAILABLE = (
@@ -22,10 +22,23 @@ _CLASSIFY_UNAVAILABLE = (
 SOURCES_DEBIAN_INTERVAL = 0.34
 
 
+def _cache_and_client():
+    cache = Cache(default_cache_dir())
+    return cache, HttpClient(cache, host_intervals={'sources.debian.org': SOURCES_DEBIAN_INTERVAL})
+
+
 def _http_client():
-    return HttpClient(
-        Cache(default_cache_dir()),
-        host_intervals={'sources.debian.org': SOURCES_DEBIAN_INTERVAL})
+    return _cache_and_client()[1]
+
+
+def _bulk_repology():
+    '''A staleness source backed by the cached whole-archive Repology map.
+
+    Building the map is a one-time (per ~24h) cost shared by all packages, so
+    the whole-machine commands do not make a Repology request per source.
+    '''
+    cache, http = _cache_and_client()
+    return RepologyBulkSource(build_staleness_map(http, cache))
 
 
 def _build_parser():
@@ -167,7 +180,7 @@ def _summarise(results):
 
 def _staleness_command(args):
     packages = inventory.list_installed()
-    source = RepologySource(_http_client())
+    source = _bulk_repology()
     results = _gather_staleness(source, packages)
     _summarise(results)
 
@@ -319,7 +332,7 @@ def _summarise_score(drifts):
 
 
 def _score_classified(apt, packages, args):
-    repology = RepologySource(_http_client())
+    repology = _bulk_repology()
     items = list(_dedup_sources(packages).items())
     if args.limit is not None:
         items = items[:args.limit]
@@ -373,9 +386,8 @@ def _score_command(args):
         if apt.available():
             return _score_classified(apt, packages, args)
         print(_CLASSIFY_UNAVAILABLE, file=sys.stderr)
-    http = _http_client()
-    repology = RepologySource(http)
-    patches = DebianPatchesSource(http)
+    repology = _bulk_repology()
+    patches = DebianPatchesSource(_http_client())
 
     drifts = _gather_score(repology, patches, packages, limit=args.limit)
     _summarise_score(drifts)

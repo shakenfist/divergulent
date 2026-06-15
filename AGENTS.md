@@ -40,6 +40,13 @@ source (patch count + state), no patch-body fetches — so a full
 version-pinned content with a long TTL (30 days), since that content is
 immutable. The `divergence`/`score` commands still take `--limit`.
 
+Whole-machine **staleness** uses `repology.build_staleness_map` — one
+cached sweep of the entire Repology archive (`/api/v1/projects/`
+paginated, `RepologyBulkSource`) instead of a request per source. The
+map is cached ~24h and shared across commands, so the staleness cost is
+per-archive, not per-machine. Per-package staleness (`show`) still uses
+the per-package `project-by` resolver.
+
 `--classify` (Tier 2) classifies the whole machine via
 `divergulent.sources.apt_patches.AptSourcePatches`: it resolves each
 source package's URLs with `apt-get source --print-uris` and fetches only

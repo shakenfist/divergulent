@@ -4,6 +4,15 @@ Part of [PLAN-faster-full-run.md](PLAN-faster-full-run.md).
 High effort: a new bulk-fetch path with pagination, caching, and
 local matching, plus honest UNKNOWN handling.
 
+**Status: complete.** `build_staleness_map` pages
+`/api/v1/projects/?inrepo=debian_unstable` into a cached
+`{srcname: newest}` map; `RepologyBulkSource` serves staleness
+from it (absent → UNKNOWN). The whole-machine commands
+(`staleness`, `score`, `score --classify`) use it; `show` keeps
+the per-package resolver. Verified live: a cold whole-machine
+`staleness` (building the map) took ~4m38s and a warm run
+~0.12s; verdicts agree with the per-package path.
+
 ## Prompt
 
 Read `divergulent/sources/repology.py` (the per-package

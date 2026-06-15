@@ -46,10 +46,14 @@ installed-package inventory never leaves the machine.
 - `divergulent/sources/base.py` — the `Source` protocol that
   data-source adapters implement.
 - `divergulent/sources/repology.py` — the Repology adapter (staleness
-  axis). Resolves a Debian source name to its Repology project via the
-  `project-by` resolver, picks the newest stable upstream version, and
-  compares it against the installed *upstream* version. Yields CURRENT /
-  BEHIND / UNKNOWN (unresolved is UNKNOWN, never BEHIND).
+  axis). Picks the newest stable upstream version and compares it
+  against the installed *upstream* version; yields CURRENT / BEHIND /
+  UNKNOWN (unresolved is UNKNOWN, never BEHIND). `RepologySource`
+  resolves one package at a time via the `project-by` resolver (used by
+  `show`); `build_staleness_map` + `RepologyBulkSource` build one cached
+  whole-archive `{srcname: newest}` map (`/api/v1/projects/` paginated)
+  for the whole-machine commands, so staleness is per-archive not
+  per-source. Both share the newest-selection/comparison logic.
 - `divergulent/sources/debian_patches.py` — the sources.debian.org
   adapter (divergence axis). Reads a source package's quilt series from
   the patches API, fetches each patch under its pool `raw_url`, and
@@ -87,7 +91,7 @@ divergence: inventory  ->  dedup by source  ->  DebianPatchesSource.summary()  -
                                                       |
                                           HttpClient (per-host throttle)  ->  sources.debian.org patches API
 
-score:      inventory  ->  dedup by source  ->  staleness + divergence summary (one shared HttpClient)
+score:      inventory  ->  dedup by source  ->  staleness (cached bulk map) + divergence summary
                                             ->  score.combine()  ->  cli (ranked report + whole-machine summary)
 
 --classify: inventory  ->  dedup by source  ->  AptSourcePatches.details() (apt mirror, per source)
