@@ -144,6 +144,32 @@ class DivergenceTestCase(testtools.TestCase):
         self.assertEqual('debian-patches', debian_patches.DebianPatchesSource.name)
 
 
+class SummaryTestCase(testtools.TestCase):
+
+    def test_patched_counts_in_one_request(self):
+        http = FakeHttp(json_by_key={'foo:1.2-1': {'format': '3.0 (quilt)', 'patches': ['a.patch', 'b.patch']}})
+        summary = DebianPatchesSource(http).summary('foo', '1.2-1')
+        self.assertEqual(DivergenceState.PATCHED, summary.state)
+        self.assertEqual(2, summary.total)
+        # Only the series request: no base discovery, no patch bodies.
+        self.assertEqual(1, len(http.json_calls))
+        self.assertEqual([], http.text_calls)
+
+    def test_native(self):
+        http = FakeHttp(json_by_key={'foo:1.2': {'format': '3.0 (native)', 'patches': []}})
+        summary = DebianPatchesSource(http).summary('foo', '1.2')
+        self.assertEqual(DivergenceState.NATIVE, summary.state)
+        self.assertEqual(0, summary.total)
+
+    def test_clean(self):
+        http = FakeHttp(json_by_key={'foo:1.2-1': {'format': '3.0 (quilt)', 'patches': []}})
+        self.assertEqual(DivergenceState.CLEAN, DebianPatchesSource(http).summary('foo', '1.2-1').state)
+
+    def test_unresolved(self):
+        self.assertEqual(
+            DivergenceState.UNKNOWN, DebianPatchesSource(FakeHttp()).summary('foo', '1.2-1').state)
+
+
 class DetailsTestCase(testtools.TestCase):
 
     def test_per_patch_detail_with_bug(self):

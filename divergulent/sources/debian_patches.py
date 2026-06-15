@@ -54,6 +54,15 @@ class DivergenceResult:
 
 
 @dataclass(frozen=True)
+class DivergenceSummary:
+    source_package: str
+    version: str
+    source_format: str | None
+    total: int
+    state: DivergenceState
+
+
+@dataclass(frozen=True)
 class PatchDetail:
     name: str
     patch_class: PatchClass
@@ -146,30 +155,49 @@ class DebianPatchesSource:
             forwarded=fields.get('forwarded'),
             bugs=dep3.bug_references(text))
 
+    @staticmethod
+    def _interpret(info: dict):
+        '''Derive (source_format, patch_names, state) from a patches-API result.
+
+        A non-quilt, non-native format (e.g. 1.0) with no series is UNKNOWN:
+        divergence is not captured by a quilt series, so we do not claim clean.
+        '''
+        source_format = info.get('format')
+        fmt = (source_format or '').lower()
+        names = info.get('patches') or []
+        if 'native' in fmt:
+            return source_format, names, DivergenceState.NATIVE
+        if names:
+            return source_format, names, DivergenceState.PATCHED
+        if 'quilt' in fmt:
+            return source_format, names, DivergenceState.CLEAN
+        return source_format, names, DivergenceState.UNKNOWN
+
+    def summary(self, source_package: str, version: str) -> DivergenceSummary:
+        '''Cheap divergence overview: one request, the patch count and state.
+
+        Uses only the patches API (format + count + names); it does not fetch
+        or classify patch bodies. Use ``details()`` for per-patch classification.
+        '''
+        info, _ = self._series(source_package, version)
+        if info is None:
+            return DivergenceSummary(source_package, version, None, 0, DivergenceState.UNKNOWN)
+        source_format, names, state = self._interpret(info)
+        total = len(names) if state == DivergenceState.PATCHED else 0
+        return DivergenceSummary(source_package, version, source_format, total, state)
+
     def details(self, source_package: str, version: str) -> PackagePatches:
         '''Return per-patch detail for an installed source package version.'''
         info, effective = self._series(source_package, version)
         if info is None:
             return PackagePatches(source_package, version, None, DivergenceState.UNKNOWN, [])
 
-        source_format = info.get('format')
-        fmt = (source_format or '').lower()
-        names = info.get('patches') or []
-
-        if 'native' in fmt:
-            return PackagePatches(source_package, version, source_format, DivergenceState.NATIVE, [])
-
-        if names:
+        source_format, names, state = self._interpret(info)
+        if state == DivergenceState.PATCHED:
             base = self._raw_base(source_package, effective, names[0])
             patches = [self._detail(base, source_package, effective, name) for name in names]
-            return PackagePatches(source_package, version, source_format, DivergenceState.PATCHED, patches)
-
-        if 'quilt' in fmt:
-            return PackagePatches(source_package, version, source_format, DivergenceState.CLEAN, [])
-
-        # A non-quilt, non-native format (e.g. 1.0): divergence is not captured
-        # by a quilt series, so we do not claim it is clean.
-        return PackagePatches(source_package, version, source_format, DivergenceState.UNKNOWN, [])
+            return PackagePatches(source_package, version, source_format, state, patches)
+        return PackagePatches(source_package, version, source_format, state, [])
 
     def divergence(self, source_package: str, version: str) -> DivergenceResult:
         '''Classify the carried patches of an installed source package version.'''
