@@ -22,6 +22,11 @@ htmlcov/
 
 # divergulent's own on-disk cache of external source data
 .divergulent-cache/
+.divergulent-ci-cache/
+
+# sample-output generation (tools/generate-sample-output.sh)
+sample-venv/
+sample-output/
 
 # Editor / OS
 .DS_Store
