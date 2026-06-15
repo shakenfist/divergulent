@@ -76,23 +76,21 @@ source package to an upstream project, and reports `unknown` (never
 "behind") when it cannot. Results are cached locally and Repology is
 queried politely (≤1 request/second).
 
-Report packages carrying distro-only patches (the divergence axis, via
+Report how many patches each package carries (the divergence axis, via
 [sources.debian.org](https://sources.debian.org/)):
 
 ```bash
-divergulent divergence            # packages carrying Debian-only patches
+divergulent divergence            # packages carrying patches, most first
 divergulent divergence --all      # also show clean / native / unknown
 divergulent divergence --limit 50 # cap how many source packages are queried
 divergulent divergence --json     # machine-readable
 ```
 
-Each patch is classified from its [DEP-3](https://dep-team.pages.debian.net/deps/dep3/)
-header as forwarded-upstream, Debian-only, or unknown. Because DEP-3 is
-not universally used, patches without it are also checked for
-Debian-authored signals (the old `# DP:` convention and `deb-*` /
-`debian-*` filenames); anything still unattributed is reported as
-unknown rather than assumed divergent. This axis makes one request per
-patch, so it caches aggressively and supports `--limit`.
+The whole-machine view reports a patch *count* per package, using one
+request per source so a full run stays fast and polite. For the
+per-patch [DEP-3](https://dep-team.pages.debian.net/deps/dep3/)
+classification (forwarded-upstream vs Debian-only vs unknown), use
+`divergulent show <package>` (see below).
 
 Combine both axes into one ranked, whole-machine answer:
 
@@ -108,7 +106,8 @@ package), so it shares one rate-limited HTTP client, reuses the caches
 the other commands populate, and supports `--limit`. The score only
 *ranks*; both axes are always shown. Note that being behind pure
 upstream is expected on a stable Debian release and is weighted lightly
-— carried, undocumented distro-only patches are the stronger signal.
+— carried patches are the stronger signal. (Use `show` for the per-patch
+Debian-only/forwarded classification of any package.)
 
 Drill into a single installed package:
 

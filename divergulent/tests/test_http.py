@@ -84,6 +84,18 @@ class HttpClientTestCase(testtools.TestCase):
         self.assertEqual(1, len(self.slept))
         self.assertAlmostEqual(1.0, self.slept[0])
 
+    def test_rate_limit_is_per_host(self):
+        payloads = [b'{"n": 1}', b'{"n": 2}']
+
+        def urlopen(request, timeout=None):
+            return FakeResponse(payloads.pop(0))
+
+        client = self._client(urlopen)
+        client.get_json('https://repology.org/a', cache_namespace='r', cache_key='a', ttl_seconds=100)
+        client.get_json('https://sources.debian.org/b', cache_namespace='r', cache_key='b', ttl_seconds=100)
+        # Different hosts must not wait on each other.
+        self.assertEqual([], self.slept)
+
     def test_url_error_returns_none(self):
         def urlopen(request, timeout=None):
             raise urllib.error.URLError('boom')

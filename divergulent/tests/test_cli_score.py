@@ -8,7 +8,7 @@ import testtools
 from divergulent import cli
 from divergulent import debversion
 from divergulent.inventory import InstalledPackage
-from divergulent.sources.debian_patches import DivergenceResult, DivergenceState
+from divergulent.sources.debian_patches import DivergenceState, DivergenceSummary
 from divergulent.sources.repology import StalenessResult, StalenessState
 
 
@@ -26,9 +26,8 @@ def _stale(name, state):
     return StalenessResult(name, debversion.parse('1.0-1'), newest, state)
 
 
-def _div(name, debian_only=0, forwarded=0, unknown=0, state=DivergenceState.PATCHED):
-    total = debian_only + forwarded + unknown
-    return DivergenceResult(name, '1.0-1', '3.0 (quilt)', total, debian_only, forwarded, unknown, state)
+def _sum(name, total, state=DivergenceState.PATCHED):
+    return DivergenceSummary(name, '1.0-1', '3.0 (quilt)', total, state)
 
 
 class FakeRepology:
@@ -46,7 +45,7 @@ class FakePatches:
         self.by_name = by_name
         self.calls = []
 
-    def divergence(self, name, version):
+    def summary(self, name, version):
         self.calls.append(name)
         return self.by_name[name]
 
@@ -64,8 +63,8 @@ class GatherTestCase(testtools.TestCase):
             'bash': _stale('bash', StalenessState.CURRENT),
         })
         patches = FakePatches({
-            'glibc': _div('glibc', debian_only=1),
-            'bash': _div('bash', state=DivergenceState.CLEAN),
+            'glibc': _sum('glibc', 1),
+            'bash': _sum('bash', 0, DivergenceState.CLEAN),
         })
         drifts = cli._gather_score(repology, patches, packages)
         self.assertEqual(2, len(drifts))
@@ -75,7 +74,7 @@ class GatherTestCase(testtools.TestCase):
     def test_limit(self):
         packages = [_pkg('a', 'a', '1-1'), _pkg('b', 'b', '1-1'), _pkg('c', 'c', '1-1')]
         repology = FakeRepology({n: _stale(n, StalenessState.CURRENT) for n in 'abc'})
-        patches = FakePatches({n: _div(n, state=DivergenceState.CLEAN) for n in 'abc'})
+        patches = FakePatches({n: _sum(n, 0, DivergenceState.CLEAN) for n in 'abc'})
         cli._gather_score(repology, patches, packages, limit=2)
         self.assertEqual(2, len(repology.calls))
 
@@ -84,11 +83,10 @@ class SelectTestCase(testtools.TestCase):
 
     def setUp(self):
         super().setUp()
-        from divergulent import score
         self.drifts = [
-            score.combine(_stale('low', StalenessState.BEHIND), _div('low', state=DivergenceState.CLEAN)),
-            score.combine(_stale('high', StalenessState.BEHIND), _div('high', debian_only=5)),
-            score.combine(_stale('clean', StalenessState.CURRENT), _div('clean', state=DivergenceState.CLEAN)),
+            cli.score.combine(_stale('low', StalenessState.BEHIND), _sum('low', 0, DivergenceState.CLEAN)),
+            cli.score.combine(_stale('high', StalenessState.BEHIND), _sum('high', 5)),
+            cli.score.combine(_stale('clean', StalenessState.CURRENT), _sum('clean', 0, DivergenceState.CLEAN)),
         ]
 
     def test_default_hides_zero_and_ranks_by_score(self):
@@ -110,8 +108,8 @@ class ScoreCommandTestCase(testtools.TestCase):
             'glibc': _stale('glibc', StalenessState.CURRENT),
         })
         self.patches = FakePatches({
-            'bash': _div('bash', debian_only=2),
-            'glibc': _div('glibc', state=DivergenceState.CLEAN),
+            'bash': _sum('bash', 2),
+            'glibc': _sum('glibc', 0, DivergenceState.CLEAN),
         })
 
     def _run(self, argv):
@@ -129,8 +127,9 @@ class ScoreCommandTestCase(testtools.TestCase):
         data = json.loads(output)
         self.assertEqual(1, len(data))
         self.assertEqual('bash', data[0]['source'])
-        # behind (2) + 2 debian-only patches (2*3) = 8
-        self.assertEqual(8, data[0]['score'])
+        # behind (W_BEHIND) + 2 carried patches (2 * W_PATCH)
+        self.assertEqual(cli.score.W_BEHIND + 2 * cli.score.W_PATCH, data[0]['score'])
+        self.assertEqual(2, data[0]['total_patches'])
 
     def test_all_table_includes_clean(self):
         rc, output = self._run(['score', '--all'])

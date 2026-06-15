@@ -8,15 +8,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from divergulent.sources.debian_patches import DivergenceResult
+from divergulent.sources.debian_patches import DivergenceSummary
 from divergulent.sources.repology import StalenessResult, StalenessState
 
 
 # Scoring weights (transparent and provisional).
-W_DEBIAN_ONLY = 3    # an undocumented distro-only carried patch: strongest signal
-W_UNKNOWN_PATCH = 1  # a carried patch we could not classify
-W_BEHIND = 2         # behind pure upstream (mild: expected on a stable release)
-# Forwarded patches are benign drift headed upstream and score 0.
+#
+# The default whole-machine view cannot tell Debian-only patches from
+# forwarded ones (that needs patch bodies; see `show` / `--classify`), so it
+# weights total carried patches. Being behind upstream is weighted low: it is
+# expected on a stable Debian release.
+W_PATCH = 1    # a carried patch
+W_BEHIND = 2   # behind pure upstream (mild: expected on a stable release)
 
 
 @dataclass(frozen=True)
@@ -24,17 +27,16 @@ class PackageDrift:
     source_package: str
     version: str
     staleness: StalenessResult
-    divergence: DivergenceResult
+    divergence: DivergenceSummary
     score: int
 
 
-def combine(staleness: StalenessResult, divergence: DivergenceResult) -> PackageDrift:
+def combine(staleness: StalenessResult, divergence: DivergenceSummary) -> PackageDrift:
     '''Combine both axes for one source package into a ranked drift signal.'''
     score = 0
     if staleness.state == StalenessState.BEHIND:
         score += W_BEHIND
-    score += divergence.debian_only * W_DEBIAN_ONLY
-    score += divergence.unknown * W_UNKNOWN_PATCH
+    score += divergence.total * W_PATCH
 
     return PackageDrift(
         source_package=staleness.source_package,

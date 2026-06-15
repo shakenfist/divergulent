@@ -30,12 +30,12 @@ any failure returns `None` and is surfaced to the user as *unknown*,
 never as a confirmed finding. HTTP uses the standard library (no
 `requests`/`httpx`).
 
-The divergence axis is request-heavy (one series request plus one per
-patch, per source package), so it caches version-pinned patch content
-with a long TTL (30 days) — that content is immutable — and the
-`divergence` command takes `--limit`. Do not run an unbounded
-full-machine divergence scan against sources.debian.org as a casual
-test.
+The whole-machine divergence overview uses `summary()` — one request per
+source (patch count + state), no patch-body fetches — so a full
+`score`/`divergence` run stays polite. Per-patch classification
+(`details()`, used by `show`) fetches each patch body and caches
+version-pinned content with a long TTL (30 days), since that content is
+immutable. The `divergence`/`score` commands still take `--limit`.
 
 DEP-3 metadata is sparse in real Debian patches, so `dep3.classify`
 supplements explicit DEP-3 fields with Debian-authored heuristics (the
@@ -45,8 +45,11 @@ always wins; patches with neither are UNKNOWN, not assumed divergent.
 ## Scoring
 
 `score.combine` ranks packages with a transparent weighted sum
-(`debian_only*3 + unknown_patches*1 + behind*2`; forwarded patches score
-0). The weights are provisional, to be tuned once we have real data.
+(`total_patches*W_PATCH + behind*W_BEHIND`). The whole-machine view uses
+the cheap one-request-per-source patch *count* (it cannot tell
+Debian-only from forwarded — that needs patch bodies; see `show`), so it
+weights total carried patches. The weights are provisional, to be tuned
+once we have real data.
 Being *behind upstream* is weighted low on purpose: it is normal and
 expected on a stable Debian release, so it must not dominate the report
 or read as alarming on its own. The score only orders packages; the two
