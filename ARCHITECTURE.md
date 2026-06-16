@@ -33,10 +33,14 @@ installed-package inventory never leaves the machine.
   `XDG_CACHE_HOME`.
 - `divergulent/http.py` — `HttpClient`, the polite HTTP layer all
   network-backed sources fetch through (`get_json` and `get_text`):
-  identifying User-Agent, request timeout, ≤1 request/second **per host**
-  rate limiting, on-disk caching, and graceful degradation (failures return
-  `None`). Stdlib `urllib`; the urlopen/clock/sleep are injectable for
-  offline tests.
+  identifying User-Agent, request timeout, per-host rate limiting
+  (≤1 request/second by default; sources.debian.org has no documented
+  limit and is set to 0, bounded by `--workers` instead), a response
+  size cap, on-disk caching, and graceful degradation (failures return
+  `None`). The throttle is a thread-safe per-host "ticket" reservation,
+  so it stays correct when several worker threads fetch concurrently:
+  same-host requests stay spaced, different hosts overlap. Stdlib
+  `urllib`; the urlopen/clock/sleep are injectable for offline tests.
 - `divergulent/dep3.py` — a pure parser/classifier for DEP-3 patch
   headers. Classifies a patch as FORWARDED, DEBIAN_ONLY, or UNKNOWN;
   when DEP-3 metadata is absent it falls back to Debian-authored
@@ -49,11 +53,11 @@ installed-package inventory never leaves the machine.
   axis). Picks the newest stable upstream version and compares it
   against the installed *upstream* version; yields CURRENT / BEHIND /
   UNKNOWN (unresolved is UNKNOWN, never BEHIND). `RepologySource`
-  resolves one package at a time via the `project-by` resolver (used by
-  `show`); `build_staleness_map` + `RepologyBulkSource` build one cached
-  whole-archive `{srcname: newest}` map (`/api/v1/projects/` paginated)
-  for the whole-machine commands, so staleness is per-archive not
-  per-source. Both share the newest-selection/comparison logic.
+  resolves one package at a time via the `project-by` resolver,
+  caching each result for ~24h; the whole-machine commands and `show`
+  both use it. (A whole-archive bulk sweep was tried and reverted as a
+  cold-run regression — see
+  `docs/plans/PLAN-faster-full-run-phase-04-revert-bulk.md`.)
 - `divergulent/sources/debian_patches.py` — the sources.debian.org
   adapter (divergence axis). Reads a source package's quilt series from
   the patches API, fetches each patch under its pool `raw_url`, and
@@ -87,19 +91,22 @@ installed-package inventory never leaves the machine.
 ```
 inventory:  dpkg-query  ->  inventory.list_installed()  ->  [InstalledPackage]  ->  cli (table / JSON)
 
-staleness:  inventory  ->  dedup by source  ->  RepologyBulkSource.staleness()  ->  cli (ranked table / JSON)
-                                                      |
-                              build_staleness_map(): one cached paged sweep of debian_unstable
+staleness:  inventory  ->  dedup by source  ->  RepologySource.staleness()  ->  cli (ranked table / JSON)
                                                       |
                                           HttpClient (cache + politeness)  ->  repology.org
-                              (show uses RepologySource: a per-package project-by lookup instead)
+                                          (per-package project-by lookup, <=1 req/s, cached ~24h)
 
 divergence: inventory  ->  dedup by source  ->  DebianPatchesSource.summary()  ->  cli (count table / JSON)
                                                       |
+                              concurrent workers (--workers, default 8; thread pool)
+                                                      |
                                           HttpClient (per-host throttle)  ->  sources.debian.org patches API
+                                          (no rate limit; concurrency is the politeness bound)
 
-score:      inventory  ->  dedup by source  ->  staleness (cached bulk map) + divergence summary
-                                            ->  score.combine()  ->  cli (ranked report + whole-machine summary)
+score:      inventory  ->  dedup by source  ->  [concurrent workers] staleness (per-package)
+                                            ->  + divergence summary  ->  score.combine()
+                                            ->  cli (ranked report + whole-machine summary)
+                              (Repology self-limits to <=1 req/s; sources.debian.org overlaps under that wait)
 
 --classify: inventory  ->  dedup by source  ->  AptSourcePatches.details() (apt mirror, per source)
                                             ->  dep3.classify() per patch  ->  cli (per-class breakdown)

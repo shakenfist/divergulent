@@ -9,6 +9,7 @@ library ``urllib`` to keep divergulent's runtime dependency surface minimal.
 from __future__ import annotations
 
 import json
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -49,9 +50,12 @@ class HttpClient:
         self._urlopen = urlopen
         self._clock = clock
         self._sleep = sleep
-        # Last request time per host, so different hosts do not serialise
-        # against each other while each still gets its own interval.
-        self._last_request: dict[str, float] = {}
+        # Next allowed start time per host, so different hosts do not serialise
+        # against each other while each still gets its own interval. Guarded by
+        # a lock so the throttle is safe under concurrent fetches: a thread
+        # reserves its slot under the lock, then sleeps to it outside the lock.
+        self._next_allowed: dict[str, float] = {}
+        self._lock = threading.Lock()
 
     def get_json(self, url: str, *, cache_namespace: str, cache_key: str,
                  ttl_seconds: float) -> Any:
@@ -105,11 +109,14 @@ class HttpClient:
     def _throttle(self, url: str) -> None:
         host = urllib.parse.urlparse(url).netloc
         interval = self._host_intervals.get(host, self._min_interval)
-        now = self._clock()
-        last = self._last_request.get(host)
-        if last is not None:
-            wait = interval - (now - last)
-            if wait > 0:
-                self._sleep(wait)
-                now = self._clock()
-        self._last_request[host] = now
+        # Reserve this host's next start slot atomically, then sleep to it
+        # outside the lock. Under concurrency this keeps per-host spacing (e.g.
+        # Repology stays <=1 req/s in aggregate) while other hosts and a
+        # zero-interval host proceed without blocking on this one.
+        with self._lock:
+            now = self._clock()
+            scheduled = max(now, self._next_allowed.get(host, now))
+            self._next_allowed[host] = scheduled + interval
+        wait = scheduled - self._clock()
+        if wait > 0:
+            self._sleep(wait)

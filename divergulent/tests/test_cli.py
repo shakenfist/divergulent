@@ -57,3 +57,42 @@ class CliInventoryTestCase(testtools.TestCase):
             rc = cli.main([])
         self.assertEqual(1, rc)
         self.assertIn('usage', out.getvalue().lower())
+
+
+class ConcurrentMapTestCase(testtools.TestCase):
+
+    def _items(self, n):
+        return [('pkg-%02d' % i, debversion.parse('1.%d-1' % i)) for i in range(n)]
+
+    def test_preserves_input_order_concurrently(self):
+        items = self._items(20)
+        progress = cli.Progress(len(items), enabled=False)
+        # Return the index so we can assert order is preserved despite out-of-order
+        # completion under several workers.
+        results = cli._concurrent_map(
+            items, lambda name, version: name, workers=8, progress=progress)
+        self.assertEqual([name for name, _ in items], results)
+
+    def test_workers_one_is_serial(self):
+        items = self._items(5)
+        progress = cli.Progress(len(items), enabled=False)
+        seen = []
+        results = cli._concurrent_map(
+            items, lambda name, version: seen.append(name) or name, workers=1, progress=progress)
+        self.assertEqual([name for name, _ in items], results)
+        # Serial mode visits items strictly in input order.
+        self.assertEqual([name for name, _ in items], seen)
+
+    def test_progress_counts_every_item(self):
+        items = self._items(7)
+        steps = []
+
+        class RecordingProgress:
+            def step(self, label):
+                steps.append(label)
+
+            def finish(self):
+                pass
+
+        cli._concurrent_map(items, lambda name, version: name, workers=4, progress=RecordingProgress())
+        self.assertEqual(sorted(name for name, _ in items), sorted(steps))

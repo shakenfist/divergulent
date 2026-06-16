@@ -140,105 +140,18 @@ class FixtureTestCase(testtools.TestCase):
         self.assertEqual('1.3', result.newest_version)
 
 
+class MalformedEntryTestCase(testtools.TestCase):
+
+    def test_non_dict_entries_are_skipped(self):
+        # External data is untrusted: a non-dict entry must be skipped, not crash
+        # the newest-version selection.
+        entries = ['junk', None, _entry('arch', '1.3', 'newest')]
+        self.assertEqual('1.3', _source(entries).newest_version(entries))
+
+
 class ProtocolTestCase(testtools.TestCase):
 
     def test_is_a_source(self):
         from divergulent.sources.base import Source
         self.assertIsInstance(_source([_entry('a', '1.0', 'newest')]), Source)
         self.assertEqual('repology', repology.RepologySource.name)
-
-
-class FakeCache:
-    def __init__(self):
-        self.store = {}
-
-    def get(self, namespace, key):
-        return self.store.get((namespace, key))
-
-    def set(self, namespace, key, value, ttl_seconds):
-        self.store[(namespace, key)] = value
-
-
-class FakePagedHttp:
-    def __init__(self, pages):
-        self.pages = list(pages)
-        self.calls = 0
-
-    def get_json(self, url, *, cache_namespace, cache_key, ttl_seconds):
-        page = self.pages[self.calls] if self.calls < len(self.pages) else None
-        self.calls += 1
-        return page
-
-
-class BulkMapTestCase(testtools.TestCase):
-
-    def test_paging_assembles_map(self):
-        page0 = {
-            'aaa': [_entry('debian_unstable', '1.0', 'outdated', 'aaa'), _entry('arch', '2.0', 'newest', 'aaa')],
-            'bbb': [_entry('debian_unstable', '3.0', 'newest', 'bbb')],
-        }
-        page1 = {
-            'ccc': [_entry('debian_unstable', '1.0', 'outdated', 'ccc'), _entry('arch', '1.5', 'newest', 'ccc')],
-        }
-        mapping = repology.build_staleness_map(
-            FakePagedHttp([page0, page1]), FakeCache(), repo='debian_unstable', page_size=2)
-        self.assertEqual('2.0', mapping['aaa'])
-        self.assertEqual('3.0', mapping['bbb'])
-        self.assertEqual('1.5', mapping['ccc'])
-
-    def test_cached_map_skips_network(self):
-        cache = FakeCache()
-        cache.set('repology-bulk', 'debian_unstable', {'x': '9'}, ttl_seconds=1)
-        http = FakePagedHttp([])
-        self.assertEqual({'x': '9'}, repology.build_staleness_map(http, cache, repo='debian_unstable'))
-        self.assertEqual(0, http.calls)
-
-    def test_malformed_page_values_are_skipped(self):
-        # External data is untrusted: project values that are not lists of dicts,
-        # and non-dict entries within a list, must be skipped, not crash.
-        page = {
-            'good': [_entry('debian_unstable', '3.0', 'newest', 'good')],
-            'not_a_list': 'oops',
-            'null': None,
-            'mixed': ['junk', _entry('debian_unstable', '4.0', 'newest', 'mixed')],
-        }
-        mapping = repology.build_staleness_map(
-            FakePagedHttp([page]), FakeCache(), repo='debian_unstable', page_size=10)
-        self.assertEqual('3.0', mapping['good'])
-        self.assertEqual('4.0', mapping['mixed'])
-        self.assertNotIn('not_a_list', mapping)
-        self.assertNotIn('null', mapping)
-
-    def test_max_pages_caps_the_sweep(self):
-        # A server that always returns a full page and keeps the pager moving
-        # must not loop forever; max_pages bounds it.
-        class EndlessHttp:
-            def __init__(self):
-                self.calls = 0
-
-            def get_json(self, url, *, cache_namespace, cache_key, ttl_seconds):
-                self.calls += 1
-                # A fresh full page each time, keyed so next_start always advances.
-                name = 'pkg%05d' % self.calls
-                return {name: [_entry('debian_unstable', '1.0', 'newest', name)]}
-
-        http = EndlessHttp()
-        repology.build_staleness_map(http, FakeCache(), repo='debian_unstable', page_size=1, max_pages=5)
-        self.assertEqual(5, http.calls)
-
-
-class RepologyBulkSourceTestCase(testtools.TestCase):
-
-    def test_states(self):
-        source = repology.RepologyBulkSource({'foo': '2.0'})
-        self.assertEqual(StalenessState.BEHIND, source.staleness('foo', debversion.parse('1.0-1')).state)
-        self.assertEqual(StalenessState.CURRENT, source.staleness('foo', debversion.parse('2.0-1')).state)
-        self.assertEqual(StalenessState.UNKNOWN, source.staleness('absent', debversion.parse('1.0-1')).state)
-
-    def test_agrees_with_per_package(self):
-        entries = [_entry('debian_unstable', '1.0', 'outdated', 'foo'), _entry('arch', '2.0', 'newest', 'foo')]
-        installed = debversion.parse('1.0-1')
-        per_package = RepologySource(FakeHttp(entries)).staleness('foo', installed)
-        bulk = repology.RepologyBulkSource({'foo': repology._select_newest(entries)}).staleness('foo', installed)
-        self.assertEqual(per_package.state, bulk.state)
-        self.assertEqual(per_package.newest_version, bulk.newest_version)

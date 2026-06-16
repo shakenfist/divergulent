@@ -1,4 +1,5 @@
 import argparse
+import concurrent.futures
 import json
 import sys
 
@@ -11,7 +12,7 @@ from divergulent.http import HttpClient
 from divergulent.progress import Progress
 from divergulent.sources.apt_patches import AptSourcePatches
 from divergulent.sources.debian_patches import DebianPatchesSource, DivergenceState, DivergenceSummary
-from divergulent.sources.repology import RepologyBulkSource, RepologySource, StalenessState, build_staleness_map
+from divergulent.sources.repology import RepologySource, StalenessState
 
 
 _CLASSIFY_UNAVAILABLE = (
@@ -19,8 +20,15 @@ _CLASSIFY_UNAVAILABLE = (
     "'apt-get update'. Falling back to patch counts.")
 
 # sources.debian.org has no documented rate limit (unlike Repology, which
-# mandates <=1 req/s), so we let it run a few requests per second.
-SOURCES_DEBIAN_INTERVAL = 0.34
+# mandates <=1 req/s). We do not space its requests at all; concurrency
+# (--workers) is the politeness bound instead, so the per-request interval is 0
+# and at most DEFAULT_WORKERS requests are in flight at once.
+SOURCES_DEBIAN_INTERVAL = 0.0
+
+# Default number of concurrent fetch workers for the commands that query
+# sources.debian.org. Kept moderate to stay a polite single client; Repology
+# requests still self-limit to <=1 req/s via the per-host throttle regardless.
+DEFAULT_WORKERS = 8
 
 
 def _cache_and_client():
@@ -32,14 +40,15 @@ def _http_client():
     return _cache_and_client()[1]
 
 
-def _bulk_repology():
-    '''A staleness source backed by the cached whole-archive Repology map.
+def _repology():
+    '''A per-package Repology staleness source.
 
-    Building the map is a one-time (per ~24h) cost shared by all packages, so
-    the whole-machine commands do not make a Repology request per source.
+    Resolves each installed source via the project-by API (small, fast, and
+    cached per package for ~24h). This fetches only what is installed; a
+    whole-archive bulk sweep was tried (phase 2) and reverted as a cold-run
+    regression -- see docs/plans/PLAN-faster-full-run-phase-04-revert-bulk.md.
     '''
-    cache, http = _cache_and_client()
-    return RepologyBulkSource(build_staleness_map(http, cache))
+    return RepologySource(_http_client())
 
 
 def _build_parser():
@@ -81,6 +90,9 @@ def _build_parser():
         '--classify', action='store_true',
         help='Classify patches (Debian-only/forwarded/unknown) by fetching source packages '
              'via apt. Needs deb-src indices.')
+    diverge.add_argument(
+        '--workers', type=int, default=DEFAULT_WORKERS,
+        help='Concurrent requests to sources.debian.org (default %d; 1 = serial).' % DEFAULT_WORKERS)
     diverge.add_argument('--quiet', action='store_true', help='Suppress progress output.')
 
     scorecmd = subparsers.add_parser(
@@ -97,6 +109,10 @@ def _build_parser():
         '--classify', action='store_true',
         help='Classify carried patches (via apt source packages) and weight Debian-only patches. '
              'Needs deb-src indices.')
+    scorecmd.add_argument(
+        '--workers', type=int, default=DEFAULT_WORKERS,
+        help='Concurrent requests to sources.debian.org (default %d; 1 = serial). '
+             'Repology stays <=1 req/s regardless.' % DEFAULT_WORKERS)
     scorecmd.add_argument('--quiet', action='store_true', help='Suppress progress output.')
 
     showcmd = subparsers.add_parser(
@@ -153,6 +169,35 @@ def _dedup_sources(packages):
     return seen
 
 
+def _concurrent_map(items, fn, workers, progress):
+    '''Apply ``fn(name, version)`` over deduped sources, preserving input order.
+
+    Results keep the order of ``items``; the progress reporter steps as each
+    task completes. ``workers <= 1`` runs a plain serial loop (used by tests and
+    ``--workers 1``). Concurrency only helps unthrottled hosts: a per-host
+    throttle (e.g. Repology at <=1 req/s) still serialises that host's requests
+    across workers.
+    '''
+    results = [None] * len(items)
+    if workers <= 1:
+        for index, (name, version) in enumerate(items):
+            progress.step(name)
+            results[index] = fn(name, version)
+        progress.finish()
+        return results
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(fn, name, version): (index, name)
+            for index, (name, version) in enumerate(items)}
+        for future in concurrent.futures.as_completed(futures):
+            index, name = futures[future]
+            results[index] = future.result()
+            progress.step(name)
+    progress.finish()
+    return results
+
+
 def _gather_staleness(source, packages, progress_enabled=False):
     items = list(_dedup_sources(packages).items())
     progress = Progress(len(items), enabled=progress_enabled)
@@ -191,7 +236,7 @@ def _summarise(results):
 
 def _staleness_command(args):
     packages = inventory.list_installed()
-    source = _bulk_repology()
+    source = _repology()
     results = _gather_staleness(source, packages, progress_enabled=not args.quiet)
     _summarise(results)
 
@@ -214,17 +259,12 @@ def _staleness_command(args):
     return 0
 
 
-def _gather_divergence(source, packages, limit=None, progress_enabled=False):
+def _gather_divergence(source, packages, limit=None, progress_enabled=False, workers=DEFAULT_WORKERS):
     items = list(_dedup_sources(packages).items())
     if limit is not None:
         items = items[:limit]
     progress = Progress(len(items), enabled=progress_enabled)
-    results = []
-    for name, version in items:
-        progress.step(name)
-        results.append(source.summary(name, str(version)))
-    progress.finish()
-    return results
+    return _concurrent_map(items, lambda name, version: source.summary(name, str(version)), workers, progress)
 
 
 def _select_divergence(results, show_all):
@@ -295,7 +335,8 @@ def _divergence_command(args):
             return _divergence_classified(apt, packages, args)
         print(_CLASSIFY_UNAVAILABLE, file=sys.stderr)
     source = DebianPatchesSource(_http_client())
-    results = _gather_divergence(source, packages, limit=args.limit, progress_enabled=not args.quiet)
+    results = _gather_divergence(
+        source, packages, limit=args.limit, progress_enabled=not args.quiet, workers=args.workers)
     _summarise_divergence(results)
 
     selected = _select_divergence(results, args.show_all)
@@ -318,19 +359,20 @@ def _divergence_command(args):
     return 0
 
 
-def _gather_score(repology, patches, packages, limit=None, progress_enabled=False):
+def _gather_score(repology, patches, packages, limit=None, progress_enabled=False, workers=DEFAULT_WORKERS):
     items = list(_dedup_sources(packages).items())
     if limit is not None:
         items = items[:limit]
     progress = Progress(len(items), enabled=progress_enabled)
-    drifts = []
-    for name, version in items:
-        progress.step(name)
+
+    def assess(name, version):
+        # Repology self-limits to <=1 req/s via the throttle, so concurrent
+        # workers overlap the sources.debian.org fetch under that wait.
         staleness = repology.staleness(name, version)
         divergence = patches.summary(name, str(version))
-        drifts.append(score.combine(staleness, divergence))
-    progress.finish()
-    return drifts
+        return score.combine(staleness, divergence)
+
+    return _concurrent_map(items, assess, workers, progress)
 
 
 def _select_score(drifts, show_all):
@@ -358,7 +400,7 @@ def _summarise_score(drifts):
 
 
 def _score_classified(apt, packages, args):
-    repology = _bulk_repology()
+    repology = _repology()
     items = list(_dedup_sources(packages).items())
     if args.limit is not None:
         items = items[:args.limit]
@@ -415,10 +457,11 @@ def _score_command(args):
         if apt.available():
             return _score_classified(apt, packages, args)
         print(_CLASSIFY_UNAVAILABLE, file=sys.stderr)
-    repology = _bulk_repology()
+    repology = _repology()
     patches = DebianPatchesSource(_http_client())
 
-    drifts = _gather_score(repology, patches, packages, limit=args.limit, progress_enabled=not args.quiet)
+    drifts = _gather_score(
+        repology, patches, packages, limit=args.limit, progress_enabled=not args.quiet, workers=args.workers)
     _summarise_score(drifts)
 
     selected = _select_score(drifts, args.show_all)

@@ -73,12 +73,9 @@ divergulent staleness --json   # machine-readable
 
 Staleness is heuristic: it relies on Repology resolving your Debian
 source package to an upstream project, and reports `unknown` (never
-"behind") when it cannot. The whole-machine `staleness` and `score`
-commands fetch one cached sweep of the entire `debian_unstable`
-project set and match your packages against it locally, so the cost is
-per-archive rather than per-package; `show` instead does a single
-per-package lookup. Results are cached locally and Repology is queried
-politely (≤1 request/second).
+"behind") when it cannot. Each source is looked up individually and
+cached locally (~24h), and Repology is queried politely (≤1
+request/second).
 
 Report how many patches each package carries (the divergence axis, via
 [sources.debian.org](https://sources.debian.org/)):
@@ -87,11 +84,15 @@ Report how many patches each package carries (the divergence axis, via
 divergulent divergence            # packages carrying patches, most first
 divergulent divergence --all      # also show clean / native / unknown
 divergulent divergence --limit 50 # cap how many source packages are queried
+divergulent divergence --workers 4 # fewer concurrent requests (default 8)
 divergulent divergence --json     # machine-readable
 ```
 
 The whole-machine view reports a patch *count* per package, using one
-request per source so a full run stays fast and polite. For the
+request per source so a full run stays fast and polite. sources.debian.org
+has no documented rate limit, so requests run concurrently — `--workers`
+(default 8) bounds how many are in flight at once and is the politeness
+control; `--workers 1` is fully serial. For the
 per-patch [DEP-3](https://dep-team.pages.debian.net/deps/dep3/)
 classification (forwarded-upstream vs Debian-only vs unknown), either
 drill into one package with `divergulent show <package>` (see below), or
@@ -118,7 +119,10 @@ divergulent score --json          # machine-readable
 
 `score` is the heaviest command (it queries both axes for every source
 package), so it shares one rate-limited HTTP client, reuses the caches
-the other commands populate, and supports `--limit`. The score only
+the other commands populate, and supports `--limit` and `--workers`.
+Repology stays at ≤1 request/second whatever the worker count, and the
+sources.debian.org fetches overlap under that wait, so a cold `score` is
+bounded by the Repology half. The score only
 *ranks*; both axes are always shown. Note that being behind pure
 upstream is expected on a stable Debian release and is weighted lightly
 — carried patches are the stronger signal. (Use `show` for the per-patch
