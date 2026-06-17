@@ -155,3 +155,27 @@ class ProtocolTestCase(testtools.TestCase):
         from divergulent.sources.base import Source
         self.assertIsInstance(_source([_entry('a', '1.0', 'newest')]), Source)
         self.assertEqual('repology', repology.RepologySource.name)
+
+
+class RepologyBulkSourceTestCase(testtools.TestCase):
+
+    def test_states_from_map(self):
+        source = repology.RepologyBulkSource({'foo': '2.0'})
+        self.assertEqual(StalenessState.BEHIND, source.staleness('foo', debversion.parse('1.0-1')).state)
+        self.assertEqual(StalenessState.CURRENT, source.staleness('foo', debversion.parse('2.0-1')).state)
+        self.assertEqual(
+            StalenessState.UNKNOWN, source.staleness('absent', debversion.parse('1.0-1')).state)
+
+    def test_lookup_returns_newest_or_none(self):
+        source = repology.RepologyBulkSource({'foo': '2.0'})
+        self.assertEqual('2.0', source.lookup('foo'))
+        self.assertIsNone(source.lookup('absent'))
+
+    def test_agrees_with_per_package_for_same_newest(self):
+        entries = [_entry('debian_unstable', '1.0', 'outdated', 'foo'), _entry('arch', '2.0', 'newest', 'foo')]
+        installed = debversion.parse('1.0-1')
+        per_package = RepologySource(FakeHttp(entries)).staleness('foo', installed)
+        bulk = repology.RepologyBulkSource(
+            {'foo': repology._select_newest(entries)}).staleness('foo', installed)
+        self.assertEqual(per_package.state, bulk.state)
+        self.assertEqual(per_package.newest_version, bulk.newest_version)
