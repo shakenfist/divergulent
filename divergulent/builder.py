@@ -61,7 +61,12 @@ def enumerate_archive(paths: list[str]) -> list[tuple[str, str, str | None]]:
     items: list[tuple[str, str, str | None]] = []
     for path in paths:
         with open(path) as handle:
-            for para in deb822.Sources.iter_paragraphs(handle):
+            # use_apt_pkg=False forces python-debian's pure-Python parser. The
+            # default prefers python3-apt's apt_pkg, which is not importable from
+            # an isolated venv and warns before falling back; we depend only on
+            # python-debian, so choose its parser explicitly. The speed cost is
+            # negligible against the network crawl this feeds.
+            for para in deb822.Sources.iter_paragraphs(handle, use_apt_pkg=False):
                 name = para.get('Package')
                 version = para.get('Version')
                 if not name or not version:

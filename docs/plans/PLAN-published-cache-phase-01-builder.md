@@ -6,16 +6,54 @@ incremental correctness. This is the de-risking phase — its real
 deliverable is *measured numbers* (bundle size, build time), not a
 finished product.
 
-**Status: implemented; awaiting CI measurement.** The builder is
-complete and tested offline — `divergulent/bundle.py` (schema +
-gzipped write/load), `divergulent/builder.py` (deb-src enumeration via
+**Status: measured and validated; one spot-check remaining.** The
+builder is complete and tested offline — `divergulent/bundle.py` (schema
++ gzipped write/load), `divergulent/builder.py` (deb-src enumeration via
 `debian.deb822.Sources` + the recovered bulk Repology sweep),
 `HttpClient(refresh=True)`, `cli.build_bundle` + the `divergulent cache
 build [--output --release --workers --refresh]` command, and
 `.github/workflows/build-cache.yml` (+ `tools/build-cache.sh`). Suite
-green. The phase's real deliverable — measured bundle size and build
-time — still needs a manual `workflow_dispatch` run on the debian-13
-runner.
+green.
+
+### Measured results (first cold `workflow_dispatch` on the debian-13 runner)
+
+| Metric | Estimate | Measured (cold) | Measured (incremental, cache restored) |
+|--------|----------|-----------------|----------------------------------------|
+| Gzipped bundle size | ~1–2 MB | **750,350 bytes (~0.73 MB)** | **750,121 bytes (~0.73 MB)** |
+| Build step time | ~45–57 min (~22 staleness + ~20–35 divergence) | **~95 min** | **~80 s** |
+
+The second `workflow_dispatch` restored the first run's CI cache and the
+build step took **~80 s** — roughly **70× faster** than the cold ~95 min,
+producing a near-identical bundle (within ~230 bytes). This validates the
+**daily-delta model decisively**: divergence is immutable (30-day cache)
+and staleness is within its 24 h TTL, so an incremental build is almost
+pure local recompute from cache with negligible network. The bundle's
+near-identical size across runs is also a good determinism signal.
+
+Conclusions:
+
+- **Size is settled in our favour.** At ~0.73 MB the bundle is well
+  under the "few MB → consider sharding" threshold, so the **single
+  whole bundle** decision holds and sharding stays Future work. It also
+  makes the privacy model cheap: a client downloads the whole ~730 KB
+  and matches locally, so no package list leaves the box.
+- **Time is over estimate but acceptable**, because 95 min is the
+  *cold* cost. Divergence for a fixed `(source, version)` is immutable
+  and cached 30 days, so a daily incremental build re-fetches only new
+  versions plus the 24 h staleness pages — minutes, not hours. 95 min is
+  paid only on the first build and the periodic `--refresh` full rebuild,
+  which is fine for a scheduled CI job. The divergence half was the
+  underestimate (≈34k sources, many needing a second request for the
+  epoch-stripped version, and sources.debian.org slower per request under
+  concurrency than the assumed ~0.6 s).
+
+The **markedly-faster incremental re-run** success criterion is now met
+(~80 s vs ~95 min). The only criterion still open is a **hand-checked
+sample** (e.g. `bash`) confirmed against a live `divergulent show`,
+plus a glance at the bundle's `release`/`built_on` provenance and a
+staleness/divergence entry count near the archive size. Once that
+spot-check passes, phase 1 is complete and phase 2 (client consumption)
+can start.
 
 Two scoping decisions taken during implementation:
 
