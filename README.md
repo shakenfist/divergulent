@@ -134,6 +134,27 @@ show live progress on a terminal (and periodic lines in logs); pass
 ~24h-cached snapshot of upstream versions; later runs reuse it and are
 near-instant.
 
+If you have a precomputed cache **bundle** (the gzipped artifact the
+builder produces — see Status), point any of these commands at it to
+resolve covered packages instantly from disk instead of querying the
+network, falling back to live lookups only for what the bundle does not
+cover:
+
+```bash
+divergulent score --bundle cache-debian13.json.gz       # both axes from the bundle
+divergulent staleness --bundle cache-debian13.json.gz
+divergulent divergence --bundle cache-debian13.json.gz
+```
+
+The bundle is read locally (your package list never leaves the machine)
+and is used only if its schema is recognised and it describes the Debian
+release you are running; otherwise the command prints a notice and runs
+fully live. A package present in the bundle but installed at a different
+version, or absent entirely, falls back to a live lookup — so results
+never regress, and `unknown` still means genuinely unresolved.
+Downloading a bundle automatically (`cache pull`) is a later phase; for
+now you supply the path yourself.
+
 Drill into a single installed package:
 
 ```bash
@@ -163,10 +184,12 @@ A **published precomputed cache** is in progress
 ([docs/plans/PLAN-published-cache.md](docs/plans/PLAN-published-cache.md)):
 the slow half of a cold run (staleness + divergence) is a function of the
 Debian release, not of your machine, so it can be computed once centrally
-and downloaded as a small signed bundle. The first piece — a central
+and downloaded as a small signed bundle. Two pieces exist now: a central
 builder (`divergulent cache build`, run in CI) that sweeps the whole
-archive into a gzipped bundle — exists now; client consumption,
-downloading, and signing are later phases.
+archive into a ~0.73 MB gzipped bundle, and client consumption — the
+`--bundle PATH` flag above resolves covered packages from a local bundle
+with a live fallback. Automatic downloading (`cache pull`) and signature
+verification are later phases.
 
 ## Development
 
