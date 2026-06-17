@@ -193,6 +193,45 @@ class HttpClientTestCase(testtools.TestCase):
             client.get_json('https://repology.org/x', cache_namespace='r', cache_key='k', ttl_seconds=100))
 
 
+class RefreshModeTestCase(testtools.TestCase):
+    '''Refresh mode skips the cache read but still writes the fresh value.'''
+
+    def setUp(self):
+        super().setUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.cache = Cache(Path(tmp.name), clock=lambda: 0.0)
+        self.now = [1000.0]
+
+    def _refresh_client(self, urlopen):
+        return http.HttpClient(
+            self.cache, urlopen=urlopen, clock=lambda: self.now[0], sleep=lambda s: None,
+            min_interval=1.0, user_agent='ua/1', refresh=True)
+
+    def test_refetches_despite_warm_cache(self):
+        self.cache.set('r', 'k', {'cached': True}, ttl_seconds=100)
+        calls = []
+
+        def urlopen(request, timeout=None):
+            calls.append(1)
+            return FakeResponse(b'{"fresh": true}')
+
+        client = self._refresh_client(urlopen)
+        data = client.get_json('https://repology.org/x', cache_namespace='r', cache_key='k', ttl_seconds=100)
+        # The warm cache is ignored: the network was hit and the fresh value won.
+        self.assertEqual({'fresh': True}, data)
+        self.assertEqual(1, len(calls))
+
+    def test_refresh_still_writes_back(self):
+        def urlopen(request, timeout=None):
+            return FakeResponse(b'{"fresh": true}')
+
+        client = self._refresh_client(urlopen)
+        client.get_json('https://repology.org/x', cache_namespace='r', cache_key='k', ttl_seconds=100)
+        # The fresh result repopulates the cache, so a later non-refresh read hits it.
+        self.assertEqual({'fresh': True}, self.cache.get('r', 'k'))
+
+
 class ThrottleConcurrencyTestCase(testtools.TestCase):
     '''The per-host throttle must stay correct under concurrent fetches.'''
 

@@ -1,0 +1,27 @@
+Package: bash
+Format: 3.0 (quilt)
+Binary: bash, bash-static
+Architecture: any
+Version: 5.2.15-2
+Directory: pool/main/b/bash
+
+Package: hello
+Format: 3.0 (native)
+Binary: hello
+Architecture: any
+Version: 2.10-3
+Directory: pool/main/h/hello
+
+Package: bash
+Format: 3.0 (quilt)
+Binary: bash, bash-static
+Architecture: any
+Version: 5.2.15-3
+Directory: pool/main/b/bash
+
+Package: zlib
+Format: 3.0 (quilt)
+Binary: zlib1g
+Architecture: any
+Version: 1:1.2.13.dfsg-1
+Directory: pool/main/z/zlib
