@@ -140,6 +140,11 @@ recognise (runs live), verifies the Sigstore signature against the
 expected workflow identity, and **spot-verifies a random sample**
 against live origins ("no cry wolf"). Migration is the publisher's
 job; the client never migrates, it just drops what it cannot read.
+On the publisher side, the build is incremental by default but
+supports a forced clean recompute (`cache build --refresh`); the
+schedule (phase 5) pairs daily incremental builds with a periodic
+full rebuild so a once-bad cached value cannot live in the bundle
+indefinitely.
 
 **Privacy:** whole-bundle download means the host learns nothing
 about the user's inventory. No package list ever leaves the box.
