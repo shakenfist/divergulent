@@ -79,14 +79,17 @@ Resolved up front (operator decisions, 2026-06-17):
   (`--cache-url` / config) so `images.shakenfist.com` or other
   mirrors can be used. Because the bundle is signed and
   spot-verified, the host is untrusted and mirrors are free.
-- **Coverage.** Whole archive (~34k sources) from day one: ~22 min
-  staleness + ~20–35 min initial divergence, then cheap daily
-  deltas (divergence is immutable, so only new versions are
-  crawled).
+- **Coverage.** Whole archive (~34k sources) from day one. The first
+  cold build measured **~95 min** (phase 1) — over the ~45–57 min
+  estimate, the divergence half being the underestimate — then cheap
+  daily deltas (divergence is immutable, so only new versions are
+  crawled). 95 min is the cold/periodic-rebuild cost, not the daily one.
 - **Bundle shape.** A single whole bundle (one gzipped file,
   optionally split staleness/divergence), downloaded whole and
-  filtered locally — maximally private, trivial client. Shard only
-  if it outgrows a few MB.
+  filtered locally — maximally private, trivial client. The measured
+  bundle is **~0.73 MB gzipped** (phase 1), well under the "few MB"
+  sharding threshold, so the single-bundle decision is confirmed and
+  sharding stays Future work.
 
 Still to resolve in phases:
 
@@ -192,11 +195,22 @@ delivery phases (4–5).
 
 | Phase | Plan | Status |
 |-------|------|--------|
-| 1. Central builder + CI run: whole-archive sweep, emit bundle, **measure size/timing** | PLAN-published-cache-phase-01-builder.md | Implemented; awaiting CI measurement |
+| 1. Central builder + CI run: whole-archive sweep, emit bundle, **measure size/timing** | PLAN-published-cache-phase-01-builder.md | Cold build measured (~0.73 MB, ~95 min); verifying incremental re-run |
 | 2. Bundle schema + bundle-backed sources + live fallback | PLAN-published-cache-phase-02-consume.md | Not started |
 | 3. `cache pull`: download, validate, store, configurable URL | PLAN-published-cache-phase-03-pull.md | Not started |
 | 4. Signing + client verification + spot-verify | PLAN-published-cache-phase-04-signing.md | Not started |
 | 5. Scheduled daily publish to GitHub Releases `latest` | PLAN-published-cache-phase-05-publish.md | Not started |
+
+**Phase 5 politeness note (from the phase-1 measurement).** The cold
+whole-archive crawl is ~95 min and, at `--workers 8`, sustains up to 8
+concurrent connections to sources.debian.org for most of it. The
+scheduled job must therefore lean on **incremental** builds (the daily
+delta is cheap because divergence is immutable) and run a full
+`--refresh` rebuild only periodically (e.g. weekly), and should keep the
+worker count **moderate** — a central daily crawler should not be the
+heaviest client sources.debian.org sees. Revisit the default worker
+count and whether to add a small per-request interval for the scheduled
+crawl when designing phase 5.
 
 ## Agent guidance
 
