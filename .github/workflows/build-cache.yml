@@ -1,0 +1,43 @@
+name: Build cache
+
+permissions:
+  contents: read
+
+# Manual only for now: this phase exists to measure the whole-archive build time
+# and bundle size. Scheduling and publishing come in a later phase.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: [self-hosted, debian-13, s]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # setuptools_scm needs full history
+
+      - name: Install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y -q python3 python3-venv python3-pip
+
+      - name: Restore divergulent cache
+        uses: actions/cache@v4
+        with:
+          path: .divergulent-ci-cache
+          key: divergulent-cache-trixie-${{ github.run_id }}
+          restore-keys: |
+            divergulent-cache-trixie-
+
+      - name: Build cache bundle
+        env:
+          DIVERGULENT_CACHE_DIR: ${{ github.workspace }}/.divergulent-ci-cache
+        run: tools/build-cache.sh cache-bundle/cache-debian13.json.gz
+
+      - name: Upload cache bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: cache-bundle
+          path: cache-bundle/

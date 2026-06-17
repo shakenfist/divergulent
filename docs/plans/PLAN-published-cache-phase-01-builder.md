@@ -6,7 +6,28 @@ incremental correctness. This is the de-risking phase — its real
 deliverable is *measured numbers* (bundle size, build time), not a
 finished product.
 
-**Status: not started.**
+**Status: implemented; awaiting CI measurement.** The builder is
+complete and tested offline — `divergulent/bundle.py` (schema +
+gzipped write/load), `divergulent/builder.py` (deb-src enumeration via
+`debian.deb822.Sources` + the recovered bulk Repology sweep),
+`HttpClient(refresh=True)`, `cli.build_bundle` + the `divergulent cache
+build [--output --release --workers --refresh]` command, and
+`.github/workflows/build-cache.yml` (+ `tools/build-cache.sh`). Suite
+green. The phase's real deliverable — measured bundle size and build
+time — still needs a manual `workflow_dispatch` run on the debian-13
+runner.
+
+Two scoping decisions taken during implementation:
+
+- **`RepologyBulkSource` (the client-side consumer of the map) is
+  deferred to phase 2**, where the master plan actually consumes it.
+  Phase 1 only needs `build_staleness_map`; recovering the consumer now
+  would be dead code.
+- **The original map-level 24h staleness cache was dropped**; the
+  per-page HTTP cache already gives incrementality and makes `--refresh`
+  uniform (the HTTP client controls every read), whereas a separate
+  map-level cache bought nothing at a daily cadence and would have
+  sidestepped `--refresh`.
 
 ## Prompt
 

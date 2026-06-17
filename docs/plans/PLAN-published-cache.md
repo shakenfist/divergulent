@@ -192,7 +192,7 @@ delivery phases (4–5).
 
 | Phase | Plan | Status |
 |-------|------|--------|
-| 1. Central builder + CI run: whole-archive sweep, emit bundle, **measure size/timing** | PLAN-published-cache-phase-01-builder.md | Not started |
+| 1. Central builder + CI run: whole-archive sweep, emit bundle, **measure size/timing** | PLAN-published-cache-phase-01-builder.md | Implemented; awaiting CI measurement |
 | 2. Bundle schema + bundle-backed sources + live fallback | PLAN-published-cache-phase-02-consume.md | Not started |
 | 3. `cache pull`: download, validate, store, configurable URL | PLAN-published-cache-phase-03-pull.md | Not started |
 | 4. Signing + client verification + spot-verify | PLAN-published-cache-phase-04-signing.md | Not started |
