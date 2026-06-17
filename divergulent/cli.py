@@ -1,9 +1,14 @@
 import argparse
 import concurrent.futures
+import datetime
 import json
+import os
+import subprocess
 import sys
 
 from divergulent import __version__
+from divergulent import builder
+from divergulent import bundle
 from divergulent import inventory
 from divergulent import score
 from divergulent.cache import Cache, default_cache_dir
@@ -119,6 +124,24 @@ def _build_parser():
         'show', help='Show per-patch detail (with Debian bug references) for one installed package.')
     showcmd.add_argument('package', help='A binary or source package name that is installed.')
     showcmd.add_argument('--json', action='store_true', help='Emit the detail as JSON.')
+
+    cachecmd = subparsers.add_parser(
+        'cache', help='Build the precomputed cache bundle (central builder).')
+    cachesub = cachecmd.add_subparsers(dest='cache_command')
+    buildcmd = cachesub.add_parser(
+        'build', help='Sweep the whole archive and write a gzipped staleness/divergence bundle.')
+    buildcmd.add_argument('--output', required=True, help='Path to write the gzipped bundle to.')
+    buildcmd.add_argument(
+        '--release', default=None,
+        help='Debian release codename the bundle describes (default: detect from /etc/os-release).')
+    buildcmd.add_argument(
+        '--workers', type=int, default=DEFAULT_WORKERS,
+        help='Concurrent requests to sources.debian.org (default %d; 1 = serial). '
+             'Repology stays <=1 req/s regardless.' % DEFAULT_WORKERS)
+    buildcmd.add_argument(
+        '--refresh', action='store_true',
+        help='Ignore cached results and recompute from the origins (still repopulates the cache).')
+    buildcmd.add_argument('--quiet', action='store_true', help='Suppress progress output.')
 
     return parser
 
@@ -488,6 +511,117 @@ def _score_command(args):
     return 0
 
 
+def build_bundle(http, paths, *, release, repology_repo, arch, generated_at,
+                 workers=DEFAULT_WORKERS, progress_enabled=False):
+    '''Assemble a precomputed bundle from a fixed set of deb-src indices.
+
+    Pure orchestration with no clock, ``uname`` or apt detection inside:
+    ``generated_at`` and the host facts are passed in, so a test can drive the
+    whole build offline with a fake HTTP client. Enumerates the archive (1
+    version per source, the newest), sweeps Repology for staleness once, and
+    gathers a divergence ``summary()`` per source concurrently.
+    '''
+    enumerated = builder.enumerate_archive(paths)
+    latest = builder.latest_versions(enumerated)
+    staleness = builder.build_staleness_map(http, repo=repology_repo)
+
+    patches = DebianPatchesSource(http)
+    items = sorted(latest.items())
+    div_items = [(name, version) for name, (version, _fmt) in items]
+    progress = Progress(len(div_items), enabled=progress_enabled)
+    summaries = _concurrent_map(
+        div_items, lambda name, version: patches.summary(name, version), workers, progress)
+
+    divergence = {
+        name: {
+            'version': version,
+            'format': summary.source_format,
+            'total': summary.total,
+            'state': summary.state.value,
+        }
+        for (name, (version, _fmt)), summary in zip(items, summaries)}
+
+    return bundle.Bundle(
+        schema=bundle.SCHEMA_VERSION,
+        cache_schema=bundle.CACHE_SCHEMA_VERSION,
+        generated_at=generated_at,
+        release=release,
+        repology_repo=repology_repo,
+        built_on={'arch': arch, 'release': release},
+        staleness=staleness,
+        divergence=divergence)
+
+
+def _utc_now_iso():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def _detect_release():
+    '''The Debian release codename from /etc/os-release, or None.'''
+    try:
+        with open('/etc/os-release') as handle:
+            for line in handle:
+                if line.startswith('VERSION_CODENAME='):
+                    return line.split('=', 1)[1].strip().strip('"') or None
+    except OSError:
+        return None
+    return None
+
+
+def _detect_arch():
+    '''The dpkg architecture (provenance only), or 'unknown'.'''
+    try:
+        result = subprocess.run(['dpkg', '--print-architecture'], capture_output=True, text=True)
+    except OSError:
+        return 'unknown'
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+    return 'unknown'
+
+
+# Repology's published per-repo project set; "newest" is upstream-global, so the
+# choice mainly affects srcname coverage. debian_unstable is a superset of the
+# stable releases and is recorded in the bundle (repology_repo).
+BUILDER_REPOLOGY_REPO = 'debian_unstable'
+
+
+def _cache_build_command(args):
+    try:
+        builder.require_deb_src()
+    except RuntimeError as exc:
+        print('divergulent: %s' % exc, file=sys.stderr)
+        return 1
+
+    release = args.release or _detect_release()
+    if release is None:
+        print('divergulent: could not detect the Debian release; pass --release.', file=sys.stderr)
+        return 1
+
+    cache = Cache(default_cache_dir())
+    http = HttpClient(
+        cache, host_intervals={'sources.debian.org': SOURCES_DEBIAN_INTERVAL}, refresh=args.refresh)
+
+    bundle_obj = build_bundle(
+        http, builder.sources_index_paths(), release=release, repology_repo=BUILDER_REPOLOGY_REPO,
+        arch=_detect_arch(), generated_at=_utc_now_iso(), workers=args.workers,
+        progress_enabled=not args.quiet)
+    bundle.write(bundle_obj, args.output)
+
+    size = os.path.getsize(args.output)
+    print(
+        'divergulent: wrote %s (%d staleness, %d divergence entries, %d bytes gzipped)' % (
+            args.output, len(bundle_obj.staleness), len(bundle_obj.divergence), size),
+        file=sys.stderr)
+    return 0
+
+
+def _cache_command(args):
+    if args.cache_command == 'build':
+        return _cache_build_command(args)
+    print("divergulent: 'cache' needs a subcommand (build)", file=sys.stderr)
+    return 1
+
+
 def _resolve_package(name, packages):
     by_binary = {}
     by_source = {}
@@ -610,6 +744,8 @@ def main(argv=None):
         return _score_command(args)
     if args.command == 'show':
         return _show_command(args)
+    if args.command == 'cache':
+        return _cache_command(args)
 
     parser.print_help()
     return 1

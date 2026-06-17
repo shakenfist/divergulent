@@ -159,6 +159,15 @@ lives in [docs/plans/PLAN-initial.md](docs/plans/PLAN-initial.md); see
 planned next steps (Debian BTS cross-referencing, and a patch-hygiene
 assessment).
 
+A **published precomputed cache** is in progress
+([docs/plans/PLAN-published-cache.md](docs/plans/PLAN-published-cache.md)):
+the slow half of a cold run (staleness + divergence) is a function of the
+Debian release, not of your machine, so it can be computed once centrally
+and downloaded as a small signed bundle. The first piece — a central
+builder (`divergulent cache build`, run in CI) that sweeps the whole
+archive into a gzipped bundle — exists now; client consumption,
+downloading, and signing are later phases.
+
 ## Development
 
 Tests and linting run through `tox`:
@@ -173,7 +182,11 @@ CI runs the same checks on push and pull requests
 (`.github/workflows/sample-output.yml`) runs a full `divergulent score`
 on a Debian 13 runner and uploads the rendered report as a build
 artifact, so reviewers can see how the output looks on a real machine
-(and as a live end-to-end check). Releases are tag-driven
+(and as a live end-to-end check). A manual workflow
+(`.github/workflows/build-cache.yml`, via `tools/build-cache.sh`) runs
+the whole-archive `divergulent cache build` on a Debian 13 runner and
+uploads the resulting bundle, to measure its real size and build time.
+Releases are tag-driven
 (`v*`) and publish to PyPI via Sigstore-signed tags and PyPI trusted
 publishing — see [RELEASE-SETUP.md](RELEASE-SETUP.md) for the one-time
 configuration.

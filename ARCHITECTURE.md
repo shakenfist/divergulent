@@ -39,8 +39,10 @@ installed-package inventory never leaves the machine.
   size cap, on-disk caching, and graceful degradation (failures return
   `None`). The throttle is a thread-safe per-host "ticket" reservation,
   so it stays correct when several worker threads fetch concurrently:
-  same-host requests stay spaced, different hosts overlap. Stdlib
-  `urllib`; the urlopen/clock/sleep are injectable for offline tests.
+  same-host requests stay spaced, different hosts overlap. A `refresh`
+  flag skips the cache read but still writes, so the cache builder can
+  force a clean recompute that repopulates the cache. Stdlib `urllib`;
+  the urlopen/clock/sleep are injectable for offline tests.
 - `divergulent/dep3.py` — a pure parser/classifier for DEP-3 patch
   headers. Classifies a patch as FORWARDED, DEBIAN_ONLY, or UNKNOWN;
   when DEP-3 metadata is absent it falls back to Debian-authored
@@ -73,6 +75,24 @@ installed-package inventory never leaves the machine.
   `.orig` tarball), extracts `debian/patches`, and classifies with
   `dep3` — the full breakdown across the machine via the mirror network.
   Requires `deb-src` (`deb_src_available()`).
+- `divergulent/bundle.py` — the precomputed cache **bundle** schema, a
+  gzipped-JSON `write()` and `load()`. A bundle is the shareable half of
+  a cold run: staleness and divergence for a whole Debian release,
+  computed centrally so a client downloads it once instead of querying
+  Repology and sources.debian.org per package. `schema`/`cache_schema`
+  version the envelope and entry-value shapes; `built_on` is provenance
+  only (the data is architecture-independent). See
+  `docs/plans/PLAN-published-cache.md`. Client consumption is a later
+  phase; today only the builder writes bundles.
+- `divergulent/builder.py` — the central cache **builder** (runs in CI,
+  not on a user's machine). Enumerates every `(source, version, format)`
+  from the release's deb-src `Sources` indices with
+  `debian.deb822.Sources` (no network), and sweeps Repology's whole-repo
+  project set once into `{srcname: newest version}`
+  (`build_staleness_map`). The bulk sweep is the *right* tool centrally —
+  one polite crawl feeds every user's bundle — even though it was a
+  regression per-user. The per-package client path in `repology.py` is
+  left untouched; the builder imports only its version-selection helper.
 - `divergulent/progress.py` — `Progress`, a terminal-aware progress
   reporter (stderr; animates on a TTY, periodic lines off-TTY, silent
   when disabled) used by the long whole-machine commands; `--quiet`
@@ -113,6 +133,12 @@ score:      inventory  ->  dedup by source  ->  [concurrent workers] staleness (
 
 show:       resolve one installed package  ->  staleness + details (one shared HttpClient)
                                             ->  cli (per-patch detail + Debian bug links)
+
+cache build: deb-src Sources indices  ->  builder.enumerate_archive() (no network)
+                                      ->  builder.build_staleness_map()  ->  repology.org (bulk sweep, <=1 req/s)
+                                      ->  [concurrent workers] DebianPatchesSource.summary() per source
+                                      ->  bundle.Bundle  ->  gzipped JSON on disk (CI artifact)
+                              (--refresh forces a clean recompute; runs centrally in CI, not per-user)
 ```
 
 ## Planned
