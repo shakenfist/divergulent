@@ -6,7 +6,7 @@ incremental correctness. This is the de-risking phase — its real
 deliverable is *measured numbers* (bundle size, build time), not a
 finished product.
 
-**Status: cold build measured; verifying the incremental run.** The
+**Status: measured and validated; one spot-check remaining.** The
 builder is complete and tested offline — `divergulent/bundle.py` (schema
 + gzipped write/load), `divergulent/builder.py` (deb-src enumeration via
 `debian.deb822.Sources` + the recovered bulk Repology sweep),
@@ -17,10 +17,18 @@ green.
 
 ### Measured results (first cold `workflow_dispatch` on the debian-13 runner)
 
-| Metric | Estimate | Measured (cold) |
-|--------|----------|-----------------|
-| Gzipped bundle size | ~1–2 MB | **750,350 bytes (~0.73 MB)** |
-| Whole-archive build time | ~45–57 min (~22 staleness + ~20–35 divergence) | **~95 min** |
+| Metric | Estimate | Measured (cold) | Measured (incremental, cache restored) |
+|--------|----------|-----------------|----------------------------------------|
+| Gzipped bundle size | ~1–2 MB | **750,350 bytes (~0.73 MB)** | **750,121 bytes (~0.73 MB)** |
+| Build step time | ~45–57 min (~22 staleness + ~20–35 divergence) | **~95 min** | **~80 s** |
+
+The second `workflow_dispatch` restored the first run's CI cache and the
+build step took **~80 s** — roughly **70× faster** than the cold ~95 min,
+producing a near-identical bundle (within ~230 bytes). This validates the
+**daily-delta model decisively**: divergence is immutable (30-day cache)
+and staleness is within its 24 h TTL, so an incremental build is almost
+pure local recompute from cache with negligible network. The bundle's
+near-identical size across runs is also a good determinism signal.
 
 Conclusions:
 
@@ -39,12 +47,13 @@ Conclusions:
   epoch-stripped version, and sources.debian.org slower per request under
   concurrency than the assumed ~0.6 s).
 
-Still open before the phase is **complete**: the success criterion that a
-**CI-cache-restored re-run is markedly faster on the divergence half**
-(the daily-delta model) is being verified by a second `workflow_dispatch`
-(run #2 restores run #1's cache via the `divergulent-cache-trixie-`
-restore-key). And a hand-checked sample (e.g. `bash`) should be confirmed
-against a live `divergulent show`.
+The **markedly-faster incremental re-run** success criterion is now met
+(~80 s vs ~95 min). The only criterion still open is a **hand-checked
+sample** (e.g. `bash`) confirmed against a live `divergulent show`,
+plus a glance at the bundle's `release`/`built_on` provenance and a
+staleness/divergence entry count near the archive size. Once that
+spot-check passes, phase 1 is complete and phase 2 (client consumption)
+can start.
 
 Two scoping decisions taken during implementation:
 

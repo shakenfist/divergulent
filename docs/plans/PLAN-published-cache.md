@@ -81,9 +81,11 @@ Resolved up front (operator decisions, 2026-06-17):
   spot-verified, the host is untrusted and mirrors are free.
 - **Coverage.** Whole archive (~34k sources) from day one. The first
   cold build measured **~95 min** (phase 1) — over the ~45–57 min
-  estimate, the divergence half being the underestimate — then cheap
-  daily deltas (divergence is immutable, so only new versions are
-  crawled). 95 min is the cold/periodic-rebuild cost, not the daily one.
+  estimate, the divergence half being the underestimate — but a
+  CI-cache-restored incremental rebuild measured **~80 s** (~70× faster),
+  confirming the cheap daily-delta model (divergence is immutable, so
+  only new versions are crawled). 95 min is the cold/periodic-rebuild
+  cost; the daily cost is seconds.
 - **Bundle shape.** A single whole bundle (one gzipped file,
   optionally split staleness/divergence), downloaded whole and
   filtered locally — maximally private, trivial client. The measured
@@ -195,7 +197,7 @@ delivery phases (4–5).
 
 | Phase | Plan | Status |
 |-------|------|--------|
-| 1. Central builder + CI run: whole-archive sweep, emit bundle, **measure size/timing** | PLAN-published-cache-phase-01-builder.md | Cold build measured (~0.73 MB, ~95 min); verifying incremental re-run |
+| 1. Central builder + CI run: whole-archive sweep, emit bundle, **measure size/timing** | PLAN-published-cache-phase-01-builder.md | Measured (~0.73 MB; ~95 min cold, ~80 s incremental); one spot-check remaining |
 | 2. Bundle schema + bundle-backed sources + live fallback | PLAN-published-cache-phase-02-consume.md | Not started |
 | 3. `cache pull`: download, validate, store, configurable URL | PLAN-published-cache-phase-03-pull.md | Not started |
 | 4. Signing + client verification + spot-verify | PLAN-published-cache-phase-04-signing.md | Not started |
