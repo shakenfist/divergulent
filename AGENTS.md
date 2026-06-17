@@ -71,6 +71,23 @@ by `divergulent.bundle` as gzipped JSON; the client-side consumer is a
 later phase, so the builder must not import or alter the per-package
 client path in `repology.py` (it imports only `_select_newest`).
 
+**Bundle-backed consumption (`--bundle`).** When `--bundle PATH` points
+at a recognised, release-matched bundle (`cli._usable_bundle` checks
+`schema`/`cache_schema` and that the bundle's `release` matches
+`_detect_release()`, else warns and runs fully live), the whole-machine
+commands resolve staleness via `RepologyBulkSource` (a `{srcname:
+newest}` dict lookup) and divergence via `BundleDivergenceSource` (used
+only on an exact installed-version match, since divergence is
+version-specific). Both are wrapped in `Fallback{Staleness,Divergence}`
+(`sources/bundle_backed.py`) that fall back to the live source **per
+entry** on a miss — so a bundle-backed run is fast (a release-matched
+bundle covers nearly every installed source) yet never less complete
+than the live run, and UNKNOWN still means neither source could resolve.
+The bundle is read locally, so the inventory never leaves the host. The
+sources are selected in `cli._resolve_sources`; `show` and `--classify`
+stay fully live (the bundle holds summaries, not patch bodies). Loading,
+downloading and freshness/signature checks are later phases.
+
 `--classify` (Tier 2) classifies the whole machine via
 `divergulent.sources.apt_patches.AptSourcePatches`: it resolves each
 source package's URLs with `apt-get source --print-uris` and fetches only

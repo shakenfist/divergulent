@@ -59,7 +59,10 @@ installed-package inventory never leaves the machine.
   caching each result for ~24h; the whole-machine commands and `show`
   both use it. (A whole-archive bulk sweep was tried and reverted as a
   cold-run regression — see
-  `docs/plans/PLAN-faster-full-run-phase-04-revert-bulk.md`.)
+  `docs/plans/PLAN-faster-full-run-phase-04-revert-bulk.md`.) Also holds
+  `RepologyBulkSource`, which answers staleness from a prebuilt
+  `{srcname: newest}` map (a published bundle) with no network, reusing
+  the same version classification.
 - `divergulent/sources/debian_patches.py` — the sources.debian.org
   adapter (divergence axis). Reads a source package's quilt series from
   the patches API, fetches each patch under its pool `raw_url`, and
@@ -84,6 +87,16 @@ installed-package inventory never leaves the machine.
   only (the data is architecture-independent). See
   `docs/plans/PLAN-published-cache.md`. Client consumption is a later
   phase; today only the builder writes bundles.
+- `divergulent/sources/bundle_backed.py` — the client-side **consumers**
+  of a bundle: `BundleDivergenceSource` (returns a published divergence
+  summary only when the installed version matches the bundle's, else a
+  miss) and the `FallbackStaleness` / `FallbackDivergence` wrappers that
+  try the bundle first and fall back to the live source on a miss.
+  Staleness consumption is `RepologyBulkSource` (in `repology.py`). The
+  fallback is per entry, so UNKNOWN still means neither the bundle nor the
+  live source could resolve a package — never that the bundle merely
+  lacked it. The CLI selects these when `--bundle` points at a recognised,
+  release-matched bundle; otherwise the commands run fully live.
 - `divergulent/builder.py` — the central cache **builder** (runs in CI,
   not on a user's machine). Enumerates every `(source, version, format)`
   from the release's deb-src `Sources` indices with
@@ -139,6 +152,11 @@ cache build: deb-src Sources indices  ->  builder.enumerate_archive() (no networ
                                       ->  [concurrent workers] DebianPatchesSource.summary() per source
                                       ->  bundle.Bundle  ->  gzipped JSON on disk (CI artifact)
                               (--refresh forces a clean recompute; runs centrally in CI, not per-user)
+
+--bundle:   inventory  ->  dedup by source  ->  Fallback{Staleness,Divergence}(bundle, live)
+                                            ->  bundle hit (in-memory dict, no network)  ->  cli
+                                            ->  miss -> live RepologySource / DebianPatchesSource
+                              (bundle read locally + validated: schema recognised, release matches; else fully live)
 ```
 
 ## Planned

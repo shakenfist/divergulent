@@ -16,8 +16,10 @@ from divergulent.dep3 import PatchClass
 from divergulent.http import HttpClient
 from divergulent.progress import Progress
 from divergulent.sources.apt_patches import AptSourcePatches
+from divergulent.sources.bundle_backed import (
+    BundleDivergenceSource, FallbackDivergence, FallbackStaleness)
 from divergulent.sources.debian_patches import DebianPatchesSource, DivergenceState, DivergenceSummary
-from divergulent.sources.repology import RepologySource, StalenessState
+from divergulent.sources.repology import RepologyBulkSource, RepologySource, StalenessState
 
 
 _CLASSIFY_UNAVAILABLE = (
@@ -56,6 +58,55 @@ def _repology():
     return RepologySource(_http_client())
 
 
+def _usable_bundle(path):
+    '''Load a local bundle if it is present, recognised, and for this release.
+
+    Returns the Bundle, or None (so the command runs fully live) when the path
+    is unset or missing, the file is unreadable, the envelope/entry schema is
+    unrecognised, or the bundle describes a different Debian release. A warning
+    is printed when a bundle is present but unusable, so the fall back to live is
+    visible rather than silent.
+    '''
+    if not path:
+        return None
+    if not os.path.exists(path):
+        print("divergulent: bundle '%s' not found; querying live." % path, file=sys.stderr)
+        return None
+    try:
+        loaded = bundle.load(path)
+    except (OSError, ValueError, KeyError):
+        print("divergulent: bundle '%s' could not be read; querying live." % path, file=sys.stderr)
+        return None
+    if (loaded.schema, loaded.cache_schema) != (bundle.SCHEMA_VERSION, bundle.CACHE_SCHEMA_VERSION):
+        print('divergulent: bundle schema not recognised; querying live.', file=sys.stderr)
+        return None
+    release = _detect_release()
+    if release is not None and loaded.release != release:
+        print(
+            "divergulent: bundle is for '%s' but this system is '%s'; querying live." % (
+                loaded.release, release),
+            file=sys.stderr)
+        return None
+    return loaded
+
+
+def _resolve_sources(args):
+    '''Return (staleness_source, divergence_source), bundle-backed if available.
+
+    With a usable bundle the sources answer covered packages from it and fall
+    back to the live sources only for misses; without one they are the live
+    sources exactly as before.
+    '''
+    loaded = _usable_bundle(getattr(args, 'bundle', None))
+    staleness_live = _repology()
+    divergence_live = DebianPatchesSource(_http_client())
+    if loaded is None:
+        return staleness_live, divergence_live
+    staleness = FallbackStaleness(RepologyBulkSource(loaded.staleness), staleness_live)
+    divergence = FallbackDivergence(BundleDivergenceSource(loaded.divergence), divergence_live)
+    return staleness, divergence
+
+
 def _build_parser():
     parser = argparse.ArgumentParser(
         prog='divergulent',
@@ -77,6 +128,10 @@ def _build_parser():
     stale.add_argument(
         '--all', action='store_true', dest='show_all',
         help='Include current and unknown packages, not just those behind.')
+    stale.add_argument(
+        '--bundle', default=None,
+        help='Resolve staleness from a precomputed cache bundle (gzipped JSON), '
+             'falling back to live Repology lookups for anything it does not cover.')
     stale.add_argument('--quiet', action='store_true', help='Suppress progress output.')
 
     diverge = subparsers.add_parser(
@@ -98,6 +153,10 @@ def _build_parser():
     diverge.add_argument(
         '--workers', type=int, default=DEFAULT_WORKERS,
         help='Concurrent requests to sources.debian.org (default %d; 1 = serial).' % DEFAULT_WORKERS)
+    diverge.add_argument(
+        '--bundle', default=None,
+        help='Resolve divergence from a precomputed cache bundle (gzipped JSON), falling back to '
+             'live sources.debian.org lookups for misses. Ignored with --classify.')
     diverge.add_argument('--quiet', action='store_true', help='Suppress progress output.')
 
     scorecmd = subparsers.add_parser(
@@ -118,6 +177,10 @@ def _build_parser():
         '--workers', type=int, default=DEFAULT_WORKERS,
         help='Concurrent requests to sources.debian.org (default %d; 1 = serial). '
              'Repology stays <=1 req/s regardless.' % DEFAULT_WORKERS)
+    scorecmd.add_argument(
+        '--bundle', default=None,
+        help='Resolve both axes from a precomputed cache bundle (gzipped JSON) where it covers a '
+             'package, falling back to live lookups for misses. Ignored with --classify.')
     scorecmd.add_argument('--quiet', action='store_true', help='Suppress progress output.')
 
     showcmd = subparsers.add_parser(
@@ -259,7 +322,7 @@ def _summarise(results):
 
 def _staleness_command(args):
     packages = inventory.list_installed()
-    source = _repology()
+    source, _ = _resolve_sources(args)
     results = _gather_staleness(source, packages, progress_enabled=not args.quiet)
     _summarise(results)
 
@@ -357,7 +420,7 @@ def _divergence_command(args):
         if apt.available():
             return _divergence_classified(apt, packages, args)
         print(_CLASSIFY_UNAVAILABLE, file=sys.stderr)
-    source = DebianPatchesSource(_http_client())
+    _, source = _resolve_sources(args)
     results = _gather_divergence(
         source, packages, limit=args.limit, progress_enabled=not args.quiet, workers=args.workers)
     _summarise_divergence(results)
@@ -480,8 +543,7 @@ def _score_command(args):
         if apt.available():
             return _score_classified(apt, packages, args)
         print(_CLASSIFY_UNAVAILABLE, file=sys.stderr)
-    repology = _repology()
-    patches = DebianPatchesSource(_http_client())
+    repology, patches = _resolve_sources(args)
 
     drifts = _gather_score(
         repology, patches, packages, limit=args.limit, progress_enabled=not args.quiet, workers=args.workers)

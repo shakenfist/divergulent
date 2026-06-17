@@ -91,6 +91,32 @@ class RepologySource:
             source_package, installed_version, newest, _state_for(installed_version, newest))
 
 
+class RepologyBulkSource:
+    '''Staleness from a prebuilt ``{srcname: newest}`` map (a published bundle).
+
+    A drop-in for ``RepologySource`` in the whole-machine commands that answers
+    from the map with no network. The bare source reports an absent srcname as
+    UNKNOWN; it is the bundle/live fallback wrapper, not this source, that
+    decides whether to consult the live per-package source for a miss. It reuses
+    ``_state_for`` so a bundle-backed classification is identical to the live
+    one for the same newest version.
+    '''
+
+    name = 'repology'
+
+    def __init__(self, staleness_map: dict[str, str]) -> None:
+        self._map = staleness_map
+
+    def lookup(self, source_package: str) -> str | None:
+        '''Return the newest version for a source package, or None if absent.'''
+        return self._map.get(source_package)
+
+    def staleness(self, source_package: str, installed_version: DebianVersion) -> StalenessResult:
+        newest = self._map.get(source_package)
+        return StalenessResult(
+            source_package, installed_version, newest, _state_for(installed_version, newest))
+
+
 def _select_newest(entries: Sequence[dict[str, Any]]) -> str | None:
     '''The newest stable upstream version among a project's Repology entries.
 
