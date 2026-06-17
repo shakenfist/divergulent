@@ -53,8 +53,23 @@ Whole-machine **staleness** uses the per-package `project-by` resolver
 downloaded ~600 MB to answer ~570 lookups and made a cold run *slower*
 (~22 min vs ~9.5 min) — see
 `docs/plans/PLAN-faster-full-run-phase-04-revert-bulk.md`. The real
-cold-run win is the planned published precomputed cache (Future work in
-`PLAN-faster-full-run.md`), with concurrency covering the live fallback.
+cold-run win is the published precomputed cache
+(`docs/plans/PLAN-published-cache.md`), with concurrency covering the
+live fallback.
+
+The **cache builder** (`divergulent.builder` + `cli.build_bundle`,
+exposed as `divergulent cache build`, run centrally in CI — see
+`.github/workflows/build-cache.yml`) is where the bulk Repology sweep
+*does* belong: one polite whole-archive crawl, computed once, feeds every
+user's bundle, instead of N users each hammering the APIs. It enumerates
+the archive from deb-src `Sources` indices with `debian.deb822.Sources`
+(no network) and gathers a divergence `summary()` per source through the
+same `_concurrent_map`. `HttpClient(refresh=True)` (the `--refresh` flag)
+skips cache reads but still writes, so a periodic full rebuild can bound
+how long a once-bad cached value lives in the bundle. Bundles are written
+by `divergulent.bundle` as gzipped JSON; the client-side consumer is a
+later phase, so the builder must not import or alter the per-package
+client path in `repology.py` (it imports only `_select_newest`).
 
 `--classify` (Tier 2) classifies the whole machine via
 `divergulent.sources.apt_patches.AptSourcePatches`: it resolves each

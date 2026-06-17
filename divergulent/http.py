@@ -34,7 +34,7 @@ class HttpClient:
     def __init__(self, cache: Cache, *, user_agent: str = DEFAULT_USER_AGENT,
                  timeout: float = 10.0, min_interval: float = 1.0,
                  host_intervals: dict[str, float] | None = None,
-                 max_bytes: int = MAX_RESPONSE_BYTES,
+                 max_bytes: int = MAX_RESPONSE_BYTES, refresh: bool = False,
                  urlopen: Callable[..., Any] = urllib.request.urlopen,
                  clock: Callable[[], float] = time.monotonic,
                  sleep: Callable[[float], None] = time.sleep) -> None:
@@ -43,6 +43,11 @@ class HttpClient:
         self._timeout = timeout
         self._min_interval = min_interval
         self._max_bytes = max_bytes
+        # In refresh mode every request skips the cache read but still writes the
+        # fresh result back, so a builder can force a clean recompute that also
+        # repopulates the cache. A purely incremental builder would otherwise
+        # republish a once-bad cached value forever.
+        self._refresh = refresh
         # Optional per-host minimum interval overriding min_interval, so a host
         # with no documented rate limit can run faster than the conservative
         # default while a rate-limited host (e.g. Repology) stays slow.
@@ -75,11 +80,13 @@ class HttpClient:
 
         A cache hit returns immediately without touching the network or the
         rate limiter. Failures return None and are not cached, so a later run
-        retries.
+        retries. In refresh mode the cache read is skipped (but the write is
+        not), forcing a fresh fetch that also repopulates the cache.
         '''
-        cached = self._cache.get(namespace, key)
-        if cached is not None:
-            return cached
+        if not self._refresh:
+            cached = self._cache.get(namespace, key)
+            if cached is not None:
+                return cached
 
         payload = self._fetch(url)
         if payload is None:
