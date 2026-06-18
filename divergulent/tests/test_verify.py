@@ -142,6 +142,24 @@ class SpotCheckTestCase(testtools.TestCase):
         self.assertEqual(verify.SpotCheckStatus.MISMATCH, result.status)
         self.assertEqual(1, len(result.mismatches))
 
+    def test_bundle_unknown_is_inconclusive_not_mismatch(self):
+        # A bundle entry that itself says UNKNOWN (e.g. a transient build-time
+        # fetch failure) is the bundle declining to claim, not a contradiction,
+        # even when the live source resolves it definitely.
+        unknown_bundle = _bundle({
+            'accessible-pygments': {
+                'version': '0.0.5-2', 'format': '3.0 (quilt)', 'total': 0, 'state': 'unknown'},
+        })
+        patches = FakePatches({
+            'accessible-pygments': _summary('accessible-pygments', '0.0.5-2', 0, DivergenceState.CLEAN),
+        })
+        result = verify.spot_check(unknown_bundle, patches, sample=8, rng=random.Random(0))
+        self.assertEqual(verify.SpotCheckStatus.PASSED, result.status)
+        self.assertEqual(0, result.checked)
+        self.assertEqual(1, result.inconclusive)
+        # The bundle's UNKNOWN entry is skipped before any live query is made.
+        self.assertEqual([], patches.calls)
+
     def test_live_unknown_is_inconclusive_not_mismatch(self):
         patches = FakePatches({
             'bash': _summary('bash', '5.2-1', 0, DivergenceState.UNKNOWN),

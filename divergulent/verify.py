@@ -128,8 +128,12 @@ def spot_check(bundle, patches_source, *, sample: int = DEFAULT_SPOT_CHECK,
 
     Divergence for a fixed ``(source, version)`` is immutable, so a sampled
     entry whose live ``summary()`` definitely differs is a mismatch (and the
-    bundle should be refused). A live result that cannot resolve the package
-    (UNKNOWN / None) is inconclusive -- never a false mismatch ("no cry wolf").
+    bundle should be refused). "No cry wolf" applies to *both* sides: a bundle
+    entry that is itself UNKNOWN is the bundle declining to make a claim (the
+    honest, conservative answer, e.g. a transient build-time fetch failure), and
+    a live result that cannot resolve the package (UNKNOWN / None) is the live
+    source declining -- neither is a contradiction, so neither refuses a bundle.
+    Only a definite bundle claim contradicted by a definite live claim counts.
     '''
     rng = rng or random.Random()
     items = list(bundle.divergence.items())
@@ -141,6 +145,9 @@ def spot_check(bundle, patches_source, *, sample: int = DEFAULT_SPOT_CHECK,
     inconclusive = 0
     checked = 0
     for source, entry in chosen:
+        if entry.get('state') == DivergenceState.UNKNOWN.value:
+            inconclusive += 1  # the bundle made no claim; nothing to contradict
+            continue
         version = entry.get('version')
         live = patches_source.summary(source, version)
         if live is None or live.state == DivergenceState.UNKNOWN:
