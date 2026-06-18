@@ -1,7 +1,9 @@
 import contextlib
+import datetime
 import io
 import json
 import os
+import shutil
 import tempfile
 from unittest import mock
 
@@ -14,6 +16,14 @@ from divergulent.inventory import InstalledPackage
 from divergulent.sources.bundle_backed import FallbackDivergence, FallbackStaleness
 from divergulent.sources.debian_patches import DebianPatchesSource
 from divergulent.sources.repology import RepologySource
+
+
+# The fixture bundle is built at this instant; FRESH_NOW is within the staleness
+# window and STALE_NOW is well past it, so freshness is deterministic regardless
+# of the wall clock.
+GENERATED_AT = '2026-06-18T00:00:00+00:00'
+FRESH_NOW = datetime.datetime(2026, 6, 18, 12, 0, 0, tzinfo=datetime.timezone.utc)
+STALE_NOW = datetime.datetime(2026, 7, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
 
 
 def _pkg(binary, binary_version, source, source_version, arch):
@@ -31,11 +41,11 @@ SAMPLE = [
 ]
 
 
-def _make_bundle(release='trixie', schema=None, cache_schema=None):
+def _make_bundle(release='trixie', schema=None, cache_schema=None, generated_at=GENERATED_AT):
     return bundle.Bundle(
         schema=bundle.SCHEMA_VERSION if schema is None else schema,
         cache_schema=bundle.CACHE_SCHEMA_VERSION if cache_schema is None else cache_schema,
-        generated_at='2026-06-18T00:00:00+00:00',
+        generated_at=generated_at,
         release=release,
         repology_repo='debian_unstable',
         built_on={'arch': 'amd64', 'release': release},
@@ -98,17 +108,62 @@ class ResolveSourcesTestCase(testtools.TestCase):
         self.assertIsInstance(staleness, RepologySource)
         self.assertIsInstance(divergence, DebianPatchesSource)
 
-    def test_usable_bundle_yields_fallback_sources(self):
+    def test_fresh_bundle_yields_fallback_sources(self):
         path = _write_bundle(self)
         args = mock.Mock(bundle=path)
-        with mock.patch('divergulent.cli._detect_release', return_value='trixie'):
+        with mock.patch('divergulent.cli._detect_release', return_value='trixie'), \
+                mock.patch('divergulent.cli._utc_now', return_value=FRESH_NOW):
             staleness, divergence = cli._resolve_sources(args)
         self.assertIsInstance(staleness, FallbackStaleness)
+        self.assertIsInstance(divergence, FallbackDivergence)
+
+    def test_aged_bundle_serves_divergence_but_staleness_goes_live(self):
+        path = _write_bundle(self)
+        args = mock.Mock(bundle=path)
+        with mock.patch('divergulent.cli._detect_release', return_value='trixie'), \
+                mock.patch('divergulent.cli._utc_now', return_value=STALE_NOW):
+            staleness, divergence = cli._resolve_sources(args)
+        # Divergence is immutable, so the bundle still serves it; staleness has
+        # aged past the window, so it falls back to the live source.
+        self.assertIsInstance(staleness, RepologySource)
         self.assertIsInstance(divergence, FallbackDivergence)
 
     def test_bad_bundle_falls_back_to_live(self):
         path = _write_bundle(self, release='bookworm')
         args = mock.Mock(bundle=path)
+        with mock.patch('divergulent.cli._detect_release', return_value='trixie'):
+            staleness, divergence = cli._resolve_sources(args)
+        self.assertIsInstance(staleness, RepologySource)
+        self.assertIsInstance(divergence, DebianPatchesSource)
+
+
+class AutoDiscoveryTestCase(testtools.TestCase):
+    '''Without --bundle, a stored bundle for the release is used automatically.'''
+
+    def setUp(self):
+        super().setUp()
+        self.cache_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.cache_dir, ignore_errors=True)
+        patcher = mock.patch.dict(os.environ, {'DIVERGULENT_CACHE_DIR': self.cache_dir})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _store_bundle(self, **kwargs):
+        path = bundle.stored_path(self.cache_dir, kwargs.get('release', 'trixie'))
+        bundle.write(_make_bundle(**kwargs), path)
+        return path
+
+    def test_stored_bundle_used_without_flag(self):
+        self._store_bundle()
+        args = mock.Mock(bundle=None)
+        with mock.patch('divergulent.cli._detect_release', return_value='trixie'), \
+                mock.patch('divergulent.cli._utc_now', return_value=FRESH_NOW):
+            staleness, divergence = cli._resolve_sources(args)
+        self.assertIsInstance(staleness, FallbackStaleness)
+        self.assertIsInstance(divergence, FallbackDivergence)
+
+    def test_absent_store_is_silent_live(self):
+        args = mock.Mock(bundle=None)
         with mock.patch('divergulent.cli._detect_release', return_value='trixie'):
             staleness, divergence = cli._resolve_sources(args)
         self.assertIsInstance(staleness, RepologySource)
@@ -121,6 +176,7 @@ class BundleBackedScoreTestCase(testtools.TestCase):
         out = io.StringIO()
         with mock.patch('divergulent.cli.inventory.list_installed', return_value=list(SAMPLE)), \
                 mock.patch('divergulent.cli._detect_release', return_value=release), \
+                mock.patch('divergulent.cli._utc_now', return_value=FRESH_NOW), \
                 mock.patch('divergulent.cli._http_client', return_value=RaisingHttp()):
             with contextlib.redirect_stdout(out):
                 rc = cli.main(argv)
