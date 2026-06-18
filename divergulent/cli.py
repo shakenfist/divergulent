@@ -13,6 +13,7 @@ from divergulent import builder
 from divergulent import bundle
 from divergulent import inventory
 from divergulent import score
+from divergulent import verify
 from divergulent.cache import Cache, default_cache_dir
 from divergulent.dep3 import PatchClass
 from divergulent.http import HttpClient
@@ -263,12 +264,33 @@ def _build_parser():
     buildcmd.add_argument('--quiet', action='store_true', help='Suppress progress output.')
 
     pullcmd = cachesub.add_parser(
-        'pull', help='Download and store the precomputed cache bundle for this Debian release.')
+        'pull', help='Download, verify and store the precomputed cache bundle for this Debian release.')
     pullcmd.add_argument(
         '--cache-url', default=None,
         help='URL to download the bundle from (default: the GitHub Releases asset for this release).')
+    _add_verify_arguments(pullcmd)
+
+    verifycmd = cachesub.add_parser(
+        'verify', help='Re-verify a stored or given cache bundle (signature and spot-check).')
+    verifycmd.add_argument(
+        '--bundle', default=None,
+        help='Bundle to verify (default: the stored bundle for this release).')
+    _add_verify_arguments(verifycmd)
 
     return parser
+
+
+def _add_verify_arguments(parser):
+    parser.add_argument(
+        '--spot-check', type=int, default=verify.DEFAULT_SPOT_CHECK, metavar='N',
+        help='Verify N random bundle entries against the live origin (default %d; 0 disables).'
+             % verify.DEFAULT_SPOT_CHECK)
+    parser.add_argument(
+        '--require-signature', action='store_true',
+        help='Fail if the Sigstore signature cannot be verified (needs the "verify" extra).')
+    parser.add_argument(
+        '--insecure', action='store_true',
+        help='Skip all verification (signature and spot-check). Not recommended.')
 
 
 def _table(headers, rows):
@@ -760,6 +782,74 @@ def _atomic_write_bytes(path, data):
         raise
 
 
+def _verify_bundle(data, signature, loaded, args):
+    '''Run signature and spot-check verification, printing notices.
+
+    Returns True if the bundle may be trusted. A missing or unverifiable
+    signature is fatal only under --require-signature; a spot-check mismatch is
+    always fatal. --insecure skips everything (with a loud notice).
+    '''
+    if args.insecure:
+        print('divergulent: --insecure: skipping signature and spot-check verification.', file=sys.stderr)
+        return True
+
+    ok = True
+
+    if signature is None:
+        print('divergulent: no signature found for the bundle.', file=sys.stderr)
+        if args.require_signature:
+            print('divergulent: --require-signature set; refusing.', file=sys.stderr)
+            ok = False
+    else:
+        result = verify.verify_signature(data, signature)
+        if result.status == verify.SignatureStatus.VERIFIED:
+            print('divergulent: signature verified (%s).' % result.detail, file=sys.stderr)
+        elif result.status == verify.SignatureStatus.SKIPPED:
+            print('divergulent: signature not checked: %s' % result.detail, file=sys.stderr)
+            if args.require_signature:
+                print('divergulent: --require-signature set; refusing.', file=sys.stderr)
+                ok = False
+        else:
+            print('divergulent: signature verification FAILED: %s' % result.detail, file=sys.stderr)
+            ok = False
+
+    if args.spot_check > 0:
+        sc = verify.spot_check(loaded, DebianPatchesSource(_http_client()), sample=args.spot_check)
+        if sc.status == verify.SpotCheckStatus.MISMATCH:
+            print(
+                'divergulent: spot-check FAILED: %d of %d checked entries disagree with live data:' % (
+                    len(sc.mismatches), sc.checked),
+                file=sys.stderr)
+            for mismatch in sc.mismatches:
+                print('  %s' % mismatch, file=sys.stderr)
+            ok = False
+        else:
+            print(
+                'divergulent: spot-check passed (%d checked, %d inconclusive).' % (
+                    sc.checked, sc.inconclusive),
+                file=sys.stderr)
+
+    return ok
+
+
+def _validate_bundle(data, release):
+    '''Parse and validate downloaded bytes; return the Bundle or None (with a notice).'''
+    try:
+        loaded = bundle.loads(data)
+    except (OSError, ValueError, KeyError):
+        print('divergulent: bundle could not be read.', file=sys.stderr)
+        return None
+    if (loaded.schema, loaded.cache_schema) != (bundle.SCHEMA_VERSION, bundle.CACHE_SCHEMA_VERSION):
+        print('divergulent: bundle schema not recognised.', file=sys.stderr)
+        return None
+    if release is not None and loaded.release != release:
+        print(
+            "divergulent: bundle is for '%s' but this system is '%s'." % (loaded.release, release),
+            file=sys.stderr)
+        return None
+    return loaded
+
+
 def _cache_pull_command(args):
     release = _detect_release()
     if release is None:
@@ -767,28 +857,26 @@ def _cache_pull_command(args):
         return 1
 
     url = args.cache_url or (DEFAULT_CACHE_URL_TEMPLATE % release)
-    data = _http_client().get_bytes(url)
+    http = _http_client()
+    data = http.get_bytes(url)
     if data is None:
         print('divergulent: could not download a bundle from %s' % url, file=sys.stderr)
         return 1
 
-    try:
-        loaded = bundle.loads(data)
-    except (OSError, ValueError, KeyError):
-        print('divergulent: downloaded bundle could not be read; not stored.', file=sys.stderr)
+    loaded = _validate_bundle(data, release)
+    if loaded is None:
+        print('divergulent: not stored.', file=sys.stderr)
         return 1
-    if (loaded.schema, loaded.cache_schema) != (bundle.SCHEMA_VERSION, bundle.CACHE_SCHEMA_VERSION):
-        print('divergulent: downloaded bundle schema not recognised; not stored.', file=sys.stderr)
-        return 1
-    if loaded.release != release:
-        print(
-            "divergulent: downloaded bundle is for '%s' but this system is '%s'; not stored." % (
-                loaded.release, release),
-            file=sys.stderr)
+
+    signature = http.get_bytes(url + verify.SIGNATURE_SUFFIX)
+    if not _verify_bundle(data, signature, loaded, args):
+        print('divergulent: verification failed; not stored.', file=sys.stderr)
         return 1
 
     path = bundle.stored_path(default_cache_dir(), release)
     _atomic_write_bytes(path, data)
+    if signature is not None:
+        _atomic_write_bytes(Path(str(path) + verify.SIGNATURE_SUFFIX), signature)
     print(
         'divergulent: stored %s (%d bytes, %d staleness, %d divergence entries, built %s)' % (
             path, len(data), len(loaded.staleness), len(loaded.divergence), loaded.generated_at),
@@ -796,12 +884,47 @@ def _cache_pull_command(args):
     return 0
 
 
+def _cache_verify_command(args):
+    release = _detect_release()
+    if args.bundle:
+        path = Path(args.bundle)
+    elif release is not None:
+        path = bundle.stored_path(default_cache_dir(), release)
+    else:
+        print('divergulent: could not detect the Debian release; pass --bundle.', file=sys.stderr)
+        return 1
+
+    if not path.exists():
+        print("divergulent: bundle '%s' not found." % path, file=sys.stderr)
+        return 1
+    with open(path, 'rb') as handle:
+        data = handle.read()
+
+    loaded = _validate_bundle(data, release)
+    if loaded is None:
+        return 1
+
+    signature_path = Path(str(path) + verify.SIGNATURE_SUFFIX)
+    signature = None
+    if signature_path.exists():
+        with open(signature_path, 'rb') as handle:
+            signature = handle.read()
+
+    if _verify_bundle(data, signature, loaded, args):
+        print('divergulent: %s verified.' % path, file=sys.stderr)
+        return 0
+    print('divergulent: %s failed verification.' % path, file=sys.stderr)
+    return 1
+
+
 def _cache_command(args):
     if args.cache_command == 'build':
         return _cache_build_command(args)
     if args.cache_command == 'pull':
         return _cache_pull_command(args)
-    print("divergulent: 'cache' needs a subcommand (build, pull)", file=sys.stderr)
+    if args.cache_command == 'verify':
+        return _cache_verify_command(args)
+    print("divergulent: 'cache' needs a subcommand (build, pull, verify)", file=sys.stderr)
     return 1
 
 
