@@ -53,3 +53,24 @@ class BundleRoundTripTestCase(testtools.TestCase):
         with open(path, 'rb') as handle:
             magic = handle.read(2)
         self.assertEqual(b'\x1f\x8b', magic)  # gzip magic bytes
+
+    def test_loads_parses_written_bytes(self):
+        original = _sample_bundle()
+        fd, path = tempfile.mkstemp(suffix='.json.gz')
+        os.close(fd)
+        self.addCleanup(os.unlink, path)
+        bundle.write(original, path)
+        with open(path, 'rb') as handle:
+            data = handle.read()
+        self.assertEqual(original, bundle.loads(data))
+
+    def test_loads_rejects_non_gzip(self):
+        self.assertRaises(Exception, bundle.loads, b'not gzip at all')
+
+
+class StoredPathTestCase(testtools.TestCase):
+
+    def test_keyed_on_release(self):
+        path = bundle.stored_path('/tmp/cache', 'trixie')
+        self.assertEqual('cache-trixie.json.gz', path.name)
+        self.assertEqual('/tmp/cache', str(path.parent))
