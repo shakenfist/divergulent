@@ -12,6 +12,10 @@ jobs:
   build:
     runs-on: [self-hosted, debian-13, s]
 
+    permissions:
+      contents: read
+      id-token: write  # keyless Sigstore signing of the bundle
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -35,6 +39,9 @@ jobs:
         env:
           DIVERGULENT_CACHE_DIR: ${{ github.workspace }}/.divergulent-ci-cache
         run: tools/build-cache.sh cache-bundle/cache-debian13.json.gz
+
+      - name: Sign cache bundle
+        run: tools/sign-bundle.sh cache-bundle/cache-debian13.json.gz
 
       - name: Upload cache bundle
         uses: actions/upload-artifact@v7
