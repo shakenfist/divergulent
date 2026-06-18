@@ -152,8 +152,27 @@ release you are running; otherwise the command prints a notice and runs
 fully live. A package present in the bundle but installed at a different
 version, or absent entirely, falls back to a live lookup — so results
 never regress, and `unknown` still means genuinely unresolved.
-Downloading a bundle automatically (`cache pull`) is a later phase; for
-now you supply the path yourself.
+
+Rather than pass `--bundle` every time, download the bundle once and let
+the commands find it automatically:
+
+```bash
+divergulent cache pull                       # download + store this release's bundle
+divergulent cache pull --cache-url URL       # ... from a specific URL or mirror
+divergulent score                            # now uses the stored bundle, no flag needed
+```
+
+`cache pull` downloads the bundle, checks it is recognised and for your
+release, and stores it under the cache directory; later runs use it
+automatically (an explicit `--bundle` still overrides). Divergence from a
+stored bundle is always used (a fixed version's patches never change);
+**staleness** is used only while the bundle is fresh (within a week) —
+past that, staleness is queried live so newly-behind packages are not
+missed, while divergence still comes from the bundle. The default
+download URL targets the project's published bundle; until automated
+publishing exists, pass `--cache-url` pointing at a bundle you host
+(e.g. the builder's CI artifact). Signature verification arrives in a
+later phase.
 
 Drill into a single installed package:
 
@@ -187,9 +206,10 @@ Debian release, not of your machine, so it can be computed once centrally
 and downloaded as a small signed bundle. Two pieces exist now: a central
 builder (`divergulent cache build`, run in CI) that sweeps the whole
 archive into a ~0.73 MB gzipped bundle, and client consumption — the
-`--bundle PATH` flag above resolves covered packages from a local bundle
-with a live fallback. Automatic downloading (`cache pull`) and signature
-verification are later phases.
+`--bundle PATH` flag and `cache pull` above resolve covered packages from
+a bundle (downloaded and stored locally, used automatically, with a live
+fallback). Signature verification and automated daily publishing are the
+remaining phases.
 
 ## Development
 
