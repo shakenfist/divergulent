@@ -178,6 +178,10 @@ cache build: deb-src Sources indices  ->  builder.enumerate_archive() (no networ
                               (bundle read locally + validated: schema recognised, release matches; else fully live)
                               (divergence always; staleness only while fresh, else live)
 
+publish:    schedule (daily incremental / weekly --refresh)  ->  build-cache.sh + sign-bundle.sh
+                                                  ->  publish-cache.sh  ->  rolling 'cache' GitHub prerelease
+                              (stable URL .../releases/download/cache/cache-<release>.json.gz[.sigstore.json])
+
 cache pull: --cache-url (or default for release)  ->  HttpClient.get_bytes() bundle + .sigstore.json
                                                   ->  bundle.loads() validate (schema + release)
                                                   ->  verify.verify_signature() (if the verify extra is present)

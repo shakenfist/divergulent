@@ -3,17 +3,30 @@ name: Build cache
 permissions:
   contents: read
 
-# Manual only for now: this phase exists to measure the whole-archive build time
-# and bundle size. Scheduling and publishing come in a later phase.
+# Builds the whole-archive cache bundle, signs it, and (on a schedule or when
+# asked) publishes it to the rolling 'cache' prerelease so clients can pull it.
+# The daily run is incremental and cheap; the weekly run forces a clean rebuild.
 on:
+  schedule:
+    - cron: '17 4 * * *'    # daily incremental (staggered off the hour)
+    - cron: '42 5 * * 0'    # weekly full --refresh rebuild (Sunday)
   workflow_dispatch:
+    inputs:
+      refresh:
+        description: Force a clean rebuild (ignore cached results)
+        type: boolean
+        default: false
+      publish:
+        description: Publish the bundle to the rolling 'cache' release
+        type: boolean
+        default: false
 
 jobs:
   build:
     runs-on: [self-hosted, debian-13, s]
 
     permissions:
-      contents: read
+      contents: write  # publish the bundle to the 'cache' release
       id-token: write  # keyless Sigstore signing of the bundle
 
     steps:
@@ -21,6 +34,10 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0  # setuptools_scm needs full history
+
+      - name: Detect Debian release
+        id: release
+        run: echo "codename=$(. /etc/os-release && echo "$VERSION_CODENAME")" >> "$GITHUB_OUTPUT"
 
       - name: Install build prerequisites
         run: |
@@ -31,20 +48,27 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .divergulent-ci-cache
-          key: divergulent-cache-trixie-${{ github.run_id }}
+          key: divergulent-cache-${{ steps.release.outputs.codename }}-${{ github.run_id }}
           restore-keys: |
-            divergulent-cache-trixie-
+            divergulent-cache-${{ steps.release.outputs.codename }}-
 
       - name: Build cache bundle
         env:
           DIVERGULENT_CACHE_DIR: ${{ github.workspace }}/.divergulent-ci-cache
-        run: tools/build-cache.sh cache-bundle/cache-debian13.json.gz
+          REFRESH: ${{ (github.event.schedule == '42 5 * * 0' || github.event.inputs.refresh == 'true') && '--refresh' || '' }}
+        run: tools/build-cache.sh "cache-bundle/cache-${{ steps.release.outputs.codename }}.json.gz"
 
       - name: Sign cache bundle
-        run: tools/sign-bundle.sh cache-bundle/cache-debian13.json.gz
+        run: tools/sign-bundle.sh "cache-bundle/cache-${{ steps.release.outputs.codename }}.json.gz"
 
       - name: Upload cache bundle
         uses: actions/upload-artifact@v7
         with:
           name: cache-bundle
           path: cache-bundle/
+
+      - name: Publish cache bundle
+        if: github.event_name == 'schedule' || github.event.inputs.publish == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: tools/publish-cache.sh "cache-bundle/cache-${{ steps.release.outputs.codename }}.json.gz"

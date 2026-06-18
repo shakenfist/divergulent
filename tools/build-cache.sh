@@ -70,9 +70,15 @@ build-venv/bin/pip install --quiet --upgrade pip
 build-venv/bin/pip install --quiet .
 div="build-venv/bin/divergulent"
 
-# The whole point of this phase: measured build time and bundle size.
+# A non-empty REFRESH (set by the workflow for the weekly clean rebuild, or a
+# manual --refresh dispatch) forces a recompute that ignores the cached results.
+build_args=()
+if [ -n "${REFRESH:-}" ]; then
+    build_args+=(--refresh)
+fi
+
 start=$(date +%s)
-"$div" cache build --output "$output"
+"$div" cache build --output "$output" "${build_args[@]}"
 end=$(date +%s)
 
 echo "Cache build took $((end - start))s"

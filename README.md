@@ -162,16 +162,17 @@ divergulent cache pull --cache-url URL       # ... from a specific URL or mirror
 divergulent score                            # now uses the stored bundle, no flag needed
 ```
 
-`cache pull` downloads the bundle, checks it is recognised and for your
-release, **verifies it**, and stores it under the cache directory; later
-runs use it automatically (an explicit `--bundle` still overrides).
-Divergence from a stored bundle is always used (a fixed version's patches
-never change); **staleness** is used only while the bundle is fresh
-(within a week) — past that, staleness is queried live so newly-behind
-packages are not missed, while divergence still comes from the bundle.
-The default download URL targets the project's published bundle; until
-automated publishing exists, pass `--cache-url` pointing at a bundle you
-host (e.g. the builder's CI artifact).
+`cache pull` (no arguments) downloads the bundle the project publishes for
+your release, checks it is recognised, **verifies it**, and stores it
+under the cache directory; later runs use it automatically (an explicit
+`--bundle` still overrides). The bundle is rebuilt and re-published
+daily (with a weekly full rebuild) to a stable URL, so `cache pull`
+refreshes it on demand; pass `--cache-url` to use a mirror or a
+hand-hosted bundle. Divergence from a stored bundle is always used (a
+fixed version's patches never change); **staleness** is used only while
+the bundle is fresh (within a week) — past that, staleness is queried
+live so newly-behind packages are not missed, while divergence still
+comes from the bundle.
 
 A downloaded bundle is untrusted, so two independent checks run before it
 is stored:
@@ -224,9 +225,12 @@ builder (`divergulent cache build`, run in CI) that sweeps the whole
 archive into a ~0.73 MB gzipped bundle; client consumption — the
 `--bundle PATH` flag and `cache pull` resolve covered packages from a
 bundle (downloaded and stored locally, used automatically, with a live
-fallback); and trust — the bundle is Sigstore-signed in CI, verified on
-the client (with the optional `verify` extra) and always spot-checked
-against live origins. Automated daily publishing is the remaining phase.
+fallback); trust — the bundle is Sigstore-signed in CI, verified on the
+client (with the optional `verify` extra) and always spot-checked against
+live origins; and publishing — a scheduled CI job builds, signs and
+publishes the bundle daily to a stable URL, so `cache pull` just works.
+Growing the published cache to a Debian 11/12/13/testing/unstable matrix
+is tracked in the road-to-1.0 plan.
 
 ## Development
 
@@ -242,11 +246,13 @@ CI runs the same checks on push and pull requests
 (`.github/workflows/sample-output.yml`) runs a full `divergulent score`
 on a Debian 13 runner and uploads the rendered report as a build
 artifact, so reviewers can see how the output looks on a real machine
-(and as a live end-to-end check). A manual workflow
-(`.github/workflows/build-cache.yml`, via `tools/build-cache.sh`) runs
-the whole-archive `divergulent cache build` on a Debian 13 runner and
-uploads the resulting bundle, to measure its real size and build time.
-Releases are tag-driven
+(and as a live end-to-end check). A scheduled workflow
+(`.github/workflows/build-cache.yml`) builds the whole-archive bundle on
+a Debian 13 runner (`tools/build-cache.sh`), signs it
+(`tools/sign-bundle.sh`), and publishes it (`tools/publish-cache.sh`) to
+the rolling `cache` prerelease daily — incremental each day, a full
+rebuild weekly — so `divergulent cache pull` serves a fresh, signed
+bundle. Software releases are tag-driven
 (`v*`) and publish to PyPI via Sigstore-signed tags and PyPI trusted
 publishing — see [RELEASE-SETUP.md](RELEASE-SETUP.md) for the one-time
 configuration.
