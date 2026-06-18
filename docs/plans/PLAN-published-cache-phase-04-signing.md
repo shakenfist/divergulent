@@ -5,7 +5,32 @@ High effort: a trust-critical phase. Sigstore signing in CI, an opt-in
 in-process verifier on the client, and an always-on "no cry wolf"
 spot-check of the bundle against live origins.
 
-**Status: not started.**
+**Status: implemented (CI signing pending a real run).** `divergulent/
+verify.py` adds `verify_signature` (lazy `sigstore` import, SKIPPED when
+the `verify` extra is absent) and `spot_check` (immutable-divergence
+exact match vs live, inconclusive on UNKNOWN); the `verify` extra is
+declared (`sigstore>=4.3,<5`). `cache pull` downloads the `.sigstore.json`,
+runs both checks and stores both files verbatim only on success, with
+`--spot-check N` / `--require-signature` / `--insecure`; `cache verify`
+re-checks a stored or given bundle. `build-cache.yml` signs the bundle
+(`tools/sign-bundle.sh`, `id-token: write`). Tests are offline (sigstore
+objects injected; SKIPPED path real; spot-check with fake live sources;
+the real-`sigstore` FAILED path was confirmed manually). Suite green;
+`pre-commit` clean. The signed-CI-run end-to-end (a real VERIFIED) needs
+a `workflow_dispatch`, like the phase-1 measurement.
+
+The sigstore API was verified empirically against **sigstore 4.3.0**:
+`Verifier.production().verify_artifact(input_, bundle, policy)`,
+`policy.Identity(identity=, issuer=)`, `Bundle.from_json`,
+`sigstore.errors.VerificationError`; the signing CLI emits
+`<input>.sigstore.json`.
+
+Scope note: the spot-check verifies **divergence only** (exact, immutable)
+as the integrity gate; the softer advisory staleness "not ahead" sample is
+deferred (it is noisy and Repology-rate-limited for little gain). The
+build-cache artifact is still named `cache-debian13.json.gz`; reconciling
+it with the client's `cache-<release>.json.gz` expectation (and the signed
+asset name) is part of phase 5's publishing.
 
 ## Prompt
 
