@@ -116,9 +116,11 @@ the base install keeps its stdlib + python-debian footprint;
 `--require-signature` makes a skipped/failed signature fatal. (2)
 **Spot-check** (always on, stdlib): `verify.spot_check` samples the
 bundle's *immutable* divergence entries and compares `(state, total)`
-exactly against a live `summary()`, refusing on a definite disagreement
-but treating an unresolvable live result (UNKNOWN/None) as inconclusive —
-the "no cry wolf" rule applied to the verifier itself. `--insecure` skips
+exactly against a live `summary()`, refusing only on a definite-vs-definite
+disagreement. "No cry wolf" applies to both sides: a bundle entry that is
+itself UNKNOWN (the bundle declining to claim, e.g. a transient build-time
+fetch failure) and an unresolvable live result (UNKNOWN/None) are both
+inconclusive — neither refuses a signed bundle. `--insecure` skips
 both; `--spot-check N` tunes the sample (0 disables). The stored bytes are
 kept **verbatim** so the signature verifies against exactly what was
 published. Signature verification's trust root is
