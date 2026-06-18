@@ -37,7 +37,10 @@ installed-package inventory never leaves the machine.
   (≤1 request/second by default; sources.debian.org has no documented
   limit and is set to 0, bounded by `--workers` instead), a response
   size cap, on-disk caching, and graceful degradation (failures return
-  `None`). The throttle is a thread-safe per-host "ticket" reservation,
+  `None`). `get_bytes` fetches a raw binary body (the cache bundle)
+  throttled and size-capped but *not* through the value cache, since the
+  caller stores it as a file. The throttle is a thread-safe per-host
+  "ticket" reservation,
   so it stays correct when several worker threads fetch concurrently:
   same-host requests stay spaced, different hosts overlap. A `refresh`
   flag skips the cache read but still writes, so the cache builder can
@@ -84,9 +87,11 @@ installed-package inventory never leaves the machine.
   computed centrally so a client downloads it once instead of querying
   Repology and sources.debian.org per package. `schema`/`cache_schema`
   version the envelope and entry-value shapes; `built_on` is provenance
-  only (the data is architecture-independent). See
-  `docs/plans/PLAN-published-cache.md`. Client consumption is a later
-  phase; today only the builder writes bundles.
+  only (the data is architecture-independent). `loads(bytes)` parses a
+  fresh download before it is stored, and `stored_path(cache_dir,
+  release)` is the on-disk location (`cache-<release>.json.gz`) the
+  builder, `cache pull`, and the consumer agree on. See
+  `docs/plans/PLAN-published-cache.md`.
 - `divergulent/sources/bundle_backed.py` — the client-side **consumers**
   of a bundle: `BundleDivergenceSource` (returns a published divergence
   summary only when the installed version matches the bundle's, else a
@@ -96,7 +101,12 @@ installed-package inventory never leaves the machine.
   fallback is per entry, so UNKNOWN still means neither the bundle nor the
   live source could resolve a package — never that the bundle merely
   lacked it. The CLI selects these when `--bundle` points at a recognised,
-  release-matched bundle; otherwise the commands run fully live.
+  release-matched bundle; otherwise the commands run fully live. The
+  bundle is found either from an explicit `--bundle` or, after a `cache
+  pull`, automatically from `stored_path` for the running release. A
+  **freshness contract** governs use: bundle divergence is always served
+  (immutable), bundle staleness only while within `BUNDLE_STALENESS_TTL`
+  (else live) — gated by the injectable `cli._utc_now` clock.
 - `divergulent/builder.py` — the central cache **builder** (runs in CI,
   not on a user's machine). Enumerates every `(source, version, format)`
   from the release's deb-src `Sources` indices with
@@ -157,6 +167,11 @@ cache build: deb-src Sources indices  ->  builder.enumerate_archive() (no networ
                                             ->  bundle hit (in-memory dict, no network)  ->  cli
                                             ->  miss -> live RepologySource / DebianPatchesSource
                               (bundle read locally + validated: schema recognised, release matches; else fully live)
+                              (divergence always; staleness only while fresh, else live)
+
+cache pull: --cache-url (or default for release)  ->  HttpClient.get_bytes()  ->  bundle.loads() validate
+                                                  ->  schema + release ok  ->  atomic write to stored_path()
+                              (the stored bytes are kept verbatim, ready for phase-4 signature verification)
 ```
 
 ## Planned

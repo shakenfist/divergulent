@@ -74,6 +74,16 @@ class HttpClient:
             url, cache_namespace, cache_key, ttl_seconds,
             lambda payload: payload.decode('utf-8', 'replace'))
 
+    def get_bytes(self, url: str) -> bytes | None:
+        '''Return the raw response body for ``url``, or None on any failure.
+
+        Unlike ``get_json``/``get_text`` this does not use the on-disk value
+        cache: it is for large binary payloads (the cache bundle) that the
+        caller stores as a file itself. It is still throttled, size-capped and
+        graceful (failures return None).
+        '''
+        return self._fetch(url)
+
     def _cached(self, url: str, namespace: str, key: str, ttl_seconds: float,
                 decode: Callable[[bytes], Any]) -> Any:
         '''Return a cached value, or fetch, decode, cache and return it.

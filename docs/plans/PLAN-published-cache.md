@@ -100,9 +100,10 @@ Still to resolve in phases:
 - **Divergence depth** — publish the cheap `summary()` (count +
   state + format) for everything; per-patch DEP-3 classification
   (`--classify`, heavier) is deferred unless cheap to include.
-- **Freshness contract** — how the client decides a bundle is too
-  old to trust for staleness (24h TTL semantics) vs immutable
-  divergence (effectively permanent).
+- **Freshness contract** — *resolved in phase 3.* Bundle divergence is
+  always used (immutable); bundle staleness only while `generated_at` is
+  within a generous 7-day window (a stale "newest" only under-reports
+  BEHIND, never cries wolf), past which staleness is queried live.
 
 ## Design overview
 
@@ -199,7 +200,7 @@ delivery phases (4–5).
 |-------|------|--------|
 | 1. Central builder + CI run: whole-archive sweep, emit bundle, **measure size/timing** | PLAN-published-cache-phase-01-builder.md | Measured (~0.73 MB; ~95 min cold, ~80 s incremental); one spot-check remaining |
 | 2. Bundle schema + bundle-backed sources + live fallback | PLAN-published-cache-phase-02-consume.md | Implemented (`--bundle`, bundle-backed sources + per-entry live fallback) |
-| 3. `cache pull`: download, validate, store, configurable URL | PLAN-published-cache-phase-03-pull.md | Not started |
+| 3. `cache pull`: download, validate, store, configurable URL | PLAN-published-cache-phase-03-pull.md | Implemented (`cache pull`, auto-discovery, freshness contract) |
 | 4. Signing + client verification + spot-verify | PLAN-published-cache-phase-04-signing.md | Not started |
 | 5. Scheduled daily publish to GitHub Releases `latest` | PLAN-published-cache-phase-05-publish.md | Not started |
 

@@ -84,8 +84,22 @@ def write(bundle: Bundle, path: str | Path) -> None:
         handle.write(payload)
 
 
+def loads(data: bytes) -> Bundle:
+    '''Parse a bundle from raw gzipped-JSON bytes (e.g. a fresh download).'''
+    payload = gzip.decompress(data)
+    return Bundle.from_dict(json.loads(payload.decode('utf-8')))
+
+
 def load(path: str | Path) -> Bundle:
     '''Read a gzipped-JSON bundle from ``path``.'''
-    with gzip.open(path, 'rb') as handle:
-        data = json.loads(handle.read().decode('utf-8'))
-    return Bundle.from_dict(data)
+    with open(path, 'rb') as handle:
+        return loads(handle.read())
+
+
+def stored_path(cache_dir: str | Path, release: str) -> Path:
+    '''The on-disk location of the stored bundle for a Debian release.
+
+    Keyed on the release (the bundle's correctness partition) so the builder,
+    ``cache pull`` and the consumer all agree on where it lives.
+    '''
+    return Path(cache_dir) / ('cache-%s.json.gz' % release)

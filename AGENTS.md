@@ -85,8 +85,25 @@ bundle covers nearly every installed source) yet never less complete
 than the live run, and UNKNOWN still means neither source could resolve.
 The bundle is read locally, so the inventory never leaves the host. The
 sources are selected in `cli._resolve_sources`; `show` and `--classify`
-stay fully live (the bundle holds summaries, not patch bodies). Loading,
-downloading and freshness/signature checks are later phases.
+stay fully live (the bundle holds summaries, not patch bodies).
+
+`divergulent cache pull [--cache-url URL]` downloads the release bundle
+with `HttpClient.get_bytes` (raw bytes, throttled and size-capped but not
+value-cached), validates it with `bundle.loads` + schema/release checks,
+and stores the **downloaded bytes verbatim** at `bundle.stored_path`
+(`cache-<release>.json.gz` under the cache dir) via an atomic
+temp-file+rename — verbatim so a phase-4 signature verifies against
+exactly what was published; a download that fails to parse, is
+unrecognised, or is for another release is refused and nothing is stored.
+`cli._select_bundle` then auto-discovers that stored file when `--bundle`
+is absent (silently, since no store is the normal pre-pull state). A
+**freshness contract** governs use: bundle divergence is always served
+(immutable), but bundle staleness only while `generated_at` is within
+`BUNDLE_STALENESS_TTL_SECONDS` (7 days) — past that staleness is queried
+live, since a stale "newest" only under-reports BEHIND (newest versions
+only increase) and we would rather go live than silently miss. The
+freshness clock is the injectable `cli._utc_now` (so tests pin it).
+Signature verification is the next phase.
 
 `--classify` (Tier 2) classifies the whole machine via
 `divergulent.sources.apt_patches.AptSourcePatches`: it resolves each

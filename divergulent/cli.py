@@ -5,6 +5,8 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
 from divergulent import __version__
 from divergulent import builder
@@ -36,6 +38,20 @@ SOURCES_DEBIAN_INTERVAL = 0.0
 # sources.debian.org. Kept moderate to stay a polite single client; Repology
 # requests still self-limit to <=1 req/s via the per-host throttle regardless.
 DEFAULT_WORKERS = 8
+
+# Where `cache pull` fetches the bundle from when no --cache-url is given. The
+# release codename is substituted in; this is the client-defined asset name the
+# scheduled publisher (phase 5) must publish under. Until then, pass --cache-url
+# to point at a hand-hosted bundle.
+DEFAULT_CACHE_URL_TEMPLATE = (
+    'https://github.com/shakenfist/divergulent/releases/latest/download/cache-%s.json.gz')
+
+# How recent a stored bundle's staleness data must be to be trusted. Divergence
+# is immutable and never expires; staleness ages, but a stale "newest" can only
+# under-report BEHIND (newest versions only increase), never cry wolf, so the
+# window is generous. Past it, staleness is queried live to catch packages that
+# have since fallen behind.
+BUNDLE_STALENESS_TTL_SECONDS = 7 * 24 * 60 * 60  # 7 days
 
 
 def _cache_and_client():
@@ -90,20 +106,60 @@ def _usable_bundle(path):
     return loaded
 
 
+def _select_bundle(args):
+    '''The bundle to use: an explicit --bundle, else the stored one if present.
+
+    An explicit --bundle that is unusable warns (via _usable_bundle); an absent
+    stored bundle is the normal pre-pull state and is silent.
+    '''
+    explicit = getattr(args, 'bundle', None)
+    if explicit:
+        return _usable_bundle(explicit)
+    release = _detect_release()
+    if release is None:
+        return None
+    stored = bundle.stored_path(default_cache_dir(), release)
+    if not stored.exists():
+        return None
+    return _usable_bundle(str(stored))
+
+
+def _staleness_fresh(loaded):
+    '''True if a bundle's staleness is recent enough to trust (else query live).'''
+    try:
+        generated = datetime.datetime.fromisoformat(loaded.generated_at)
+    except (TypeError, ValueError):
+        return False
+    try:
+        age = (_utc_now() - generated).total_seconds()
+    except TypeError:  # naive vs aware datetime: treat as stale, the safe choice
+        return False
+    return age <= BUNDLE_STALENESS_TTL_SECONDS
+
+
 def _resolve_sources(args):
     '''Return (staleness_source, divergence_source), bundle-backed if available.
 
     With a usable bundle the sources answer covered packages from it and fall
-    back to the live sources only for misses; without one they are the live
-    sources exactly as before.
+    back to the live sources only for misses. Divergence is served from any
+    bundle (immutable); staleness only while the bundle is fresh, else it is
+    queried live. Without a bundle the sources are the live ones, as before.
     '''
-    loaded = _usable_bundle(getattr(args, 'bundle', None))
+    loaded = _select_bundle(args)
     staleness_live = _repology()
     divergence_live = DebianPatchesSource(_http_client())
     if loaded is None:
         return staleness_live, divergence_live
-    staleness = FallbackStaleness(RepologyBulkSource(loaded.staleness), staleness_live)
+
     divergence = FallbackDivergence(BundleDivergenceSource(loaded.divergence), divergence_live)
+    if _staleness_fresh(loaded):
+        staleness = FallbackStaleness(RepologyBulkSource(loaded.staleness), staleness_live)
+    else:
+        print(
+            'divergulent: bundle staleness is older than the freshness window '
+            '(built %s); querying Repology live for staleness.' % loaded.generated_at,
+            file=sys.stderr)
+        staleness = staleness_live
     return staleness, divergence
 
 
@@ -205,6 +261,12 @@ def _build_parser():
         '--refresh', action='store_true',
         help='Ignore cached results and recompute from the origins (still repopulates the cache).')
     buildcmd.add_argument('--quiet', action='store_true', help='Suppress progress output.')
+
+    pullcmd = cachesub.add_parser(
+        'pull', help='Download and store the precomputed cache bundle for this Debian release.')
+    pullcmd.add_argument(
+        '--cache-url', default=None,
+        help='URL to download the bundle from (default: the GitHub Releases asset for this release).')
 
     return parser
 
@@ -614,8 +676,12 @@ def build_bundle(http, paths, *, release, repology_repo, arch, generated_at,
         divergence=divergence)
 
 
+def _utc_now():
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
 def _utc_now_iso():
-    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+    return _utc_now().isoformat()
 
 
 def _detect_release():
@@ -677,10 +743,65 @@ def _cache_build_command(args):
     return 0
 
 
+def _atomic_write_bytes(path, data):
+    '''Write bytes to ``path`` via a unique temp file, then an atomic rename.'''
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.stem + '.', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'wb') as handle:
+            handle.write(data)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _cache_pull_command(args):
+    release = _detect_release()
+    if release is None:
+        print('divergulent: could not detect the Debian release; cannot choose a bundle.', file=sys.stderr)
+        return 1
+
+    url = args.cache_url or (DEFAULT_CACHE_URL_TEMPLATE % release)
+    data = _http_client().get_bytes(url)
+    if data is None:
+        print('divergulent: could not download a bundle from %s' % url, file=sys.stderr)
+        return 1
+
+    try:
+        loaded = bundle.loads(data)
+    except (OSError, ValueError, KeyError):
+        print('divergulent: downloaded bundle could not be read; not stored.', file=sys.stderr)
+        return 1
+    if (loaded.schema, loaded.cache_schema) != (bundle.SCHEMA_VERSION, bundle.CACHE_SCHEMA_VERSION):
+        print('divergulent: downloaded bundle schema not recognised; not stored.', file=sys.stderr)
+        return 1
+    if loaded.release != release:
+        print(
+            "divergulent: downloaded bundle is for '%s' but this system is '%s'; not stored." % (
+                loaded.release, release),
+            file=sys.stderr)
+        return 1
+
+    path = bundle.stored_path(default_cache_dir(), release)
+    _atomic_write_bytes(path, data)
+    print(
+        'divergulent: stored %s (%d bytes, %d staleness, %d divergence entries, built %s)' % (
+            path, len(data), len(loaded.staleness), len(loaded.divergence), loaded.generated_at),
+        file=sys.stderr)
+    return 0
+
+
 def _cache_command(args):
     if args.cache_command == 'build':
         return _cache_build_command(args)
-    print("divergulent: 'cache' needs a subcommand (build)", file=sys.stderr)
+    if args.cache_command == 'pull':
+        return _cache_pull_command(args)
+    print("divergulent: 'cache' needs a subcommand (build, pull)", file=sys.stderr)
     return 1
 
 

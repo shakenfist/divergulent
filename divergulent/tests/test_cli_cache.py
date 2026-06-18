@@ -1,10 +1,13 @@
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 import testtools
 
+from divergulent import bundle
 from divergulent import cli
 from divergulent.cache import Cache
 from divergulent.http import HttpClient
@@ -145,3 +148,87 @@ class BuildBundleRefreshTestCase(testtools.TestCase):
         refreshed = FakeBytesUrlopen()
         _build(self._client(refreshed, refresh=True))
         self.assertNotEqual([], refreshed.calls)
+
+
+def _bundle_bytes(testcase, release='trixie'):
+    obj = bundle.Bundle(
+        schema=bundle.SCHEMA_VERSION,
+        cache_schema=bundle.CACHE_SCHEMA_VERSION,
+        generated_at='2026-06-18T00:00:00+00:00',
+        release=release,
+        repology_repo='debian_unstable',
+        built_on={'arch': 'amd64', 'release': release},
+        staleness={'bash': '5.3'},
+        divergence={'bash': {'version': '5.2-1', 'format': '3.0 (quilt)', 'total': 2, 'state': 'patched'}})
+    fd, path = tempfile.mkstemp(suffix='.json.gz')
+    os.close(fd)
+    testcase.addCleanup(os.unlink, path)
+    bundle.write(obj, path)
+    with open(path, 'rb') as handle:
+        return handle.read()
+
+
+class FakeDownloadHttp:
+    '''Stands in for the HTTP client: get_bytes returns canned bytes (or None).'''
+
+    def __init__(self, data):
+        self.data = data
+        self.urls = []
+
+    def get_bytes(self, url):
+        self.urls.append(url)
+        return self.data
+
+
+class CachePullTestCase(testtools.TestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.cache_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.cache_dir, ignore_errors=True)
+        patcher = mock.patch.dict(os.environ, {'DIVERGULENT_CACHE_DIR': self.cache_dir})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _run(self, argv, http):
+        with mock.patch('divergulent.cli._detect_release', return_value='trixie'), \
+                mock.patch('divergulent.cli._http_client', return_value=http):
+            return cli.main(argv)
+
+    def _stored(self):
+        return bundle.stored_path(self.cache_dir, 'trixie')
+
+    def test_pull_stores_downloaded_bytes_verbatim(self):
+        data = _bundle_bytes(self)
+        http = FakeDownloadHttp(data)
+        rc = self._run(['cache', 'pull', '--cache-url', 'http://example/b.json.gz'], http)
+        self.assertEqual(0, rc)
+        self.assertEqual(['http://example/b.json.gz'], http.urls)
+        self.assertTrue(self._stored().exists())
+        with open(self._stored(), 'rb') as handle:
+            self.assertEqual(data, handle.read())  # stored exactly as downloaded
+        # And it loads back as a valid bundle.
+        self.assertEqual('trixie', bundle.load(self._stored()).release)
+
+    def test_default_url_is_keyed_on_release(self):
+        http = FakeDownloadHttp(_bundle_bytes(self))
+        self._run(['cache', 'pull'], http)
+        self.assertIn('cache-trixie.json.gz', http.urls[0])
+
+    def test_wrong_release_is_not_stored(self):
+        http = FakeDownloadHttp(_bundle_bytes(self, release='bookworm'))
+        rc = self._run(['cache', 'pull', '--cache-url', 'http://example/b'], http)
+        self.assertEqual(1, rc)
+        self.assertFalse(self._stored().exists())
+
+    def test_unparseable_download_is_not_stored(self):
+        http = FakeDownloadHttp(b'not a gzip bundle')
+        rc = self._run(['cache', 'pull', '--cache-url', 'http://example/b'], http)
+        self.assertEqual(1, rc)
+        self.assertFalse(self._stored().exists())
+
+    def test_failed_download_returns_error(self):
+        http = FakeDownloadHttp(None)
+        rc = self._run(['cache', 'pull', '--cache-url', 'http://example/b'], http)
+        self.assertEqual(1, rc)
+        self.assertFalse(self._stored().exists())

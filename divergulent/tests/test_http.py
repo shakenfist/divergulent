@@ -182,6 +182,30 @@ class HttpClientTestCase(testtools.TestCase):
         data = client.get_json('https://repology.org/x', cache_namespace='r', cache_key='k', ttl_seconds=100)
         self.assertEqual({'a': 1}, data)
 
+    def test_get_bytes_returns_raw_body(self):
+        def urlopen(request, timeout=None):
+            return FakeResponse(b'\x1f\x8b\x08rawbytes')
+
+        client = self._client(urlopen)
+        self.assertEqual(b'\x1f\x8b\x08rawbytes', client.get_bytes('https://example/bundle.json.gz'))
+
+    def test_get_bytes_error_returns_none(self):
+        def urlopen(request, timeout=None):
+            raise urllib.error.URLError('boom')
+
+        client = self._client(urlopen)
+        self.assertIsNone(client.get_bytes('https://example/bundle.json.gz'))
+
+    def test_get_bytes_is_throttled(self):
+        def urlopen(request, timeout=None):
+            return FakeResponse(b'a')
+
+        client = self._client(urlopen)
+        client.get_bytes('https://example/a')
+        client.get_bytes('https://example/b')
+        # The second same-host fetch waited the throttle interval.
+        self.assertEqual(1, len(self.slept))
+
     def test_oversized_response_returns_none(self):
         def urlopen(request, timeout=None):
             return FakeResponse(b'{"a": 1, "b": 2}')
