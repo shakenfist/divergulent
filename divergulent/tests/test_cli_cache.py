@@ -242,7 +242,8 @@ class CachePullTestCase(testtools.TestCase):
     def test_default_url_is_keyed_on_release(self):
         http = FakeDownloadHttp(_bundle_bytes(self))
         self._run(['cache', 'pull'], http)
-        self.assertIn('cache-trixie.json.gz', http.urls[0])
+        # The default URL targets the rolling 'cache' release, keyed on release.
+        self.assertIn('/releases/download/cache/cache-trixie.json.gz', http.urls[0])
 
     def test_spot_check_mismatch_refuses_to_store(self):
         http = FakeDownloadHttp(_bundle_bytes(self))

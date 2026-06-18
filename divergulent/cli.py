@@ -41,11 +41,12 @@ SOURCES_DEBIAN_INTERVAL = 0.0
 DEFAULT_WORKERS = 8
 
 # Where `cache pull` fetches the bundle from when no --cache-url is given. The
-# release codename is substituted in; this is the client-defined asset name the
-# scheduled publisher (phase 5) must publish under. Until then, pass --cache-url
-# to point at a hand-hosted bundle.
+# release codename is substituted in. The publisher (build-cache.yml) uploads
+# the bundle to the rolling, in-place 'cache' prerelease, so this is a stable
+# URL that is not the repository's software "latest" release. Override with
+# --cache-url to use a mirror or a hand-hosted bundle.
 DEFAULT_CACHE_URL_TEMPLATE = (
-    'https://github.com/shakenfist/divergulent/releases/latest/download/cache-%s.json.gz')
+    'https://github.com/shakenfist/divergulent/releases/download/cache/cache-%s.json.gz')
 
 # How recent a stored bundle's staleness data must be to be trusted. Divergence
 # is immutable and never expires; staleness ages, but a stale "newest" can only
