@@ -38,6 +38,12 @@ dependencies = [
 divergulent = "divergulent.cli:main"
 
 [project.optional-dependencies]
+# Optional, opt-in Sigstore signature verification of a downloaded cache
+# bundle. Kept out of the base install so the default footprint stays
+# stdlib + python-debian; the always-on spot-check trust path needs none of it.
+verify = [
+    "sigstore>=4.3,<5",  # apache2 — Sigstore keyless signature verification
+]
 test = [
     "coverage",         # apache2
     "testtools<2.9.2",  # mit; stestr uses _b removed in 2.8
