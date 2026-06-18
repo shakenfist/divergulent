@@ -130,6 +130,42 @@ The product is trustworthiness, so validate it beyond the CI sample.
       PyPI.
 - [ ] Release notes / changelog.
 
+### 8. Builder robustness and publish safety
+
+Prompted by the first real publish: an incremental build reused stale
+`UNKNOWN` divergence values from earlier dev runs, so the published bundle
+carried entries that should have been `CLEAN`. Transient build-time
+failures must not silently degrade the published cache, and a bad build
+must never overwrite a good one. Two layers of defence, plus a paper
+trail.
+
+- [ ] **Retry within the build.** Transient sources.debian.org / Repology
+      failures during the ~34k-package crawl currently collapse straight
+      to `UNKNOWN`. Retry failed fetches (bounded, with backoff) before
+      recording `UNKNOWN`, and distinguish a *genuine* format-`UNKNOWN` (a
+      real non-quilt/non-native source) from a *fetch-failure* `UNKNOWN`,
+      so a transient failure is never baked into the bundle nor cached as
+      if authoritative.
+- [ ] **Sanity-check a new bundle before publishing.** Compare the freshly
+      built bundle against the currently published one and **refuse to
+      overwrite on an obvious regression** — e.g. markedly fewer
+      divergence/staleness entries, a much smaller file, or a sharply
+      higher `UNKNOWN` fraction. Coverage should be roughly monotonic; a
+      sudden shrink is a red flag, not something to publish silently. If
+      the check trips, retry the build once; if it still looks wrong, keep
+      the old published bundle (`publish-cache.sh` is gated on this check —
+      we **never** automatically overwrite a published cache with a much
+      smaller or worse one).
+- [ ] **File a GitHub issue on any builder/publish error.** A build
+      failure, a tripped sanity check, or a refused publish should open
+      (or update) a GitHub issue with the details — entry counts, sizes,
+      the failing run URL — so failures are debuggable rather than silent.
+      Needs `issues: write` on the job; de-duplicate so a recurring
+      failure updates one issue rather than spamming new ones.
+
+This graduates to its own `PLAN-builder-robustness.md` when picked up,
+likely alongside the matrix since both touch `build-cache.yml`.
+
 ## Administration
 
 - Registered in [docs/plans/index.md](index.md).
