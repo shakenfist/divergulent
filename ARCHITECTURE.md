@@ -107,6 +107,15 @@ installed-package inventory never leaves the machine.
   **freshness contract** governs use: bundle divergence is always served
   (immutable), bundle staleness only while within `BUNDLE_STALENESS_TTL`
   (else live) — gated by the injectable `cli._utc_now` clock.
+- `divergulent/verify.py` — the **trust** checks for a downloaded bundle,
+  both fail-closed. `verify_signature` checks the bundle's Sigstore
+  signature against the expected CI workflow identity; it lazily imports
+  `sigstore` and returns SKIPPED (not FAILED) when the optional `verify`
+  extra is absent, so the base install stays stdlib + python-debian.
+  `spot_check` samples the bundle's immutable divergence entries and
+  compares them exactly against a live `summary()`, refusing on a definite
+  disagreement while treating an unresolvable live result as inconclusive
+  ("no cry wolf"). Both run at `cache pull` time (and `cache verify`).
 - `divergulent/builder.py` — the central cache **builder** (runs in CI,
   not on a user's machine). Enumerates every `(source, version, format)`
   from the release's deb-src `Sources` indices with
@@ -169,9 +178,12 @@ cache build: deb-src Sources indices  ->  builder.enumerate_archive() (no networ
                               (bundle read locally + validated: schema recognised, release matches; else fully live)
                               (divergence always; staleness only while fresh, else live)
 
-cache pull: --cache-url (or default for release)  ->  HttpClient.get_bytes()  ->  bundle.loads() validate
-                                                  ->  schema + release ok  ->  atomic write to stored_path()
-                              (the stored bytes are kept verbatim, ready for phase-4 signature verification)
+cache pull: --cache-url (or default for release)  ->  HttpClient.get_bytes() bundle + .sigstore.json
+                                                  ->  bundle.loads() validate (schema + release)
+                                                  ->  verify.verify_signature() (if the verify extra is present)
+                                                  ->  verify.spot_check() sample vs live summary()
+                                                  ->  all pass  ->  atomic write bundle + signature, verbatim
+                              (--insecure skips checks; --require-signature makes a missing/failed sig fatal)
 ```
 
 ## Planned

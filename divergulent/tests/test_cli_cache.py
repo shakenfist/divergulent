@@ -9,8 +9,10 @@ import testtools
 
 from divergulent import bundle
 from divergulent import cli
+from divergulent import verify
 from divergulent.cache import Cache
 from divergulent.http import HttpClient
+from divergulent.sources.debian_patches import DivergenceState, DivergenceSummary
 
 
 FIXTURE = os.path.join(os.path.dirname(__file__), 'fixtures', 'sources-index-sample.txt')
@@ -169,15 +171,38 @@ def _bundle_bytes(testcase, release='trixie'):
 
 
 class FakeDownloadHttp:
-    '''Stands in for the HTTP client: get_bytes returns canned bytes (or None).'''
+    '''get_bytes returns the bundle for the bundle URL and a signature for the
+    .sigstore.json URL (or None for either to simulate a missing download).'''
 
-    def __init__(self, data):
+    def __init__(self, data, signature=b'fake-signature'):
         self.data = data
+        self.signature = signature
         self.urls = []
 
     def get_bytes(self, url):
         self.urls.append(url)
+        if url.endswith(verify.SIGNATURE_SUFFIX):
+            return self.signature
         return self.data
+
+
+class _StubPatches:
+    '''A live divergence source returning a fixed summary per source.'''
+
+    def __init__(self, by_source):
+        self.by_source = by_source
+
+    def summary(self, source, version):
+        return self.by_source.get(source)
+
+
+def _agreeing_patches():
+    # Matches the _bundle_bytes divergence for bash exactly.
+    return _StubPatches({'bash': DivergenceSummary('bash', '5.2-1', '3.0 (quilt)', 2, DivergenceState.PATCHED)})
+
+
+def _disagreeing_patches():
+    return _StubPatches({'bash': DivergenceSummary('bash', '5.2-1', '3.0 (quilt)', 99, DivergenceState.PATCHED)})
 
 
 class CachePullTestCase(testtools.TestCase):
@@ -190,30 +215,60 @@ class CachePullTestCase(testtools.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def _run(self, argv, http):
+    def _run(self, argv, http, patches=None):
+        patches = patches if patches is not None else _agreeing_patches()
         with mock.patch('divergulent.cli._detect_release', return_value='trixie'), \
-                mock.patch('divergulent.cli._http_client', return_value=http):
+                mock.patch('divergulent.cli._http_client', return_value=http), \
+                mock.patch('divergulent.cli.DebianPatchesSource', return_value=patches):
             return cli.main(argv)
 
     def _stored(self):
         return bundle.stored_path(self.cache_dir, 'trixie')
 
-    def test_pull_stores_downloaded_bytes_verbatim(self):
+    def test_pull_verifies_and_stores_bundle_and_signature(self):
         data = _bundle_bytes(self)
         http = FakeDownloadHttp(data)
-        rc = self._run(['cache', 'pull', '--cache-url', 'http://example/b.json.gz'], http)
+        # The spot-check agrees and the signature is SKIPPED (no sigstore extra
+        # in the test env), so the bundle is trusted and stored.
+        rc = self._run(['cache', 'pull', '--cache-url', 'http://example/cache-trixie.json.gz'], http)
         self.assertEqual(0, rc)
-        self.assertEqual(['http://example/b.json.gz'], http.urls)
-        self.assertTrue(self._stored().exists())
+        self.assertIn('http://example/cache-trixie.json.gz', http.urls)
+        self.assertIn('http://example/cache-trixie.json.gz' + verify.SIGNATURE_SUFFIX, http.urls)
         with open(self._stored(), 'rb') as handle:
             self.assertEqual(data, handle.read())  # stored exactly as downloaded
-        # And it loads back as a valid bundle.
-        self.assertEqual('trixie', bundle.load(self._stored()).release)
+        # The signature is stored beside the bundle.
+        self.assertTrue((self._stored().parent / (self._stored().name + verify.SIGNATURE_SUFFIX)).exists())
 
     def test_default_url_is_keyed_on_release(self):
         http = FakeDownloadHttp(_bundle_bytes(self))
         self._run(['cache', 'pull'], http)
         self.assertIn('cache-trixie.json.gz', http.urls[0])
+
+    def test_spot_check_mismatch_refuses_to_store(self):
+        http = FakeDownloadHttp(_bundle_bytes(self))
+        rc = self._run(
+            ['cache', 'pull', '--cache-url', 'http://example/b'], http, patches=_disagreeing_patches())
+        self.assertEqual(1, rc)
+        self.assertFalse(self._stored().exists())
+
+    def test_insecure_skips_verification(self):
+        http = FakeDownloadHttp(_bundle_bytes(self))
+        # Even a disagreeing live source is ignored under --insecure.
+        rc = self._run(
+            ['cache', 'pull', '--cache-url', 'http://example/b', '--insecure'], http,
+            patches=_disagreeing_patches())
+        self.assertEqual(0, rc)
+        self.assertTrue(self._stored().exists())
+
+    def test_require_signature_fails_without_extra(self):
+        http = FakeDownloadHttp(_bundle_bytes(self))
+        # sigstore is not installed in the test env, so the signature check is
+        # SKIPPED; --require-signature turns that into a refusal.
+        rc = self._run(
+            ['cache', 'pull', '--cache-url', 'http://example/b', '--require-signature', '--spot-check', '0'],
+            http)
+        self.assertEqual(1, rc)
+        self.assertFalse(self._stored().exists())
 
     def test_wrong_release_is_not_stored(self):
         http = FakeDownloadHttp(_bundle_bytes(self, release='bookworm'))
@@ -232,3 +287,34 @@ class CachePullTestCase(testtools.TestCase):
         rc = self._run(['cache', 'pull', '--cache-url', 'http://example/b'], http)
         self.assertEqual(1, rc)
         self.assertFalse(self._stored().exists())
+
+
+class CacheVerifyTestCase(testtools.TestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.cache_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.cache_dir, ignore_errors=True)
+        patcher = mock.patch.dict(os.environ, {'DIVERGULENT_CACHE_DIR': self.cache_dir})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        # Store a bundle to verify.
+        self.path = bundle.stored_path(self.cache_dir, 'trixie')
+        with open(self.path, 'wb') as handle:
+            handle.write(_bundle_bytes(self))
+
+    def _run(self, argv, patches):
+        with mock.patch('divergulent.cli._detect_release', return_value='trixie'), \
+                mock.patch('divergulent.cli._http_client', return_value=object()), \
+                mock.patch('divergulent.cli.DebianPatchesSource', return_value=patches):
+            return cli.main(argv)
+
+    def test_verify_passes_on_agreeing_data(self):
+        self.assertEqual(0, self._run(['cache', 'verify'], _agreeing_patches()))
+
+    def test_verify_fails_on_disagreeing_data(self):
+        self.assertEqual(1, self._run(['cache', 'verify'], _disagreeing_patches()))
+
+    def test_verify_missing_bundle(self):
+        os.unlink(self.path)
+        self.assertEqual(1, self._run(['cache', 'verify'], _agreeing_patches()))

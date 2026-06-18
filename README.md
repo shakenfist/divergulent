@@ -163,16 +163,32 @@ divergulent score                            # now uses the stored bundle, no fl
 ```
 
 `cache pull` downloads the bundle, checks it is recognised and for your
-release, and stores it under the cache directory; later runs use it
-automatically (an explicit `--bundle` still overrides). Divergence from a
-stored bundle is always used (a fixed version's patches never change);
-**staleness** is used only while the bundle is fresh (within a week) —
-past that, staleness is queried live so newly-behind packages are not
-missed, while divergence still comes from the bundle. The default
-download URL targets the project's published bundle; until automated
-publishing exists, pass `--cache-url` pointing at a bundle you host
-(e.g. the builder's CI artifact). Signature verification arrives in a
-later phase.
+release, **verifies it**, and stores it under the cache directory; later
+runs use it automatically (an explicit `--bundle` still overrides).
+Divergence from a stored bundle is always used (a fixed version's patches
+never change); **staleness** is used only while the bundle is fresh
+(within a week) — past that, staleness is queried live so newly-behind
+packages are not missed, while divergence still comes from the bundle.
+The default download URL targets the project's published bundle; until
+automated publishing exists, pass `--cache-url` pointing at a bundle you
+host (e.g. the builder's CI artifact).
+
+A downloaded bundle is untrusted, so two independent checks run before it
+is stored:
+
+- **Signature** — the bundle is signed in CI with Sigstore. Install the
+  optional verifier (`pip install divergulent[verify]`) and `cache pull`
+  checks the signature against the publishing workflow's identity,
+  refusing a bundle that fails. Without the extra the check is skipped
+  with a notice (use `--require-signature` to make a missing/failed
+  signature fatal).
+- **Spot-check** — always on, needs no extra: a random sample of the
+  bundle's entries is compared against the live origin, and a bundle whose
+  data demonstrably disagrees is refused (a transient live failure never
+  causes a false refusal). Tune with `--spot-check N` (0 disables).
+
+`--insecure` skips both. Re-check a stored bundle anytime with
+`divergulent cache verify`.
 
 Drill into a single installed package:
 
@@ -205,11 +221,12 @@ the slow half of a cold run (staleness + divergence) is a function of the
 Debian release, not of your machine, so it can be computed once centrally
 and downloaded as a small signed bundle. Two pieces exist now: a central
 builder (`divergulent cache build`, run in CI) that sweeps the whole
-archive into a ~0.73 MB gzipped bundle, and client consumption — the
-`--bundle PATH` flag and `cache pull` above resolve covered packages from
-a bundle (downloaded and stored locally, used automatically, with a live
-fallback). Signature verification and automated daily publishing are the
-remaining phases.
+archive into a ~0.73 MB gzipped bundle; client consumption — the
+`--bundle PATH` flag and `cache pull` resolve covered packages from a
+bundle (downloaded and stored locally, used automatically, with a live
+fallback); and trust — the bundle is Sigstore-signed in CI, verified on
+the client (with the optional `verify` extra) and always spot-checked
+against live origins. Automated daily publishing is the remaining phase.
 
 ## Development
 

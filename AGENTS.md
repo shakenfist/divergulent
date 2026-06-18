@@ -103,7 +103,27 @@ is absent (silently, since no store is the normal pre-pull state). A
 live, since a stale "newest" only under-reports BEHIND (newest versions
 only increase) and we would rather go live than silently miss. The
 freshness clock is the injectable `cli._utc_now` (so tests pin it).
-Signature verification is the next phase.
+
+**Trust (`divergulent/verify.py`).** A downloaded bundle is untrusted, so
+`cache pull` runs two independent, fail-closed checks before storing it
+(and `cache verify` re-runs them). (1) **Signature**: the bundle is
+Sigstore-signed in CI (`tools/sign-bundle.sh` in `build-cache.yml`, keyless
+OIDC, emitting `<bundle>.sigstore.json`); `verify.verify_signature`
+verifies it against `EXPECTED_SIGNER_IDENTITY`/`ISSUER`. It **lazily
+imports `sigstore`** and returns SKIPPED — not FAILED — when the optional
+`verify` extra (`divergulent[verify]`, `sigstore>=4.3,<5`) is absent, so
+the base install keeps its stdlib + python-debian footprint;
+`--require-signature` makes a skipped/failed signature fatal. (2)
+**Spot-check** (always on, stdlib): `verify.spot_check` samples the
+bundle's *immutable* divergence entries and compares `(state, total)`
+exactly against a live `summary()`, refusing on a definite disagreement
+but treating an unresolvable live result (UNKNOWN/None) as inconclusive —
+the "no cry wolf" rule applied to the verifier itself. `--insecure` skips
+both; `--spot-check N` tunes the sample (0 disables). The stored bytes are
+kept **verbatim** so the signature verifies against exactly what was
+published. The expected identity is provisional and may move when phase 5
+fixes the publishing workflow. Signature verification's trust root is
+fetched once via Sigstore's TUF and cached.
 
 `--classify` (Tier 2) classifies the whole machine via
 `divergulent.sources.apt_patches.AptSourcePatches`: it resolves each
