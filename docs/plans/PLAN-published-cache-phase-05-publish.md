@@ -5,7 +5,23 @@ Medium effort, but it makes the whole feature real: until a signed bundle
 is published at a stable URL, `cache pull` (with no `--cache-url`) has
 nothing to pull and every user falls back to the slow live path.
 
-**Status: not started.**
+**Status: implemented (real publish + VERIFIED pending a run).**
+`build-cache.yml` now runs on a schedule (daily incremental at 04:17,
+weekly `--refresh` Sunday) plus `workflow_dispatch` (with `refresh` and
+`publish` inputs), detects the release codename, builds
+`cache-<release>.json.gz`, signs it, and (on schedule, or a `publish`
+dispatch) publishes the bundle + `.sigstore.json` to the rolling
+prerelease `cache` tag via `tools/publish-cache.sh` (`gh release upload
+--clobber`, `contents: write`). `tools/build-cache.sh` honours a `REFRESH`
+env for the weekly clean rebuild. The client's `DEFAULT_CACHE_URL_TEMPLATE`
+now points at `.../releases/download/cache/cache-<release>.json.gz`. Suite
+green; `pre-commit` (incl. actionlint/shellcheck) clean.
+
+Still pending a **real run** (cannot be validated offline): the first
+`workflow_dispatch` with `publish: true` to create the `cache` release and
+confirm the published URL resolves, and a real `cache pull` reporting
+**VERIFIED** to confirm `EXPECTED_SIGNER_IDENTITY` matches the actual
+certificate (a one-line correction if it differs).
 
 ## Prompt
 

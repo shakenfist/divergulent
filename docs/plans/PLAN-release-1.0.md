@@ -115,11 +115,20 @@ The product is trustworthiness, so validate it beyond the CI sample.
 
 ### 7. Release mechanics
 
+- [ ] **Start at `v0.1`, not `v1.0`.** The package version is
+      `setuptools_scm`-derived from `v*` tags; with no tag yet it already
+      resolves to `0.1.dev…`, so we are on the 0.1 track by default. Tag
+      the first release **`v0.1`** to signal pre-1.0 (room to increment
+      through 0.2, 0.3… as this checklist closes) and reserve `v1.0` for
+      when the gate is met. This **release version is independent of the
+      bundle schema**: `schema`/`cache_schema` are integers starting at
+      `1` (a client checks `schema == 1`) and only bump on a breaking data
+      shape change — never renumber the schema to track the release.
 - [ ] Confirm the existing tag-driven release pipeline
       (`release.yml`: Sigstore-signed tags + PyPI trusted publishing)
-      produces a clean `v1.0`, including the optional `verify` extra on
+      produces a clean release, including the optional `verify` extra on
       PyPI.
-- [ ] Release notes / changelog for 1.0.
+- [ ] Release notes / changelog.
 
 ## Administration
 

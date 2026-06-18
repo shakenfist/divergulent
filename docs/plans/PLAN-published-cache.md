@@ -202,7 +202,7 @@ delivery phases (4–5).
 | 2. Bundle schema + bundle-backed sources + live fallback | PLAN-published-cache-phase-02-consume.md | Implemented (`--bundle`, bundle-backed sources + per-entry live fallback) |
 | 3. `cache pull`: download, validate, store, configurable URL | PLAN-published-cache-phase-03-pull.md | Implemented (`cache pull`, auto-discovery, freshness contract) |
 | 4. Signing + client verification + spot-verify | PLAN-published-cache-phase-04-signing.md | Implemented (CI signing, opt-in `verify` extra, always-on spot-check) |
-| 5. Scheduled daily publish to GitHub Releases `latest` | PLAN-published-cache-phase-05-publish.md | Not started |
+| 5. Scheduled daily publish to GitHub Releases | PLAN-published-cache-phase-05-publish.md | Implemented (scheduled build/sign/publish to a rolling `cache` prerelease; real run pending) |
 
 **Phase 5 politeness note (from the phase-1 measurement).** The cold
 whole-archive crawl is ~95 min and, at `--workers 8`, sustains up to 8

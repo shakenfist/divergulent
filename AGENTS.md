@@ -121,9 +121,22 @@ but treating an unresolvable live result (UNKNOWN/None) as inconclusive —
 the "no cry wolf" rule applied to the verifier itself. `--insecure` skips
 both; `--spot-check N` tunes the sample (0 disables). The stored bytes are
 kept **verbatim** so the signature verifies against exactly what was
-published. The expected identity is provisional and may move when phase 5
-fixes the publishing workflow. Signature verification's trust root is
+published. Signature verification's trust root is
 fetched once via Sigstore's TUF and cached.
+
+**Publishing.** `build-cache.yml` runs on a schedule (daily incremental,
+weekly `--refresh` full rebuild) as well as `workflow_dispatch`: it
+builds `cache-<release>.json.gz` (release detected from `/etc/os-release`),
+signs it (`tools/sign-bundle.sh`), and publishes the bundle and its
+signature with `tools/publish-cache.sh` to a **rolling, in-place `cache`
+prerelease** (`contents: write`). That tag is deliberately a prerelease so
+it never shadows the software "latest" release; the client's
+`DEFAULT_CACHE_URL_TEMPLATE` points at
+`.../releases/download/cache/cache-<release>.json.gz`. Because signing
+stays in `build-cache.yml` on `main`, the Sigstore identity remains
+`EXPECTED_SIGNER_IDENTITY` (`build-cache.yml@refs/heads/main`) for
+scheduled and dispatched runs alike — but this must be confirmed against a
+real published signature (no end-to-end VERIFIED has run yet).
 
 `--classify` (Tier 2) classifies the whole machine via
 `divergulent.sources.apt_patches.AptSourcePatches`: it resolves each
