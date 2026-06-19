@@ -42,7 +42,9 @@ a uniquely named temp file so concurrent writers cannot clobber.
 
 The whole-machine divergence overview uses `summary()` — one request per
 source (patch count + state), no patch-body fetches — so a full
-`score`/`divergence` run stays polite. Per-patch classification
+`score`/`divergence` run stays polite. The count is read from the API's
+top-level `count` field, not the rendered `patches` array (which the API
+caps at 60), so heavily-patched packages report their true total. Per-patch classification
 (`details()`, used by `show`) fetches each patch body and caches
 version-pinned content with a long TTL (30 days), since that content is
 immutable. The `divergence`/`score` commands still take `--limit`.

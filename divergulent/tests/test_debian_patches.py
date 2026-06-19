@@ -141,11 +141,47 @@ class SummaryTestCase(testtools.TestCase):
         self.assertEqual(1, len(http.json_calls))
         self.assertEqual([], http.text_calls)
 
+    def test_count_field_overrides_capped_list(self):
+        # The patches array is capped at 60; the count field carries the real
+        # series length (e.g. grub2: 148 patches, 60 rendered).
+        http = FakeHttp(json_by_key={
+            'foo:1.2-1': {'format': '3.0 (quilt)', 'count': 148,
+                          'patches': ['p%03d.patch' % i for i in range(60)]}})
+        summary = DebianPatchesSource(http).summary('foo', '1.2-1')
+        self.assertEqual(DivergenceState.PATCHED, summary.state)
+        self.assertEqual(148, summary.total)
+
+    def test_count_field_used_when_above_rendered(self):
+        # Even uncapped, the rendered list can drop entries it cannot display
+        # (e.g. bash: count 29, only 27 rendered). Trust count.
+        http = FakeHttp(json_by_key={
+            'foo:1.2-1': {'format': '3.0 (quilt)', 'count': 29,
+                          'patches': ['p%03d.patch' % i for i in range(27)]}})
+        self.assertEqual(29, DebianPatchesSource(http).summary('foo', '1.2-1').total)
+
+    def test_count_absent_falls_back_to_rendered_list(self):
+        http = FakeHttp(json_by_key={
+            'foo:1.2-1': {'format': '3.0 (quilt)', 'patches': ['a.patch', 'b.patch']}})
+        self.assertEqual(2, DebianPatchesSource(http).summary('foo', '1.2-1').total)
+
+    def test_count_below_rendered_falls_back_to_list(self):
+        # Defensive: if count is somehow smaller than what we rendered, the
+        # rendered list is the better lower bound.
+        http = FakeHttp(json_by_key={
+            'foo:1.2-1': {'format': '3.0 (quilt)', 'count': 1,
+                          'patches': ['a.patch', 'b.patch', 'c.patch']}})
+        self.assertEqual(3, DebianPatchesSource(http).summary('foo', '1.2-1').total)
+
     def test_native(self):
         http = FakeHttp(json_by_key={'foo:1.2': {'format': '3.0 (native)', 'patches': []}})
         summary = DebianPatchesSource(http).summary('foo', '1.2')
         self.assertEqual(DivergenceState.NATIVE, summary.state)
         self.assertEqual(0, summary.total)
+
+    def test_count_ignored_when_not_patched(self):
+        # A stray count on a non-PATCHED result must not leak into the total.
+        http = FakeHttp(json_by_key={'foo:1.2': {'format': '3.0 (native)', 'count': 5, 'patches': []}})
+        self.assertEqual(0, DebianPatchesSource(http).summary('foo', '1.2').total)
 
     def test_clean(self):
         http = FakeHttp(json_by_key={'foo:1.2-1': {'format': '3.0 (quilt)', 'patches': []}})
