@@ -162,6 +162,18 @@ trail.
       the failing run URL — so failures are debuggable rather than silent.
       Needs `issues: write` on the job; de-duplicate so a recurring
       failure updates one issue rather than spamming new ones.
+- [ ] **Accurate patch counts (fix the 60-patch cap).** The divergence
+      bundle undercounts every heavily-patched package: the
+      sources.debian.org patches API truncates its `patches` array at **60**
+      (confirmed — it returns 60 for grub2, whose real `debian/patches/
+      series` is **148**), and `summary()` faithfully counts whatever the
+      API returns. So today's published `total` is wrong for the heavy
+      tail. Get the true count from an uncapped source — an API field or
+      pagination if one exists, else the deb-src `series` (the
+      `apt-get source` path `--classify` already uses reads the full
+      series). This is a divergence-accuracy bug in its own right, and a
+      **prerequisite for [PLAN-patch-classification.md](PLAN-patch-classification.md)**,
+      which needs the complete patch set.
 
 This graduates to its own `PLAN-builder-robustness.md` when picked up,
 likely alongside the matrix since both touch `build-cache.yml`.
