@@ -38,11 +38,17 @@ import os
 import sys
 import tempfile
 import threading
+import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from divergulent.sources.apt_patches import deb_src_available, fetch_patch_texts
+
+# Errors that are TRANSIENT (a network/DNS blip or an unresolved download), not
+# a terminal outcome. A package recorded with one of these is retried on resume
+# rather than treated as done, so a blip is never baked into the corpus.
+_TRANSIENT_ERROR_PREFIXES = ('fetch-failed', 'fetch-error')
 
 
 # A fetch returns ``(source_format, texts)`` exactly like ``fetch_patch_texts``:
@@ -66,9 +72,34 @@ class CorpusStats:
     distinct_bodies: int = 0
 
 
+def _is_transient_failure(error: "str | None") -> bool:
+    """True if a package-row error is a transient fetch failure (retryable)."""
+    error = error or ''
+    return any(error.startswith(prefix) for prefix in _TRANSIENT_ERROR_PREFIXES)
+
+
+def _with_retries(call: Callable[[], FetchResult], *, attempts: int = 3,
+                  backoff: float = 1.5, sleep: Callable[[float], None] = time.sleep) -> FetchResult:
+    """Call ``call()``, retrying on exception with exponential backoff.
+
+    Transient network/DNS failures during the crawl should not be recorded on
+    the first miss. The final exception propagates if every attempt fails (it is
+    then recorded as ``fetch-error`` and retried again on the next resume).
+    """
+    delay = 1.0
+    for attempt in range(1, attempts + 1):
+        try:
+            return call()
+        except Exception:  # noqa: BLE001 -- retry any transient failure, re-raise on the last attempt
+            if attempt == attempts:
+                raise
+            sleep(delay)
+            delay *= backoff
+
+
 def _default_fetch(source_package: str, version: str) -> FetchResult:
-    """Real acquisition boundary: the apt-source lean fetch via apt_patches."""
-    return fetch_patch_texts(source_package, version)
+    """Real acquisition boundary: the apt-source lean fetch, with retries."""
+    return _with_retries(lambda: fetch_patch_texts(source_package, version))
 
 
 def body_sha256(raw_text: str) -> str:
@@ -114,19 +145,25 @@ def _store_body(corpus_dir: str, raw_text: str) -> tuple[str, bool]:
 
 
 def _read_done(corpus_dir: str) -> set[tuple[str, str]]:
-    """The (package, version) pairs already recorded in packages.jsonl."""
+    """(package, version) pairs TERMINALLY recorded in packages.jsonl.
+
+    A transient fetch failure is NOT terminal: it is retried on resume so a blip
+    is never baked into the corpus. The manifest is append-only, so the LAST row
+    per (package, version) wins -- a package that failed then succeeded on a
+    later run counts as done; one that only ever failed is retried.
+    """
     path = os.path.join(corpus_dir, 'packages.jsonl')
-    done: set[tuple[str, str]] = set()
+    last: dict[tuple[str, str], dict] = {}
     if not os.path.exists(path):
-        return done
+        return set()
     with open(path, encoding='utf-8') as handle:
         for line in handle:
             line = line.strip()
             if not line:
                 continue
             row = json.loads(line)
-            done.add((row['source_package'], row['version']))
-    return done
+            last[(row['source_package'], row['version'])] = row
+    return {key for key, row in last.items() if not _is_transient_failure(row.get('error'))}
 
 
 def _classify_texts(source_format: str | None, texts: dict[str, str] | None) -> tuple[str, str | None]:

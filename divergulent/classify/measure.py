@@ -152,6 +152,31 @@ def _read_jsonl(path: str):
                 yield json.loads(line)
 
 
+def _dedup_patch_rows(rows) -> list[dict]:
+    """Last patch row per ``(source_package, version, patch_name)``.
+
+    ``patches.jsonl`` is append-only, so a crash mid-write or a retried package
+    can leave duplicate provenance rows. Dedup by the natural key so the distinct
+    count and every aggregate are exact rather than inflated by re-emitted rows.
+    """
+    unique: dict[tuple[str, str, str], dict] = {}
+    for row in rows:
+        unique[(row['source_package'], row['version'], row['patch_name'])] = row
+    return list(unique.values())
+
+
+def _latest_package_rows(rows) -> list[dict]:
+    """Last package row per ``(source_package, version)`` (append-only, last wins).
+
+    A package retried after a transient failure has both a failure and a later
+    success row; the latest is authoritative for the accounting.
+    """
+    latest: dict[tuple[str, str], dict] = {}
+    for row in rows:
+        latest[(row['source_package'], row['version'])] = row
+    return list(latest.values())
+
+
 def read_body(corpus_dir: str, sha: str) -> str:
     """Read a raw patch body from the content-addressed store by its sha256.
 
@@ -199,7 +224,7 @@ def measure_corpus(corpus_dir: str, *, top_n: int = DEFAULT_TOP_N) -> Measuremen
     content-addressed store means thousands of provenance rows collapse to far
     fewer body reads), then results are projected back over the provenance rows.
     """
-    patch_rows = list(_read_jsonl(os.path.join(corpus_dir, 'patches.jsonl')))
+    patch_rows = _dedup_patch_rows(_read_jsonl(os.path.join(corpus_dir, 'patches.jsonl')))
     package_rows = list(_read_jsonl(os.path.join(corpus_dir, 'packages.jsonl')))
 
     # Distinct raw bodies referenced by provenance, read once each.
@@ -278,10 +303,11 @@ def measure_corpus(corpus_dir: str, *, top_n: int = DEFAULT_TOP_N) -> Measuremen
 
 def _account(package_rows: list[dict]) -> Accounting:
     """The honest accounting from ``packages.jsonl``: states, failures, skips."""
+    latest = _latest_package_rows(package_rows)
     by_state: Counter[str] = Counter()
     fetch_failures = 0
     non_quilt = 0
-    for row in package_rows:
+    for row in latest:
         by_state[row['state']] += 1
         error = row.get('error') or ''
         if error.startswith('fetch-failed') or error.startswith('fetch-error'):
@@ -289,7 +315,7 @@ def _account(package_rows: list[dict]) -> Accounting:
         elif error.startswith('non-quilt-format'):
             non_quilt += 1
     return Accounting(
-        packages_total=len(package_rows), by_state=dict(sorted(by_state.items())),
+        packages_total=len(latest), by_state=dict(sorted(by_state.items())),
         fetch_failures=fetch_failures, non_quilt_skipped=non_quilt)
 
 
@@ -301,7 +327,7 @@ def write_index(corpus_dir: str, index_path: str) -> int:
     normalisation version and the variant knobs so the index is self-describing.
     Returns the number of patch rows written.
     """
-    patch_rows = list(_read_jsonl(os.path.join(corpus_dir, 'patches.jsonl')))
+    patch_rows = _dedup_patch_rows(_read_jsonl(os.path.join(corpus_dir, 'patches.jsonl')))
     distinct_shas = sorted({row['raw_sha256'] for row in patch_rows})
     bodies = {sha: read_body(corpus_dir, sha) for sha in distinct_shas}
     sha_to_fp = {

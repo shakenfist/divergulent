@@ -273,3 +273,45 @@ class CliTestCase(testtools.TestCase):
         self.addCleanup(connection.close)
         (count,) = connection.execute('SELECT COUNT(*) FROM patch').fetchone()
         self.assertEqual(6, count)
+
+
+class AppendOnlyDuplicateTestCase(testtools.TestCase):
+    """A crash mid-write or a retried package can leave duplicate manifest rows;
+    the measurement must dedup by the natural key so counts stay exact."""
+
+    def _corpus_with_duplicates(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        _build_synthetic_corpus(tmp.name)
+        # Re-append an existing patch row (pkg-a's r.patch) and a superseding
+        # package row for the broken package (a later success after a retry).
+        with open(os.path.join(tmp.name, 'patches.jsonl'), 'a', encoding='utf-8') as handle:
+            handle.write(json.dumps(
+                {'source_package': 'pkg-a', 'version': '1-1', 'patch_name': 'r.patch',
+                 'raw_sha256': body_sha256(RECUR)}, sort_keys=True) + '\n')
+        with open(os.path.join(tmp.name, 'packages.jsonl'), 'a', encoding='utf-8') as handle:
+            handle.write(json.dumps(
+                {'source_package': 'broken-pkg', 'version': '1-1', 'state': 'clean',
+                 'source_format': '3.0 (quilt)', 'n_patches': 0, 'error': None}, sort_keys=True) + '\n')
+        return tmp.name
+
+    def test_duplicate_patch_row_does_not_inflate_counts(self):
+        measurement = measure.measure_corpus(self._corpus_with_duplicates())
+        # Still six distinct provenance rows despite the duplicate append.
+        self.assertEqual(6, measurement.patch_rows)
+        self.assertEqual(3, measurement.canonical.distinct_fingerprints)
+
+    def test_latest_package_row_wins_in_accounting(self):
+        measurement = measure.measure_corpus(self._corpus_with_duplicates())
+        # The retried broken-pkg is now clean, not a fetch failure.
+        self.assertEqual(0, measurement.accounting.fetch_failures)
+        self.assertEqual(8, measurement.accounting.packages_total)
+
+    def test_index_dedups_patch_rows(self):
+        corpus_dir = self._corpus_with_duplicates()
+        index_path = os.path.join(corpus_dir, 'fp.sqlite')
+        measure.write_index(corpus_dir, index_path)
+        connection = sqlite3.connect(index_path)
+        self.addCleanup(connection.close)
+        (count,) = connection.execute('SELECT COUNT(*) FROM patch').fetchone()
+        self.assertEqual(6, count)

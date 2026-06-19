@@ -138,6 +138,69 @@ class BuildCorpusTestCase(testtools.TestCase):
         self.assertEqual(2, len(_read_jsonl(os.path.join(corpus_dir, 'packages.jsonl'))))
 
 
+class RetryAndResumeTestCase(testtools.TestCase):
+
+    def _corpus_dir(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        return tmp.name
+
+    def test_with_retries_succeeds_after_transient_failures(self):
+        calls = {'n': 0}
+        sleeps = []
+
+        def flaky():
+            calls['n'] += 1
+            if calls['n'] < 3:
+                raise OSError('temporary failure in name resolution')
+            return ('3.0 (quilt)', {'a.patch': PATCH_A})
+
+        result = corpus._with_retries(flaky, attempts=3, sleep=sleeps.append)
+        self.assertEqual(('3.0 (quilt)', {'a.patch': PATCH_A}), result)
+        self.assertEqual(3, calls['n'])
+        self.assertEqual(2, len(sleeps))  # backed off before each retry
+
+    def test_with_retries_reraises_after_exhausting_attempts(self):
+        def always_fails():
+            raise OSError('still failing')
+
+        self.assertRaises(
+            OSError, corpus._with_retries, always_fails, attempts=3, sleep=lambda _d: None)
+
+    def test_resume_retries_a_transient_failure(self):
+        # First run: the package fetch raises, recorded as a transient failure.
+        failing = {('flaky-pkg', '1-1'): 'raise'}
+        corpus_dir = self._corpus_dir()
+        first = build_corpus(failing.keys(), corpus_dir, fetch=_fake_fetch(failing), max_workers=1)
+        self.assertEqual(1, first.fetch_failures)
+        self.assertEqual(0, first.patched)
+        # A transient failure is NOT terminal, so it is not "done".
+        self.assertEqual(set(), corpus._read_done(corpus_dir))
+
+        # Second run over the same worklist: now it succeeds and is processed.
+        succeeding = {('flaky-pkg', '1-1'): ('3.0 (quilt)', {'a.patch': PATCH_A})}
+        second = build_corpus(succeeding.keys(), corpus_dir, fetch=_fake_fetch(succeeding), max_workers=1)
+        self.assertEqual(1, second.packages_processed)
+        self.assertEqual(1, second.patched)
+        self.assertEqual({('flaky-pkg', '1-1')}, corpus._read_done(corpus_dir))
+        # The patch row now exists exactly once.
+        self.assertEqual(1, len(_read_jsonl(os.path.join(corpus_dir, 'patches.jsonl'))))
+
+    def test_terminal_nonquilt_outcome_is_not_retried(self):
+        # A non-quilt source is a terminal classification, not a transient
+        # failure, so it must not be re-fetched on resume.
+        table = {('nonquilt-pkg', '1-1'): ('1.0', None)}
+        corpus_dir = self._corpus_dir()
+        build_corpus(table.keys(), corpus_dir, fetch=_fake_fetch(table), max_workers=1)
+        self.assertEqual({('nonquilt-pkg', '1-1')}, corpus._read_done(corpus_dir))
+
+        def exploding_fetch(source_package, version):
+            raise AssertionError('should not re-fetch a terminal non-quilt result')
+
+        second = build_corpus(table.keys(), corpus_dir, fetch=exploding_fetch, max_workers=1)
+        self.assertEqual(0, second.packages_processed)
+
+
 def _add(tar, name, content):
     data = content.encode()
     info = tarfile.TarInfo(name)
