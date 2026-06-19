@@ -133,6 +133,35 @@ def _extract_patches(dest_dir: str) -> dict[str, str] | None:
     return texts
 
 
+def fetch_patch_texts(source_package: str, version: str, *,
+                      download: Callable[..., bool] = _download_source) -> tuple[str | None, dict[str, str] | None]:
+    '''Fetch a source version and return ``(source_format, {patch_name: raw_text})``.
+
+    This is the reusable acquisition half of ``AptSourcePatches.details()``: it
+    downloads only the ``.dsc`` + ``.debian.tar.*`` (never the ``.orig``), reads
+    the source format, and extracts the FULL ``debian/patches/series`` as raw
+    bodies -- no DEP-3 parsing or classification. It is shared by the divergence
+    classifier and the curation-side corpus builder so both see the same texts.
+
+    The returned ``texts`` is:
+      * ``{patch_name: raw_text}`` -- a quilt source carrying patches,
+      * ``{}`` -- a clean quilt source (series present but empty),
+      * ``None`` -- no quilt series (native, ``1.0``, or an unresolved download).
+
+    A ``None`` texts is disambiguated by ``source_format``: a ``native`` format
+    means native, ``None`` format means the download could not be resolved, and
+    any other format (e.g. ``1.0``) means a non-quilt source. This mirrors the
+    distinctions ``details()`` draws today.
+    '''
+    with tempfile.TemporaryDirectory() as dest:
+        if not download(source_package, version, dest):
+            return None, None
+        source_format = _read_format(dest)
+        if 'native' in (source_format or '').lower():
+            return source_format, None
+        return source_format, _extract_patches(dest)
+
+
 class AptSourcePatches:
     '''Classify carried patches by fetching source packages via apt.'''
 
@@ -148,20 +177,18 @@ class AptSourcePatches:
 
     def details(self, source_package: str, version: str) -> PackagePatches:
         '''Return per-patch detail for an installed source package version.'''
-        with tempfile.TemporaryDirectory() as dest:
-            if not self._download(source_package, version, dest):
+        source_format, texts = fetch_patch_texts(source_package, version, download=self._download)
+
+        if texts is None:
+            if source_format is None:
+                # The download could not be resolved at all.
                 return PackagePatches(source_package, version, None, DivergenceState.UNKNOWN, [])
-
-            source_format = _read_format(dest)
-            if 'native' in (source_format or '').lower():
+            if 'native' in source_format.lower():
                 return PackagePatches(source_package, version, source_format, DivergenceState.NATIVE, [])
+            # No quilt series and not native: cannot classify via patches.
+            return PackagePatches(source_package, version, source_format, DivergenceState.UNKNOWN, [])
+        if not texts:
+            return PackagePatches(source_package, version, source_format, DivergenceState.CLEAN, [])
 
-            texts = _extract_patches(dest)
-            if texts is None:
-                # No quilt series and not native: cannot classify via patches.
-                return PackagePatches(source_package, version, source_format, DivergenceState.UNKNOWN, [])
-            if not texts:
-                return PackagePatches(source_package, version, source_format, DivergenceState.CLEAN, [])
-
-            patches: list[PatchDetail] = [patch_detail(name, text) for name, text in texts.items()]
-            return PackagePatches(source_package, version, source_format, DivergenceState.PATCHED, patches)
+        patches: list[PatchDetail] = [patch_detail(name, text) for name, text in texts.items()]
+        return PackagePatches(source_package, version, source_format, DivergenceState.PATCHED, patches)
