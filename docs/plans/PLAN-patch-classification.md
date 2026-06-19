@@ -141,12 +141,16 @@ that decided it**.
 
 ## Prerequisites
 
-- [ ] **Fix the 60-patch cap** so counts and the patch set are complete
-      (grub2 is 148, not 60). Overlaps the builder-robustness workstream.
-- [ ] **Builder fetches patch bodies.** The current divergence bundle has
-      only counts; classification needs the diffs. Heavier crawl, but
-      immutable and cacheable.
-- [ ] **Normalised-diff fingerprinting** defined (what to strip).
+- [x] **Counts no longer capped.** The divergence *count* now comes from the
+      patches API's `count` field (grub2 reads 148, not 60) — done and live.
+      See PLAN-release-1.0.md §8.
+- [ ] **Acquire the full patch set + bodies.** Counts are fixed, but the
+      rendered names/bodies are still capped at 60, so classification still
+      needs the complete diffs. **Owned by phase 1's corpus builder**, which
+      reads the uncapped series straight from each `.debian.tar.*` (reusing
+      `apt_patches`). Heavier crawl, but immutable and cacheable.
+- [ ] **Normalised-diff fingerprinting** defined (what to strip). **Owned by
+      phase 1.**
 
 ## Phases (each graduates to its own plan)
 
@@ -158,6 +162,17 @@ that decided it**.
 | 4. **LLM triage tier (optional, curation-side, verified)** | Diff summarisation/category draft *blind to the author's claim*, then compared; human-verify queue; rule-discovery feedback into phase 3. |
 | 5. **Classification bundle & client display** | Publish a signed fingerprint→verdict bundle; client shows per-package category breakdowns with per-patch "why", never running a classifier. |
 | 6. **BTS / upstream cross-reference** | The `external` rules: does a declared bug exist / is it fixed upstream — with input snapshots so freshness is tracked. |
+
+## Execution
+
+| Phase | Plan | Status |
+|-------|------|--------|
+| 1. Fingerprint & dedup | [PLAN-patch-classification-phase-01-fingerprint.md](PLAN-patch-classification-phase-01-fingerprint.md) | Planned (not started) |
+| 2. Rule engine, registry & ledger | — | Not started (no detailed plan yet) |
+| 3. Deterministic signal extractors | — | Not started (no detailed plan yet) |
+| 4. LLM triage tier | — | Not started (no detailed plan yet) |
+| 5. Classification bundle & client display | — | Not started (no detailed plan yet) |
+| 6. BTS / upstream cross-reference | — | Not started (no detailed plan yet) |
 
 ## Success criteria
 
