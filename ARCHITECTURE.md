@@ -70,9 +70,13 @@ installed-package inventory never leaves the machine.
   adapter (divergence axis). Reads a source package's quilt series from
   the patches API, fetches each patch under its pool `raw_url`, and
   classifies it with `dep3`. `summary()` is the cheap one-request
-  overview (patch count + state) used by the whole-machine commands;
-  `details()` fetches and classifies every patch body (`PatchDetail`:
-  classification, description, bug references) for `show`. Both yield
+  overview (patch count + state) used by the whole-machine commands; the
+  count comes from the API's top-level `count` field (the true
+  `debian/patches/series` length), not the rendered `patches` array, which
+  the API truncates at 60 — so heavily-patched packages are not
+  undercounted. `details()` fetches and classifies every patch body
+  (`PatchDetail`: classification, description, bug references) for `show`;
+  note its view is still bounded by that 60-entry array. Both yield
   PATCHED / CLEAN / NATIVE / UNKNOWN. Version-pinned patch content is
   cached with a long TTL.
 - `divergulent/sources/apt_patches.py` — the Tier 2 classification

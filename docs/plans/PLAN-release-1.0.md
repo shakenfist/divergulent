@@ -162,18 +162,25 @@ trail.
       the failing run URL — so failures are debuggable rather than silent.
       Needs `issues: write` on the job; de-duplicate so a recurring
       failure updates one issue rather than spamming new ones.
-- [ ] **Accurate patch counts (fix the 60-patch cap).** The divergence
-      bundle undercounts every heavily-patched package: the
+- [x] **Accurate patch counts (fix the 60-patch cap).** The divergence
+      bundle undercounted every heavily-patched package: the
       sources.debian.org patches API truncates its `patches` array at **60**
       (confirmed — it returns 60 for grub2, whose real `debian/patches/
-      series` is **148**), and `summary()` faithfully counts whatever the
-      API returns. So today's published `total` is wrong for the heavy
-      tail. Get the true count from an uncapped source — an API field or
-      pagination if one exists, else the deb-src `series` (the
-      `apt-get source` path `--classify` already uses reads the full
-      series). This is a divergence-accuracy bug in its own right, and a
-      **prerequisite for [PLAN-patch-classification.md](PLAN-patch-classification.md)**,
-      which needs the complete patch set.
+      series` is **148**), and `summary()` counted whatever the API
+      returned. **Done:** the same API response carries the full series
+      length in a top-level `count` field, so `summary()` now trusts
+      `count` (when present and ≥ the rendered list) and falls back to the
+      rendered list otherwise — no extra requests, no deb-src crawl. The
+      `count` field is also authoritative when the rendered list silently
+      drops an entry it cannot display (bash: `count` 29, 27 rendered).
+      The `total` in the published bundle is now correct for the heavy
+      tail. **Residual, deferred to
+      [PLAN-patch-classification.md](PLAN-patch-classification.md):** the
+      *names* list (and therefore the per-patch `details()` bodies) is
+      still capped at 60, so classification — which needs the complete set
+      of patch names and bodies — must still read the full deb-src
+      `series` (the path `--classify` already uses). The cap prerequisite
+      there narrows from "fix the count" to "fetch the full names + bodies".
 
 This graduates to its own `PLAN-builder-robustness.md` when picked up,
 likely alongside the matrix since both touch `build-cache.yml`.

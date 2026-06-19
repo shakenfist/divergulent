@@ -176,8 +176,24 @@ class DebianPatchesSource:
         if info is None:
             return DivergenceSummary(source_package, version, None, 0, DivergenceState.UNKNOWN)
         source_format, names, state = self._interpret(info)
-        total = len(names) if state == DivergenceState.PATCHED else 0
+        total = self._patch_count(info, names) if state == DivergenceState.PATCHED else 0
         return DivergenceSummary(source_package, version, source_format, total, state)
+
+    @staticmethod
+    def _patch_count(info: dict, names) -> int:
+        '''True carried-patch count for a PATCHED package.
+
+        The patches API renders at most 60 entries in its ``patches`` array
+        (and occasionally drops one it cannot display), so ``len(names)``
+        undercounts every heavily-patched package. The top-level ``count``
+        field carries the full ``debian/patches/series`` length, so trust it
+        when present and at least as large as what we rendered; otherwise
+        fall back to the rendered list.
+        '''
+        count = info.get('count')
+        if isinstance(count, int) and count >= len(names):
+            return count
+        return len(names)
 
     def details(self, source_package: str, version: str) -> PackagePatches:
         '''Return per-patch detail for an installed source package version.'''
