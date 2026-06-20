@@ -70,7 +70,7 @@ ignores, permission-only changes, ecosystem-wide build patches — but it is
 <1% of distinct patches. So **there is no dedup shortcut**, and the
 fingerprint's value is provenance, idempotent re-runs, and handling the small
 tail, not scale reduction. The leverage must come from *category* rules
-(phase 3), not fingerprint identity. See
+(phase 2), not fingerprint identity. See
 [PLAN-patch-classification-phase-01-findings.md](PLAN-patch-classification-phase-01-findings.md).
 
 ### Claim vs content — content is ground truth
@@ -168,19 +168,29 @@ that decided it**.
 | Phase | Focus |
 |-------|-------|
 | 1. **Fingerprint & dedup** | Normalise + hash patch bodies; **measure the distinct-patch count across the archive** (the single number that reframes the scale). |
-| 2. **Rule engine, registry & ledger** | The provenance data model: versioned rules, append-only decisions with evidence, derived current-verdict, supersession/redo, pure vs external. |
-| 3. **Deterministic signal extractors** | Directory taxonomy, description/CVE/bug-ref parsing (as *claims*), file-type classification, code-vs-prose-aware claim/content mismatch, trivial-only and dangerous-construct-in-code detection. |
-| 4. **LLM triage tier (optional, curation-side, verified)** | Diff summarisation/category draft *blind to the author's claim*, then compared; human-verify queue; rule-discovery feedback into phase 3. |
+| 2. **Deterministic signal extractors** | Directory taxonomy, description/CVE/bug-ref parsing (as *claims*), file-type classification, code-vs-prose-aware claim/content mismatch, trivial-only and dangerous-construct-in-code detection. |
+| 3. **Rule engine, registry & ledger** | The provenance data model: versioned rules, append-only decisions with evidence, derived current-verdict, supersession/redo, pure vs external. |
+| 4. **LLM triage tier (optional, curation-side, verified)** | Diff summarisation/category draft *blind to the author's claim*, then compared; human-verify queue; rule-discovery feedback into phase 2. |
 | 5. **Classification bundle & client display** | Publish a signed fingerprint→verdict bundle; client shows per-package category breakdowns with per-patch "why", never running a classifier. |
 | 6. **BTS / upstream cross-reference** | The `external` rules: does a declared bug exist / is it fixed upstream — with input snapshots so freshness is tracked. |
+
+**Reorder note (after phase 1):** the deterministic signal extractors and the
+rule engine/ledger were swapped. Phase 1 found no dedup shortcut (≈60,640
+distinct patches), so the *category rules* are where all the leverage lives —
+build them first, on the real corpus, and let the rules' shape inform the
+ledger schema rather than guessing it up front. This is *build* order, not the
+runtime *sieve* order: at classification time the ledger is still consulted
+before rules run (a cached verdict is free). Phase 2 can emit a plain
+fingerprint→category table; phase 3 then wraps it in the versioned, append-only
+provenance ledger (rule id/version, evidence, supersession/redo).
 
 ## Execution
 
 | Phase | Plan | Status |
 |-------|------|--------|
 | 1. Fingerprint & dedup | [PLAN-patch-classification-phase-01-fingerprint.md](PLAN-patch-classification-phase-01-fingerprint.md) · [findings](PLAN-patch-classification-phase-01-findings.md) | **Done** — ≈61.5k patches → 60,640 distinct (dedup 1.02x; no shortcut) |
-| 2. Rule engine, registry & ledger | — | Not started (no detailed plan yet) |
-| 3. Deterministic signal extractors | — | Not started (no detailed plan yet) |
+| 2. Deterministic signal extractors | — | Not started (no detailed plan yet) |
+| 3. Rule engine, registry & ledger | — | Not started (no detailed plan yet) |
 | 4. LLM triage tier | — | Not started (no detailed plan yet) |
 | 5. Classification bundle & client display | — | Not started (no detailed plan yet) |
 | 6. BTS / upstream cross-reference | — | Not started (no detailed plan yet) |

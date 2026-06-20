@@ -105,4 +105,5 @@ This **inverts the plan's framing** and should reshape the strategy:
 
 The success criterion "N distinct, of which the vast majority classified
 deterministically" still stands — but "N" is ~60k, not a few hundred, so the
-deterministic rule set (phase 3) is where the leverage now lives.
+deterministic rule set (phase 2, promoted ahead of the ledger) is where the
+leverage now lives.
