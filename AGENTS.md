@@ -168,6 +168,18 @@ overwhelmingly bespoke, so classification leverage must come from category
 rules, not deduplication. See
 `docs/plans/PLAN-patch-classification-phase-01-findings.md`.
 
+Phase 2 (`claim.py`/`content.py`/`rules.py`/`classify.py`) classifies each
+fingerprint deterministically, keeping the author's **claim** (DEP-3 metadata,
+untrusted) strictly separate from the **content** (the diff, ground truth) so
+their disagreement is the signal. Content is typed code-vs-prose, and the
+dangerous-construct scan runs only over added lines in code files — never
+pronouncing malice, only surfacing candidate flags. It measured 29.2% of
+patches as deterministically settled (packaging/documentation), ~43k
+substantive residue for phase 4, and confirmed two things to act on: the
+backtick scan needs to be language-aware (it cries wolf on JS/Lisp backticks),
+and 58% of patches carry no usable claim. See
+`docs/plans/PLAN-patch-classification-phase-02-findings.md`.
+
 ## Scoring
 
 `score.combine` ranks packages with a transparent weighted sum

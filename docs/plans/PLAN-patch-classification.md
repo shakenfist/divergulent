@@ -189,7 +189,7 @@ provenance ledger (rule id/version, evidence, supersession/redo).
 | Phase | Plan | Status |
 |-------|------|--------|
 | 1. Fingerprint & dedup | [PLAN-patch-classification-phase-01-fingerprint.md](PLAN-patch-classification-phase-01-fingerprint.md) · [findings](PLAN-patch-classification-phase-01-findings.md) | **Done** — ≈61.5k patches → 60,640 distinct (dedup 1.02x; no shortcut) |
-| 2. Deterministic signal extractors | [PLAN-patch-classification-phase-02-extractors.md](PLAN-patch-classification-phase-02-extractors.md) | Planned (not started) |
+| 2. Deterministic signal extractors | [PLAN-patch-classification-phase-02-extractors.md](PLAN-patch-classification-phase-02-extractors.md) · [findings](PLAN-patch-classification-phase-02-findings.md) | **Done** — 29.2% settle deterministically; 70.8% (~43k) substantive residue → phase 4 |
 | 3. Rule engine, registry & ledger | — | Not started (no detailed plan yet) |
 | 4. LLM triage tier | — | Not started (no detailed plan yet) |
 | 5. Classification bundle & client display | — | Not started (no detailed plan yet) |

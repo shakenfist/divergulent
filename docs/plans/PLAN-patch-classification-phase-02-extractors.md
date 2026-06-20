@@ -5,7 +5,15 @@ Plan this phase at **high effort**: the content rules decide what we say
 about a patch, and the whole project's "no cry wolf" promise rides on them
 classifying at the right semantic level and never pronouncing malice.
 
-**Status: not started.**
+**Status: complete.** All four steps (2a claim, 2b content profile, 2c rules
++ dangerous-construct scan, 2d driver) are implemented, tested, and committed,
+and the classifier has been run over the whole phase-1 corpus. **Result:
+29.2% of the 60,640 distinct patches settle deterministically
+(packaging/documentation); 70.8% (~43k) are the substantive residue for phase
+4.** The run also confirmed the dangerous-construct backtick sub-pattern cries
+wolf on JS/Lisp backticks (the #1 follow-up: make the scan language-aware) and
+that 58% of patches carry no usable DEP-3 claim. Full analysis in
+[PLAN-patch-classification-phase-02-findings.md](PLAN-patch-classification-phase-02-findings.md).
 
 ## Why this is phase 2 now
 
