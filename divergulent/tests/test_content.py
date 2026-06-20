@@ -10,7 +10,8 @@ mode-only patch is ``is_empty``; a ``.gitignore`` adding ``.pc`` is
 import testtools
 
 from divergulent.classify.content import (
-    ContentProfile, CONTENT_RULE_VERSION, FILE_TYPES, code_added_lines, profile)
+    ContentProfile, CONTENT_RULE_VERSION, FILE_TYPES, code_added_lines,
+    code_added_lines_by_ext, profile)
 from divergulent.classify.content import _classify_file
 
 
@@ -409,6 +410,15 @@ class CodeAddedLinesTestCase(testtools.TestCase):
         )
         self.assertEqual(
             ['added code line', 'second added line'], code_added_lines(prof_diff))
+
+    def test_by_ext_tags_each_line_with_its_extension(self):
+        diff = (
+            '--- a/run.sh\n+++ b/run.sh\n@@ -1 +1,2 @@\n ctx\n+echo hi\n'
+            '--- a/app.js\n+++ b/app.js\n@@ -1 +1,2 @@\n ctx\n+const x = 1\n'
+        )
+        self.assertEqual(
+            [('.sh', 'echo hi'), ('.js', 'const x = 1')],
+            code_added_lines_by_ext(diff))
 
     def test_excludes_doc_added_lines(self):
         # A line added to a manpage must NOT appear: prose is not code.

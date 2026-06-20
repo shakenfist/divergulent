@@ -248,6 +248,13 @@ _CATEGORY_RULES: tuple[tuple[str, int, object], ...] = (
 # code comments) needs more care than the narrow start allows.
 # ---------------------------------------------------------------------------
 
+# Shell file extensions.  Backtick command substitution only flags here:
+# elsewhere a backtick is a JavaScript template literal or an Emacs Lisp
+# quasiquote, and the phase-2 corpus run confirmed those cry wolf
+# (PLAN-patch-classification-phase-02-findings.md).
+_SHELL_EXTENSIONS = frozenset({'.sh', '.bash'})
+
+# Language-agnostic patterns: applied to added lines in every code file.
 _DANGEROUS_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     # --- shell-out from code ---
     ('shell-out', re.compile(r'\bos\.system\s*\(')),
@@ -255,10 +262,6 @@ _DANGEROUS_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ('shell-out', re.compile(r'\b(?:os\.)?popen\s*\(')),
     ('shell-out', re.compile(r'Runtime\.getRuntime\(\)\.exec\b')),
     ('shell-out', re.compile(r'\bsubprocess\b.*\bshell\s*=\s*True\b')),
-    # Backtick command substitution in shell: `...` containing a non-trivial
-    # command.  Require at least one space inside to avoid matching a bare
-    # backtick pair or markdown-style inline code.
-    ('shell-out', re.compile(r'`[^`]* [^`]*`')),
     # --- fetch piped to a shell ---
     ('fetch-piped-to-shell',
      re.compile(r'\b(?:curl|wget)\b.*\|\s*(?:sudo\s+)?(?:ba)?sh\b')),
@@ -275,25 +278,40 @@ _DANGEROUS_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ('reverse-shell', re.compile(r'\bnc\b.*\s-e\b')),
 )
 
+# Shell-only patterns: applied ONLY to added lines in shell files (see
+# ``_SHELL_EXTENSIONS``).  Backtick command substitution is a real shell
+# danger but an ordinary backtick character elsewhere, so scoping it to shell
+# is what stops it crying wolf on JS template literals / Lisp quasiquote.
+# Require a space inside the backticks to skip a bare pair or inline-code.
+_SHELL_DANGEROUS_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ('shell-out', re.compile(r'`[^`]* [^`]*`')),
+)
+
 
 def scan_dangerous_constructs(text: str) -> list[Flag]:
     """Scan a patch's *code* added lines for dangerous constructs.
 
-    Runs only over ``content.code_added_lines(text)`` — added lines in
-    code-typed files.  This is the no-cry-wolf guarantee: a construct that only
-    appears in a manpage or other prose file is never seen, so it never flags.
+    Runs only over ``content.code_added_lines_by_ext(text)`` — added lines in
+    code-typed files, tagged with their extension.  This is the no-cry-wolf
+    guarantee at two levels: a construct in a manpage or other prose file is
+    never seen (only code files are scanned), and shell-only patterns (backtick
+    command substitution) run only on shell files, so a JavaScript template
+    literal or Lisp quasiquote using the same character does not flag.
 
     Each matched line yields at most one ``Flag`` per distinct ``detail`` (so a
     line matching several shell-out variants flags ``shell-out`` once).  Returns
     candidate flags for review — never a verdict.
     """
     flags: list[Flag] = []
-    for line in content_mod.code_added_lines(text):
+    for ext, line in content_mod.code_added_lines_by_ext(text):
         trimmed = line.strip()
         if not trimmed:
             continue
+        patterns = _DANGEROUS_PATTERNS
+        if ext in _SHELL_EXTENSIONS:
+            patterns = _DANGEROUS_PATTERNS + _SHELL_DANGEROUS_PATTERNS
         seen: set[str] = set()
-        for detail, pattern in _DANGEROUS_PATTERNS:
+        for detail, pattern in patterns:
             if detail in seen:
                 continue
             if pattern.search(line):

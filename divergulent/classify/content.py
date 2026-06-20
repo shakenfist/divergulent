@@ -501,6 +501,27 @@ def _ignore_file_only(sections: list[_FileSection]) -> bool:
 # Public API
 # ---------------------------------------------------------------------------
 
+def code_added_lines_by_ext(text: str) -> list[tuple[str, str]]:
+    """Return ``(extension, line)`` for each ``+`` line in *code*-typed files.
+
+    Like ``code_added_lines`` but tags each line with its file's lower-cased
+    extension (``.sh``, ``.js``, or ``''`` when there is none).  This is what
+    lets a language-aware scan apply shell-only patterns -- backtick command
+    substitution is dangerous in shell but is an ordinary JavaScript template
+    literal or Emacs Lisp quasiquote, so the backtick rule must fire only on
+    shell files or it cries wolf.
+
+    Pure: no I/O, no network.  Reuses ``_parse_sections`` so header-skipping and
+    file typing match ``profile`` exactly.
+    """
+    lines: list[tuple[str, str]] = []
+    for section in _parse_sections(text):
+        if section.file_type == 'code':
+            ext = _extension(_basename(section.path))
+            lines.extend((ext, line) for line in section.added)
+    return lines
+
+
 def code_added_lines(text: str) -> list[str]:
     """Return the text of ``+`` lines in *code*-typed files only.
 
@@ -511,14 +532,10 @@ def code_added_lines(text: str) -> list[str]:
     *added to a ``.c``/``.sh`` file* does.  The leading ``+`` is stripped; the
     ``+++`` file headers are not included (they are not change lines).
 
-    Pure: no I/O, no network.  Reuses ``_parse_sections`` so header-skipping and
-    file typing match ``profile`` exactly.
+    Pure: no I/O, no network.  See ``code_added_lines_by_ext`` for the variant
+    that also returns each line's file extension.
     """
-    lines: list[str] = []
-    for section in _parse_sections(text):
-        if section.file_type == 'code':
-            lines.extend(section.added)
-    return lines
+    return [line for _ext, line in code_added_lines_by_ext(text)]
 
 
 def profile(text: str) -> ContentProfile:

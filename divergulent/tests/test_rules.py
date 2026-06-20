@@ -153,6 +153,23 @@ class DangerousConstructInCodeTestCase(testtools.TestCase):
                  if f.detail == 'shell-out']
         self.assertEqual(1, len(flags))
 
+    def test_backtick_command_substitution_in_shell_flags(self):
+        # A bare backtick command substitution in a shell file is a real danger.
+        diff = _add('install.sh', 'HOME=`readlink -f "$0"`')
+        flags = scan_dangerous_constructs(diff)
+        self.assertEqual(['shell-out'], [f.detail for f in flags])
+
+    def test_js_template_literal_does_not_cry_wolf(self):
+        # The phase-2 false positive: a JavaScript template literal uses
+        # backticks but is not command substitution, so it must not flag.
+        diff = _add('build.js', 'banner: `// ${meta.homepage} v${meta.version}`,')
+        self.assertEqual([], scan_dangerous_constructs(diff))
+
+    def test_lisp_quasiquote_does_not_cry_wolf(self):
+        # Emacs Lisp uses backticks for quasiquote / docstring symbol refs.
+        diff = _add('mew.el', "Use `mew-expand-folder' iff available.")
+        self.assertEqual([], scan_dangerous_constructs(diff))
+
     def test_removed_dangerous_line_does_not_flag(self):
         # A construct being REMOVED is not an added construct.
         diff = (
