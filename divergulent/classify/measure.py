@@ -40,9 +40,10 @@ from dataclasses import dataclass, field
 
 from divergulent.classify import fingerprint as fingerprint_module
 
-# The canonical/default v1 variant; frozen by step 1d once the real corpus has
-# been measured. Until then the matrix below reports all four so the choice is
-# made by measuring, not a priori.
+# The canonical v1 variant, frozen after the phase-1 crawl measured the
+# sensitivity matrix (the distinct count varies <2.5% across all four cells, so
+# the choice is settled). The matrix below still reports all four for any future
+# re-measure. See docs/plans/PLAN-patch-classification-phase-01-findings.md.
 NORMALISATION_VERSION = 1
 CANONICAL_STRIP_PATH = True
 CANONICAL_DROP_CONTEXT = False

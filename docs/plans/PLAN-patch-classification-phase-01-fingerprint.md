@@ -5,7 +5,16 @@ Plan this phase at **high effort**: the normalisation choice determines
 the headline number *and* the fingerprint key every later phase joins on,
 and the archive-wide crawl has scale and politeness constraints.
 
-**Status: not started.**
+**Status: complete.** All steps (1a corpus builder, 1b fingerprint, 1c
+measure) are implemented, tested, and committed, and the crawl has been run
+over the whole trixie archive. **Result: ≈61,572 carried patches → 60,640
+distinct (dedup 1.02x) — the premise that dedup would collapse the scale was
+falsified; 99.2% of distinct patches are unique to one package.** Full
+analysis in
+[PLAN-patch-classification-phase-01-findings.md](PLAN-patch-classification-phase-01-findings.md).
+Connection reuse and transient-failure hardening were added to the crawler
+along the way (a real run rate-limited a home DNS resolver and surfaced a
+resume-skips-failures gap).
 
 ## Prompt
 

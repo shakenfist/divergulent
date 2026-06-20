@@ -58,9 +58,20 @@ A patch's classification is a property of its **content**, not of any
 machine or version — the same diff gets the same verdict everywhere. So the
 key is `sha256(normalised_diff)`. Normalise first (strip `@@` offsets, line
 numbers, pure-context noise) so trivially-different copies share a
-fingerprint. **Measuring the distinct-patch count is the first task** — it
-reframes the scale (60k raw is likely far fewer distinct patches, and fewer
-still in the interesting subset).
+fingerprint. **Measuring the distinct-patch count was the first task.**
+
+**Measured (phase 1, falsifying the original premise):** dedup is **1.02x** —
+**≈61,572 carried patches → 60,640 distinct**, with **99.2% of distinct
+patches appearing in exactly one package**. The hoped-for collapse ("60k raw
+is probably far fewer distinct patches") **did not happen**: Debian's carried
+patches are overwhelmingly bespoke. The recurring tail (~488 fingerprints in
+2+ packages) is real and is exactly the trivial boilerplate — quilt `.pc`
+ignores, permission-only changes, ecosystem-wide build patches — but it is
+<1% of distinct patches. So **there is no dedup shortcut**, and the
+fingerprint's value is provenance, idempotent re-runs, and handling the small
+tail, not scale reduction. The leverage must come from *category* rules
+(phase 3), not fingerprint identity. See
+[PLAN-patch-classification-phase-01-findings.md](PLAN-patch-classification-phase-01-findings.md).
 
 ### Claim vs content — content is ground truth
 Every "helpful" signal (directory, description, DEP-3, CVE ref) is written
@@ -144,13 +155,13 @@ that decided it**.
 - [x] **Counts no longer capped.** The divergence *count* now comes from the
       patches API's `count` field (grub2 reads 148, not 60) — done and live.
       See PLAN-release-1.0.md §8.
-- [ ] **Acquire the full patch set + bodies.** Counts are fixed, but the
-      rendered names/bodies are still capped at 60, so classification still
-      needs the complete diffs. **Owned by phase 1's corpus builder**, which
-      reads the uncapped series straight from each `.debian.tar.*` (reusing
-      `apt_patches`). Heavier crawl, but immutable and cacheable.
-- [ ] **Normalised-diff fingerprinting** defined (what to strip). **Owned by
-      phase 1.**
+- [x] **Acquire the full patch set + bodies.** Done in phase 1: the corpus
+      builder reads the uncapped series straight from each `.debian.tar.*`
+      (reusing `apt_patches`) and stored 61,572 patch bodies content-addressed
+      across 18,820 patched packages.
+- [x] **Normalised-diff fingerprinting** defined (what to strip). Done in
+      phase 1: canonical v1 frozen as `strip_path=True, drop_context=False`
+      (the distinct count is insensitive to the choice, <2.5% across variants).
 
 ## Phases (each graduates to its own plan)
 
@@ -167,7 +178,7 @@ that decided it**.
 
 | Phase | Plan | Status |
 |-------|------|--------|
-| 1. Fingerprint & dedup | [PLAN-patch-classification-phase-01-fingerprint.md](PLAN-patch-classification-phase-01-fingerprint.md) | Planned (not started) |
+| 1. Fingerprint & dedup | [PLAN-patch-classification-phase-01-fingerprint.md](PLAN-patch-classification-phase-01-fingerprint.md) · [findings](PLAN-patch-classification-phase-01-findings.md) | **Done** — ≈61.5k patches → 60,640 distinct (dedup 1.02x; no shortcut) |
 | 2. Rule engine, registry & ledger | — | Not started (no detailed plan yet) |
 | 3. Deterministic signal extractors | — | Not started (no detailed plan yet) |
 | 4. LLM triage tier | — | Not started (no detailed plan yet) |
@@ -178,7 +189,9 @@ that decided it**.
 
 - "60k carried patches" is replaced by "**N distinct** patches, of which the
   vast majority are classified deterministically, and here is the small
-  residue worth review."
+  residue worth review." (Phase 1 measured **N ≈ 60,640** — dedup does *not*
+  shrink it, so "classified deterministically" must come from category rules,
+  not duplicate-collapsing.)
 - Every verdict carries `rule_id + version + evidence`; re-running after a
   rule fix re-classifies **only** the affected fingerprints.
 - The LLM is invoked only on the residue, is always verified, and shrinks

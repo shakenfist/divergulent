@@ -23,10 +23,14 @@ because every later classification phase keys off it. Only ``version == 1`` is
 defined; any other value raises ``ValueError``. The structure keeps adding a
 future version easy.
 
-The v1 defaults ``strip_path=True`` and ``drop_context=False`` are PROVISIONAL:
-step 1c sweeps the sensitivity matrix (path in/out x context in/out) over the
-real corpus before the canonical v1 choice is frozen. Until then these two
-knobs are first-class parameters, not hard-coded behaviour.
+The v1 canonical is ``strip_path=True, drop_context=False``. The phase-1 crawl
+measured the sensitivity matrix (path in/out x context in/out) over the real
+~61.5k-patch corpus and found the distinct count varies <2.5% across all four
+variants, so the choice is settled and the knobs remain first-class only for
+re-measuring. ``keep_context`` is the conservative choice (two patches with
+identical changes but different surrounding code are different changes);
+``strip_path`` merges the same change applied to differently-named files. See
+docs/plans/PLAN-patch-classification-phase-01-findings.md.
 """
 from __future__ import annotations
 
