@@ -71,8 +71,25 @@ class _Server:
 
 class KeepAliveFetcherTestCase(testtools.TestCase):
 
+    _PROXY_ENV = ('http_proxy', 'HTTP_PROXY', 'https_proxy', 'HTTPS_PROXY',
+                  'all_proxy', 'ALL_PROXY', 'no_proxy', 'NO_PROXY')
+
     def setUp(self) -> None:
         super().setUp()
+        # CI runners set HTTP_PROXY in the environment (the keep-alive fetcher
+        # honours it via getproxies()). The direct-connection tests must reach
+        # the localhost server straight, so neutralise any ambient proxy config
+        # for every test and restore it afterwards; the proxy test sets its own.
+        saved = {k: os.environ[k] for k in self._PROXY_ENV if k in os.environ}
+
+        def _restore_proxy_env() -> None:
+            for key in self._PROXY_ENV:
+                os.environ.pop(key, None)
+            os.environ.update(saved)
+        self.addCleanup(_restore_proxy_env)
+        for key in self._PROXY_ENV:
+            os.environ.pop(key, None)
+
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
 
