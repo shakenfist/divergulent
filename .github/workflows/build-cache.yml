@@ -39,6 +39,13 @@ jobs:
         id: release
         run: echo "codename=$(. /etc/os-release && echo "$VERSION_CODENAME")" >> "$GITHUB_OUTPUT"
 
+      - name: Report DNS cache status
+        # The runner's local DNS cache is set up by cloud-init, whose output is
+        # not visible here; surface it before the first bulk apt/source work so a
+        # silently-absent cache (which would rate-limit the upstream resolver) is
+        # visible in the workflow log. Warns only; never fails the job.
+        run: tools/check-dns-cache.sh
+
       - name: Install build prerequisites
         run: |
           sudo apt-get update
