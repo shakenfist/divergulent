@@ -95,7 +95,15 @@ installed-package inventory never leaves the machine.
   `keep_context`); `measure.py` deduplicates, writes a sqlite fingerprint
   index, and reports the distinct-patch count. Phase 1 of the patch-
   classification plan; it measured ≈61.5k carried patches → 60,640 distinct
-  (dedup 1.02x — carried patches are overwhelmingly bespoke).
+  (dedup 1.02x — carried patches are overwhelmingly bespoke). Phase 2 adds the
+  deterministic extractors: `claim.py` reads the author's (untrusted) claim
+  from the DEP-3 header, `content.py` profiles what the diff touches (typing
+  files code-vs-prose), `rules.py` settles the easy categories
+  (packaging/documentation) and runs the code-aware dangerous-construct scan
+  that surfaces candidates without ever pronouncing malice, and `classify.py`
+  drives them over the index, deriving claim/content consistency + a review
+  flag and writing a `classification` table. It measured 29.2% of patches as
+  deterministically settled, leaving ~43k substantive for the later tiers.
 - `divergulent/bundle.py` — the precomputed cache **bundle** schema, a
   gzipped-JSON `write()` and `load()`. A bundle is the shareable half of
   a cold run: staleness and divergence for a whole Debian release,
