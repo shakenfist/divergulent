@@ -12,11 +12,14 @@ lets callers degrade clearly when they are absent.
 from __future__ import annotations
 
 import glob
+import http.client
 import os
 import shutil
 import subprocess
 import tarfile
 import tempfile
+import threading
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 
@@ -28,6 +31,8 @@ from divergulent.sources.debian_patches import (
 
 
 _PATCHES_PREFIX = 'debian/patches/'
+
+_FETCH_TIMEOUT = 30
 
 
 def _run(args: list[str], cwd: str | None = None) -> subprocess.CompletedProcess:
@@ -64,10 +69,142 @@ def _source_uris(source_package: str, version: str,
     return dsc_url, debian_url
 
 
+class _KeepAliveFetcher:
+    '''Fetch files reusing one keep-alive HTTP connection per worker thread.
+
+    The corpus crawl fetches ~37k files from a single mirror host. A fresh
+    ``urllib.request.urlopen`` per file re-resolves DNS and reopens TCP every
+    time, which hammered a home DNS server with ~37k identical lookups. This
+    fetcher keeps a per-thread ``http.client.HTTPConnection`` keyed by the
+    (host, port) actually connected to -- the proxy when proxied, else the
+    target -- so each worker resolves DNS and opens a socket roughly once
+    rather than once per file.
+
+    It only handles the plain-HTTP target case (optionally through a plain-HTTP
+    proxy); anything else (https targets, non-HTTP/unexpected proxy schemes)
+    falls back to ``urllib.request.urlopen`` so correctness never depends on the
+    reuse path. The proxy decision uses ``urllib`` semantics
+    (``getproxies()``/``proxy_bypass``) so it matches what urllib would do today
+    and honours ``HTTP_PROXY``/``http_proxy`` on the CI runner.
+    '''
+
+    def __init__(self) -> None:
+        # Per-thread connection cache. http.client.HTTPConnection is not
+        # thread-safe, but each worker thread gets its own connections, so we
+        # never share a connection across threads.
+        self._local = threading.local()
+
+    def _connection(self, host: str, port: int) -> http.client.HTTPConnection:
+        '''Return a cached connection for (host, port), creating one if needed.'''
+        cache = getattr(self._local, 'connections', None)
+        if cache is None:
+            cache = self._local.connections = {}
+        key = (host, port)
+        conn = cache.get(key)
+        if conn is None:
+            conn = cache[key] = http.client.HTTPConnection(host, port, timeout=_FETCH_TIMEOUT)
+        return conn
+
+    def _drop(self, host: str, port: int) -> None:
+        '''Discard a cached connection that errored, so the next call reconnects.'''
+        cache = getattr(self._local, 'connections', None)
+        if cache is None:
+            return
+        conn = cache.pop((host, port), None)
+        if conn is not None:
+            conn.close()
+
+    def fetch(self, url: str, dest_path: str) -> None:
+        parsed = urllib.parse.urlsplit(url)
+        # Only the plain-HTTP target case (optionally via a plain-HTTP proxy)
+        # uses the keep-alive path; everything else falls back to urllib so
+        # correctness never depends on the reuse path.
+        if parsed.scheme != 'http' or not parsed.hostname:
+            self._fallback(url, dest_path)
+            return
+
+        proxies = urllib.request.getproxies()
+        proxy = proxies.get('http')
+        if proxy and not urllib.request.proxy_bypass(parsed.hostname):
+            proxy_parts = urllib.parse.urlsplit(proxy if '://' in proxy else 'http://' + proxy)
+            if proxy_parts.scheme not in ('', 'http') or not proxy_parts.hostname:
+                self._fallback(url, dest_path)
+                return
+            # Proxied: reuse the connection to the PROXY and send the absolute
+            # URI in the request line (GET http://target/path HTTP/1.1).
+            conn_host = proxy_parts.hostname
+            conn_port = proxy_parts.port or 80
+            request_target = url
+        else:
+            # Direct: reuse the connection to the TARGET and send origin-form.
+            conn_host = parsed.hostname
+            conn_port = parsed.port or 80
+            request_target = parsed.path or '/'
+            if parsed.query:
+                request_target += '?' + parsed.query
+
+        target_host = parsed.netloc
+        headers = {
+            'User-Agent': DEFAULT_USER_AGENT,
+            'Host': target_host,
+            'Connection': 'keep-alive',
+        }
+        self._request_with_retry(conn_host, conn_port, request_target, headers, dest_path)
+
+    def _request_with_retry(self, host: str, port: int, request_target: str,
+                            headers: dict[str, str], dest_path: str) -> None:
+        '''Issue the request, recreating the connection and retrying once.
+
+        A server may close an idle keep-alive connection between requests; that
+        surfaces as a connection-level error on the next use. We retry once on a
+        fresh connection before giving up so a dropped idle socket is invisible
+        to the caller.
+        '''
+        for attempt in range(2):
+            conn = self._connection(host, port)
+            try:
+                conn.request('GET', request_target, headers=headers)
+                response = conn.getresponse()
+                if not 200 <= response.status < 300:
+                    # Drain the body so the connection stays reusable, then raise
+                    # so the caller's existing error handling sees a failed fetch
+                    # rather than an error body written to disk.
+                    response.read()
+                    raise http.client.HTTPException(
+                        'GET %s returned HTTP %d' % (request_target, response.status))
+                # copyfileobj reads to EOF, leaving the connection reusable.
+                with open(dest_path, 'wb') as out:
+                    shutil.copyfileobj(response, out)
+                return
+            except http.client.HTTPException:
+                # A non-2xx is a real failure, not a stale socket: drop the
+                # connection and propagate without a futile retry.
+                self._drop(host, port)
+                raise
+            except (ConnectionError, OSError):
+                # A connection-level error likely means the keep-alive socket
+                # was closed; drop it and, on the first attempt, retry fresh.
+                self._drop(host, port)
+                if attempt == 1:
+                    raise
+
+    @staticmethod
+    def _fallback(url: str, dest_path: str) -> None:
+        request = urllib.request.Request(url, headers={'User-Agent': DEFAULT_USER_AGENT})
+        with urllib.request.urlopen(request, timeout=_FETCH_TIMEOUT) as response, open(dest_path, 'wb') as out:
+            shutil.copyfileobj(response, out)
+
+
+_FETCHER = _KeepAliveFetcher()
+
+
 def _fetch_file(url: str, dest_path: str) -> None:
-    request = urllib.request.Request(url, headers={'User-Agent': DEFAULT_USER_AGENT})
-    with urllib.request.urlopen(request, timeout=30) as response, open(dest_path, 'wb') as out:
-        shutil.copyfileobj(response, out)
+    '''Fetch ``url`` to ``dest_path``, reusing a per-thread keep-alive connection.
+
+    Preserves the original signature and behaviour (writes the body, raises on
+    failure) so ``_download_source`` and the injectable seams are unchanged.
+    '''
+    _FETCHER.fetch(url, dest_path)
 
 
 def _download_source(source_package: str, version: str, dest_dir: str,
