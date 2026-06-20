@@ -43,53 +43,53 @@ nothing. Only 3,400 fingerprints have a claim that *disagrees* with content.
 
 ## Review flag: 4.6%, and what it's really made of
 
-Review-flagged: **2,787 fingerprints (4.6%)** — but the composition matters:
+Review-flagged: **2,602 fingerprints (4.3%)** (after the backtick fix below;
+4.6% before) — but the composition matters:
 
-- **2,417** are *benign-claim-over-code* with **no** dangerous construct: the
+- **~2,417** are *benign-claim-over-code* with **no** dangerous construct: the
   author claims documentation/packaging but the diff touches code
   substantively. In practice most are benign — e.g. `spelling-errors.patch`
   fixing a typo inside a Perl string or comment, which touches a `.pm` file and
   so isn't `comment_only`. The flag is doing its job (surface for a look,
   pronounce nothing), but it is **noisy**: separating genuine deception from a
   spelling fix in code needs the phase-4 tier or a tighter rule.
-- **370** carry a dangerous-construct candidate (see below).
+- **158** carry a dangerous-construct candidate (see below).
 
-## Dangerous-construct candidates — and a confirmed false-positive source
-
-| detail | fingerprints | occurrences |
-| --- | ---: | ---: |
-| shell-out | 368 | 399 |
-| decode-exec | 1 | 1 |
-| fetch-piped-to-shell | 1 | 1 |
+## Dangerous-construct candidates — a false-positive source found and fixed
 
 The measurement did exactly what "start narrow, grow from real findings" was
-for: it **confirmed the backtick command-substitution sub-pattern cries
-wolf**. The single most-recurring "shell-out" flag is the d3
-`reproducible_build.diff` (29 packages) matching a **JavaScript template
-literal** (`` `// ${meta.homepage} v${meta.version} ...` ``); `mew` matches
-**Emacs Lisp quasiquote / docstring** notation (`` `symbol' ``). A flat
-code-added-lines scan cannot tell a shell `` `cmd` `` from a JS/Lisp backtick.
-The genuine signal underneath is real — `jtreg7` adds
-`` JTREG_HOME=`readlink -f ...` `` (true shell command substitution), and the
-`system(`/`popen(`/`shell=True` patterns are sound — but the shell-out count
-is inflated by these false positives.
+for: it **confirmed the backtick command-substitution sub-pattern cried
+wolf**, and that has now been fixed. The original run's most-recurring
+"shell-out" flag was the d3 `reproducible_build.diff` (29 packages) matching a
+**JavaScript template literal** (`` `// ${meta.homepage} v${meta.version} ...` ``),
+and `mew` matched **Emacs Lisp quasiquote / docstring** notation
+(`` `symbol' ``). A flat code-added-lines scan could not tell a shell
+`` `cmd` `` from a JS/Lisp backtick.
 
-**Identified fix (the #1 refinement):** make the dangerous-construct scan
-**language-aware** — the backtick (and any shell-specific) pattern should fire
-only on shell-typed files (`.sh`/`.bash`), not on every code file. This needs
-the scan to see each added line's file type, not a flat list. The other
-patterns (`system(`, `curl … | sh`, embedded private key, `/dev/tcp/`) are
-language-agnostic and stay. After this, the dangerous-construct queue becomes
-genuinely reviewable.
+**Fix landed:** the scan is now **language-aware** — the backtick pattern fires
+only on shell-typed files (`.sh`/`.bash`); the language-agnostic patterns
+(`system(`, `curl … | sh`, embedded private key, `/dev/tcp/`, ...) still run on
+every code file. This **removed ~212 false `shell-out` flags (58% of them)**:
+
+| detail | fingerprints (before → after) |
+| --- | ---: |
+| shell-out | 368 → **156** |
+| decode-exec | 1 → 1 |
+| fetch-piped-to-shell | 1 → 1 |
+
+The genuine signal is preserved — `jtreg7`'s `` JTREG_HOME=`readlink -f ...` ``
+(true shell command substitution) still flags, as do `system(`/`popen(`/
+`shell=True`. With the noise gone, the **158** remaining dangerous-construct
+candidates are a genuinely reviewable queue.
 
 ## What this means going forward
 
 1. **Phase 4's residue is ~43k substantive patches** — that is the real scale
    of the work the LLM/human tier must triage, and the headline number the
    project now states honestly.
-2. **Tighten the backtick scan** (language-aware) before the dangerous-construct
-   queue is worth a human's time — a small, well-scoped change the data
-   pinpointed.
+2. **The backtick scan was tightened** (language-aware, shell-only) — done in
+   this phase off the back of the measurement; the dangerous-construct queue
+   (158 candidates) is now worth a human's time.
 3. **Claim/content mismatch is a thinner signal than hoped** (58% make no
    claim); lean on content and phase 4, and treat the benign-claim-over-code
    flag as a low-confidence prioritiser, not an alarm.

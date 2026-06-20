@@ -10,9 +10,10 @@ classifying at the right semantic level and never pronouncing malice.
 and the classifier has been run over the whole phase-1 corpus. **Result:
 29.2% of the 60,640 distinct patches settle deterministically
 (packaging/documentation); 70.8% (~43k) are the substantive residue for phase
-4.** The run also confirmed the dangerous-construct backtick sub-pattern cries
-wolf on JS/Lisp backticks (the #1 follow-up: make the scan language-aware) and
-that 58% of patches carry no usable DEP-3 claim. Full analysis in
+4.** The run confirmed the dangerous-construct backtick sub-pattern cried wolf
+on JS/Lisp backticks, which was then fixed by making the scan language-aware
+(shell-only backtick) — cutting false `shell-out` flags by 58% (368 → 156);
+and it showed 58% of patches carry no usable DEP-3 claim. Full analysis in
 [PLAN-patch-classification-phase-02-findings.md](PLAN-patch-classification-phase-02-findings.md).
 
 ## Why this is phase 2 now
