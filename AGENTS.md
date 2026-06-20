@@ -181,6 +181,19 @@ language-aware (shell-only backtick), and showed 58% of patches carry no usable
 claim. See
 `docs/plans/PLAN-patch-classification-phase-02-findings.md`.
 
+Phase 3 (`ledger.py`/`record.py`/`verdict.py`) wraps the verdicts in an
+append-only decision ledger: a versioned rule registry, an immutable `decision`
+table that is only ever *superseded* (never edited or deleted), and an
+`observation` table for the dangerous-construct flags (so a flag never becomes
+a category). The current verdict is **derived**, never stored — per fingerprint,
+the highest-precedence live decision at human > llm > heuristic — so it cannot
+drift, retiring a rule re-queues exactly its fingerprints (a surgical redo), and
+the llm/human seats are reserved so phase 4 and human review slot in without a
+schema change. `python -m divergulent.classify.ledger build|report|supersede`
+operates it; the CLI is the only place that reads a clock. The ledger
+reproduced the phase-2 distribution exactly with a 42,907-fingerprint derived
+queue. See `docs/plans/PLAN-patch-classification-phase-03-findings.md`.
+
 ## Scoring
 
 `score.combine` ranks packages with a transparent weighted sum

@@ -6,7 +6,16 @@ the decision/derivation model right is what makes a wrong rule a surgical redo
 instead of a restart, and what lets human, LLM, and heuristic verdicts coexist
 without overwriting each other.
 
-**Status: not started.**
+**Status: complete.** All four steps (3a schema+registry, 3b recorder, 3c
+derived view+queue, 3d supersession+CLI) are implemented, tested, and committed,
+and the ledger has been built over the real corpus. **Result: the append-only
+ledger reproduces the phase-2 distribution exactly (60,640 decisions: 42,907
+unknown / 13,382 packaging / 4,351 documentation) with full provenance; the
+derived queue is the 42,907-fingerprint residue, and supersession re-queues
+surgically.** Full analysis in
+[PLAN-patch-classification-phase-03-findings.md](PLAN-patch-classification-phase-03-findings.md).
+Known follow-up: the per-row-commit build takes ~11 min; batching to one
+transaction would make it seconds.
 
 ## Why this is phase 3 (after the extractors)
 

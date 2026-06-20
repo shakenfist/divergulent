@@ -104,6 +104,16 @@ installed-package inventory never leaves the machine.
   drives them over the index, deriving claim/content consistency + a review
   flag and writing a `classification` table. It measured 29.2% of patches as
   deterministically settled, leaving ~43k substantive for the later tiers.
+  Phase 3 adds the provenance ledger: `ledger.py` (the append-only sqlite
+  schema — a `rule` registry, an immutable `decision` table only ever
+  superseded, and an `observation` table for flags — plus the supersession ops
+  and a `python -m divergulent.classify.ledger` CLI), `record.py` (drives the
+  rules into the ledger as decisions/observations, idempotently), and
+  `verdict.py` (the **derived** current verdict — the highest-precedence live
+  decision per fingerprint at human > llm > heuristic — plus the phase-4
+  residue queue and a report). The current verdict is never stored, so it
+  cannot drift, and retiring a rule re-queues exactly its fingerprints. The llm
+  and human decision seats are reserved for phases 4+.
 - `divergulent/bundle.py` — the precomputed cache **bundle** schema, a
   gzipped-JSON `write()` and `load()`. A bundle is the shareable half of
   a cold run: staleness and divergence for a whole Debian release,
