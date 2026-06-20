@@ -399,6 +399,23 @@ def live_decisions(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         'SELECT * FROM decision WHERE superseded_at IS NULL ORDER BY id').fetchall()
 
 
+def live_decision_exists(conn: sqlite3.Connection, *, fingerprint: str, decided_by: str,
+                         rule_version: int) -> bool:
+    """Whether a LIVE decision already exists for ``(fingerprint, decided_by,
+    rule_version)``.
+
+    The idempotency check for the recorder (step 3b): a pure decision is
+    reproducible from this triple, so one that already exists live must not be
+    appended again.  SELECT-only; never mutates.
+    """
+    row = conn.execute(
+        'SELECT 1 FROM decision '
+        'WHERE fingerprint = ? AND decided_by = ? AND rule_version = ? '
+        'AND superseded_at IS NULL LIMIT 1',
+        (fingerprint, decided_by, rule_version)).fetchone()
+    return row is not None
+
+
 def decisions_for(conn: sqlite3.Connection, fingerprint: str) -> list[sqlite3.Row]:
     """Every decision for ``fingerprint``, live or superseded, in id order.
 
@@ -415,6 +432,24 @@ def live_observations(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     conn.row_factory = sqlite3.Row
     return conn.execute(
         'SELECT * FROM observation WHERE superseded_at IS NULL ORDER BY id').fetchall()
+
+
+def live_observation_exists(conn: sqlite3.Connection, *, fingerprint: str, observed_by: str,
+                            rule_version: int, detail: str, evidence: str | None) -> bool:
+    """Whether a LIVE observation already exists for ``(fingerprint, observed_by,
+    rule_version, detail, evidence)``.
+
+    The idempotency check for recording dangerous-construct observations
+    (step 3b): an identical live observation must not be appended twice.
+    ``evidence`` is matched with ``IS`` so a ``NULL`` evidence compares equal to
+    ``NULL``.  SELECT-only; never mutates.
+    """
+    row = conn.execute(
+        'SELECT 1 FROM observation '
+        'WHERE fingerprint = ? AND observed_by = ? AND rule_version = ? '
+        'AND detail = ? AND evidence IS ? AND superseded_at IS NULL LIMIT 1',
+        (fingerprint, observed_by, rule_version, detail, evidence)).fetchone()
+    return row is not None
 
 
 def observations_for(conn: sqlite3.Connection, fingerprint: str) -> list[sqlite3.Row]:
