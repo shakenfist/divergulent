@@ -58,9 +58,20 @@ A patch's classification is a property of its **content**, not of any
 machine or version — the same diff gets the same verdict everywhere. So the
 key is `sha256(normalised_diff)`. Normalise first (strip `@@` offsets, line
 numbers, pure-context noise) so trivially-different copies share a
-fingerprint. **Measuring the distinct-patch count is the first task** — it
-reframes the scale (60k raw is likely far fewer distinct patches, and fewer
-still in the interesting subset).
+fingerprint. **Measuring the distinct-patch count was the first task.**
+
+**Measured (phase 1, falsifying the original premise):** dedup is **1.02x** —
+**≈61,572 carried patches → 60,640 distinct**, with **99.2% of distinct
+patches appearing in exactly one package**. The hoped-for collapse ("60k raw
+is probably far fewer distinct patches") **did not happen**: Debian's carried
+patches are overwhelmingly bespoke. The recurring tail (~488 fingerprints in
+2+ packages) is real and is exactly the trivial boilerplate — quilt `.pc`
+ignores, permission-only changes, ecosystem-wide build patches — but it is
+<1% of distinct patches. So **there is no dedup shortcut**, and the
+fingerprint's value is provenance, idempotent re-runs, and handling the small
+tail, not scale reduction. The leverage must come from *category* rules
+(phase 2), not fingerprint identity. See
+[PLAN-patch-classification-phase-01-findings.md](PLAN-patch-classification-phase-01-findings.md).
 
 ### Claim vs content — content is ground truth
 Every "helpful" signal (directory, description, DEP-3, CVE ref) is written
@@ -141,29 +152,56 @@ that decided it**.
 
 ## Prerequisites
 
-- [ ] **Fix the 60-patch cap** so counts and the patch set are complete
-      (grub2 is 148, not 60). Overlaps the builder-robustness workstream.
-- [ ] **Builder fetches patch bodies.** The current divergence bundle has
-      only counts; classification needs the diffs. Heavier crawl, but
-      immutable and cacheable.
-- [ ] **Normalised-diff fingerprinting** defined (what to strip).
+- [x] **Counts no longer capped.** The divergence *count* now comes from the
+      patches API's `count` field (grub2 reads 148, not 60) — done and live.
+      See PLAN-release-1.0.md §8.
+- [x] **Acquire the full patch set + bodies.** Done in phase 1: the corpus
+      builder reads the uncapped series straight from each `.debian.tar.*`
+      (reusing `apt_patches`) and stored 61,572 patch bodies content-addressed
+      across 18,820 patched packages.
+- [x] **Normalised-diff fingerprinting** defined (what to strip). Done in
+      phase 1: canonical v1 frozen as `strip_path=True, drop_context=False`
+      (the distinct count is insensitive to the choice, <2.5% across variants).
 
 ## Phases (each graduates to its own plan)
 
 | Phase | Focus |
 |-------|-------|
 | 1. **Fingerprint & dedup** | Normalise + hash patch bodies; **measure the distinct-patch count across the archive** (the single number that reframes the scale). |
-| 2. **Rule engine, registry & ledger** | The provenance data model: versioned rules, append-only decisions with evidence, derived current-verdict, supersession/redo, pure vs external. |
-| 3. **Deterministic signal extractors** | Directory taxonomy, description/CVE/bug-ref parsing (as *claims*), file-type classification, code-vs-prose-aware claim/content mismatch, trivial-only and dangerous-construct-in-code detection. |
-| 4. **LLM triage tier (optional, curation-side, verified)** | Diff summarisation/category draft *blind to the author's claim*, then compared; human-verify queue; rule-discovery feedback into phase 3. |
+| 2. **Deterministic signal extractors** | Directory taxonomy, description/CVE/bug-ref parsing (as *claims*), file-type classification, code-vs-prose-aware claim/content mismatch, trivial-only and dangerous-construct-in-code detection. |
+| 3. **Rule engine, registry & ledger** | The provenance data model: versioned rules, append-only decisions with evidence, derived current-verdict, supersession/redo, pure vs external. |
+| 4. **LLM triage tier (optional, curation-side, verified)** | Diff summarisation/category draft *blind to the author's claim*, then compared; human-verify queue; rule-discovery feedback into phase 2. |
 | 5. **Classification bundle & client display** | Publish a signed fingerprint→verdict bundle; client shows per-package category breakdowns with per-patch "why", never running a classifier. |
 | 6. **BTS / upstream cross-reference** | The `external` rules: does a declared bug exist / is it fixed upstream — with input snapshots so freshness is tracked. |
+
+**Reorder note (after phase 1):** the deterministic signal extractors and the
+rule engine/ledger were swapped. Phase 1 found no dedup shortcut (≈60,640
+distinct patches), so the *category rules* are where all the leverage lives —
+build them first, on the real corpus, and let the rules' shape inform the
+ledger schema rather than guessing it up front. This is *build* order, not the
+runtime *sieve* order: at classification time the ledger is still consulted
+before rules run (a cached verdict is free). Phase 2 can emit a plain
+fingerprint→category table; phase 3 then wraps it in the versioned, append-only
+provenance ledger (rule id/version, evidence, supersession/redo).
+
+## Execution
+
+| Phase | Plan | Status |
+|-------|------|--------|
+| 1. Fingerprint & dedup | [PLAN-patch-classification-phase-01-fingerprint.md](PLAN-patch-classification-phase-01-fingerprint.md) · [findings](PLAN-patch-classification-phase-01-findings.md) | **Done** — ≈61.5k patches → 60,640 distinct (dedup 1.02x; no shortcut) |
+| 2. Deterministic signal extractors | [PLAN-patch-classification-phase-02-extractors.md](PLAN-patch-classification-phase-02-extractors.md) | Planned (not started) |
+| 3. Rule engine, registry & ledger | — | Not started (no detailed plan yet) |
+| 4. LLM triage tier | — | Not started (no detailed plan yet) |
+| 5. Classification bundle & client display | — | Not started (no detailed plan yet) |
+| 6. BTS / upstream cross-reference | — | Not started (no detailed plan yet) |
 
 ## Success criteria
 
 - "60k carried patches" is replaced by "**N distinct** patches, of which the
   vast majority are classified deterministically, and here is the small
-  residue worth review."
+  residue worth review." (Phase 1 measured **N ≈ 60,640** — dedup does *not*
+  shrink it, so "classified deterministically" must come from category rules,
+  not duplicate-collapsing.)
 - Every verdict carries `rule_id + version + evidence`; re-running after a
   rule fix re-classifies **only** the affected fingerprints.
 - The LLM is invoked only on the residue, is always verified, and shrinks

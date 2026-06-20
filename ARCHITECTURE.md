@@ -84,7 +84,18 @@ installed-package inventory never leaves the machine.
   --print-uris`, fetches only the `.dsc` and `.debian.tar.*` (not the
   `.orig` tarball), extracts `debian/patches`, and classifies with
   `dep3` — the full breakdown across the machine via the mirror network.
-  Requires `deb-src` (`deb_src_available()`).
+  Requires `deb-src` (`deb_src_available()`). `fetch_patch_texts()` is the
+  reusable, uncapped acquisition half (the patches API caps its rendered
+  list at 60; reading the `.debian.tar.*` series does not).
+- `divergulent/classify/` — **curation-side only** (the central builder runs
+  it; no client command imports it). `corpus.py` crawls the archive's
+  patched packages (reusing `apt_patches`' uncapped fetch) into a resumable
+  content-addressed corpus of raw patch bodies; `fingerprint.py` is the pure,
+  versioned `normalise()`/`fingerprint()` (canonical v1 = `strip_path`,
+  `keep_context`); `measure.py` deduplicates, writes a sqlite fingerprint
+  index, and reports the distinct-patch count. Phase 1 of the patch-
+  classification plan; it measured ≈61.5k carried patches → 60,640 distinct
+  (dedup 1.02x — carried patches are overwhelmingly bespoke).
 - `divergulent/bundle.py` — the precomputed cache **bundle** schema, a
   gzipped-JSON `write()` and `load()`. A bundle is the shareable half of
   a cold run: staleness and divergence for a whole Debian release,

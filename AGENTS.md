@@ -156,6 +156,18 @@ supplements explicit DEP-3 fields with Debian-authored heuristics (the
 old `# DP:` convention and deb-*/debian-* filenames). Explicit DEP-3
 always wins; patches with neither are UNKNOWN, not assumed divergent.
 
+`divergulent/classify/` is **curation-side only** — it runs centrally in
+the builder, never on a client — and is phase 1 of the patch-classification
+plan (`docs/plans/PLAN-patch-classification.md`). `corpus.py` crawls the
+archive's patched packages into a resumable, content-addressed corpus of raw
+patch bodies (reusing `apt_patches`' uncapped fetch with per-worker keep-alive
+connection reuse so a bulk crawl resolves DNS ~once per worker, not per file);
+`fingerprint.py`/`measure.py` deduplicate and count. The first crawl measured
+≈61.5k carried patches → 60,640 distinct (dedup 1.02x): carried patches are
+overwhelmingly bespoke, so classification leverage must come from category
+rules, not deduplication. See
+`docs/plans/PLAN-patch-classification-phase-01-findings.md`.
+
 ## Scoring
 
 `score.combine` ranks packages with a transparent weighted sum
