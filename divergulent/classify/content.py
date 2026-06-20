@@ -501,6 +501,26 @@ def _ignore_file_only(sections: list[_FileSection]) -> bool:
 # Public API
 # ---------------------------------------------------------------------------
 
+def code_added_lines(text: str) -> list[str]:
+    """Return the text of ``+`` lines in *code*-typed files only.
+
+    The semantic level that step 2c's dangerous-construct scan runs at: added
+    lines in genuine source files, never prose.  A construct that appears in a
+    manpage or other doc/build/data file is deliberately excluded, so a manpage
+    mentioning ``system("/bin/sh")`` does not surface — only the same string
+    *added to a ``.c``/``.sh`` file* does.  The leading ``+`` is stripped; the
+    ``+++`` file headers are not included (they are not change lines).
+
+    Pure: no I/O, no network.  Reuses ``_parse_sections`` so header-skipping and
+    file typing match ``profile`` exactly.
+    """
+    lines: list[str] = []
+    for section in _parse_sections(text):
+        if section.file_type == 'code':
+            lines.extend(section.added)
+    return lines
+
+
 def profile(text: str) -> ContentProfile:
     """Build the ``ContentProfile`` for a unified-diff / quilt patch body.
 

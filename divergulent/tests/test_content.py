@@ -10,7 +10,7 @@ mode-only patch is ``is_empty``; a ``.gitignore`` adding ``.pc`` is
 import testtools
 
 from divergulent.classify.content import (
-    ContentProfile, CONTENT_RULE_VERSION, FILE_TYPES, profile)
+    ContentProfile, CONTENT_RULE_VERSION, FILE_TYPES, code_added_lines, profile)
 from divergulent.classify.content import _classify_file
 
 
@@ -389,6 +389,52 @@ class CommentOnlyTestCase(testtools.TestCase):
         )
         prof = profile(diff)
         self.assertFalse(prof.comment_only)
+
+
+# ---------------------------------------------------------------------------
+# code_added_lines — the semantic level the dangerous-construct scan runs at.
+# ---------------------------------------------------------------------------
+
+class CodeAddedLinesTestCase(testtools.TestCase):
+
+    def test_returns_only_code_added_lines(self):
+        prof_diff = (
+            '--- a/src/foo.c\n'
+            '+++ b/src/foo.c\n'
+            '@@ -1,2 +1,3 @@\n'
+            ' ctx\n'
+            '-removed code\n'
+            '+added code line\n'
+            '+second added line\n'
+        )
+        self.assertEqual(
+            ['added code line', 'second added line'], code_added_lines(prof_diff))
+
+    def test_excludes_doc_added_lines(self):
+        # A line added to a manpage must NOT appear: prose is not code.
+        diff = (
+            _edit('man/foo.1', removed='.B old', added='system("/bin/sh")')
+            + _edit('src/foo.c', removed='int x;', added='int y;')
+        )
+        self.assertEqual(['int y;'], code_added_lines(diff))
+
+    def test_excludes_removed_and_context_lines(self):
+        diff = (
+            '--- a/src/foo.c\n'
+            '+++ b/src/foo.c\n'
+            '@@ -1,2 +1,2 @@\n'
+            ' context line\n'
+            '-removed line\n'
+            '+added line\n'
+        )
+        self.assertEqual(['added line'], code_added_lines(diff))
+
+    def test_empty_input_returns_empty(self):
+        self.assertEqual([], code_added_lines(''))
+
+    def test_doc_only_diff_returns_empty(self):
+        diff = _edit('README.md', removed='a', added='b')
+        self.assertEqual([], code_added_lines(diff))
 
 
 # ---------------------------------------------------------------------------
