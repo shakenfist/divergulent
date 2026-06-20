@@ -40,8 +40,11 @@ Curation-side only: no client command imports ``classify/``.
 """
 from __future__ import annotations
 
+import argparse
+import datetime
 import os
 import sqlite3
+import sys
 from dataclasses import dataclass
 
 from divergulent.classify.claim import CLAIM_RULE_VERSION
@@ -462,3 +465,216 @@ def observations_for(conn: sqlite3.Connection, fingerprint: str) -> list[sqlite3
 def meta(conn: sqlite3.Connection) -> dict[str, str]:
     """The ``meta`` table as a ``{key: value}`` dict (schema/enum versions)."""
     return dict(conn.execute('SELECT key, value FROM meta').fetchall())
+
+
+# ---------------------------------------------------------------------------
+# Supersession / redo (step 3d).
+#
+# These are the surgical-redo operations.  They are built ENTIRELY on the
+# append-only-safe primitives above: ``supersede_rule`` only ever sets a
+# ``superseded_at`` timestamp (via :func:`supersede_decisions` /
+# :func:`supersede_observations`) and flips a registry flag (``retire_rule``);
+# no decision or observation content is ever edited or deleted.  The re-queue is
+# NOT stored here: superseding a rule's live decisions simply leaves the affected
+# fingerprints with no live decision, and ``verdict.queue`` (step 3c) derives the
+# re-queue from that on the next recompute.  This keeps the queue a view, never a
+# stored list that could drift from the ledger.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SupersedeResult:
+    """What a :func:`supersede_rule` call superseded.
+
+    ``decisions_superseded`` / ``observations_superseded`` are the counts of
+    previously-live rows marked superseded; ``retired`` records whether the
+    rule's registry row was flipped to ``retired=1``.  The re-queue is derived,
+    not returned — ``verdict.queue`` recomputes it from the now-missing live
+    decisions.
+    """
+
+    rule_id: str
+    version: int
+    decisions_superseded: int
+    observations_superseded: int
+    retired: bool
+
+
+def retire_rule(conn: sqlite3.Connection, rule_id: str, version: int) -> None:
+    """Mark one ``(rule_id, version)`` registry row retired (``retired=1``).
+
+    This mutates REGISTRY state, not a decision: it records that the rule should
+    no longer be run, leaving every decision row untouched.  Idempotent — setting
+    the flag on an already-retired row is a no-op.  Whether the row exists is not
+    asserted here; an absent rule simply updates nothing.
+    """
+    conn.execute(
+        'UPDATE rule SET retired = 1 WHERE rule_id = ? AND version = ?',
+        (rule_id, version))
+    conn.commit()
+
+
+def supersede_rule(conn: sqlite3.Connection, *, rule_id: str, version: int,
+                   superseded_at: str, retire: bool = True) -> SupersedeResult:
+    """Supersede one rule version's live decisions + observations; surgical redo.
+
+    Marks every LIVE decision AND every LIVE observation made under
+    ``(rule_id, version)`` superseded (setting ``superseded_at`` only — nothing
+    is edited or deleted), and, when ``retire`` is true, flips the rule's
+    registry row to ``retired=1`` so it is not re-run.  The
+    ``dangerous-construct-scan`` rule emits observations rather than decisions, so
+    superseding it touches the observation table; the content-category rules
+    touch the decision table.  Superseding both means a single call cleanly
+    redoes whichever a rule produces.
+
+    The re-queue is AUTOMATIC and DERIVED: this stores no queue.  Fingerprints
+    left with no live decision are re-queued by ``verdict.queue`` on the next
+    recompute, and a higher-version re-registration (a new live decision for the
+    same fingerprint) is picked up by ``verdict.current_verdict``.  Returns a
+    :class:`SupersedeResult`.  ``superseded_at`` is caller-supplied; this module
+    never reads a clock.
+    """
+    decisions = supersede_decisions(
+        conn, decided_by=rule_id, rule_version=version, superseded_at=superseded_at)
+    observations = supersede_observations(
+        conn, observed_by=rule_id, rule_version=version, superseded_at=superseded_at)
+    if retire:
+        retire_rule(conn, rule_id, version)
+    return SupersedeResult(
+        rule_id=rule_id, version=version, decisions_superseded=decisions,
+        observations_superseded=observations, retired=retire)
+
+
+# ---------------------------------------------------------------------------
+# The ledger CLI (``python -m divergulent.classify.ledger``).
+#
+# This is the ONLY place in the ledger stack that reads a wall clock: ``main``
+# captures one ``now`` ISO-8601 string and threads it down to the recorder and
+# the supersede operation as their ``decided_at`` / ``superseded_at``.  Every
+# module below this remains deterministic and re-runnable.
+#
+# ``record`` and ``verdict`` are LAZY-imported inside the handlers, not at module
+# top: ``record`` imports this module, so importing it here would be a cycle.
+# Keeping this module import-time clean (only ``ledger`` deps + stdlib) is what
+# lets ``record``/``verdict`` import it freely.
+# ---------------------------------------------------------------------------
+
+
+def _cli_now() -> str:
+    """The single clock read of the ledger stack: an ISO-8601 UTC timestamp.
+
+    Only the CLI entry point reads the clock; the value is passed down as
+    ``decided_at`` / ``superseded_at`` so every deterministic module path stays
+    re-runnable.
+    """
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def _cmd_build(args: argparse.Namespace) -> int:
+    """``build``: create a ledger from a corpus and print the verdict report."""
+    from divergulent.classify import record, verdict
+
+    index_path = args.index or os.path.join(args.corpus_dir, 'fingerprints.sqlite')
+    out_path = args.out or os.path.join(args.corpus_dir, 'ledger.sqlite')
+
+    conn = create_ledger(out_path)
+    try:
+        stats = record.record_to_ledger(conn, args.corpus_dir, index_path, now=_cli_now())
+        rows = verdict.rebuild_current_verdict(conn)
+        print(verdict.render_report(verdict.summarise_ledger(conn)))
+        print('built ledger: %s' % out_path)
+        print('decisions appended=%d skipped=%d; observations appended=%d skipped=%d; '
+              'fingerprints=%d; current verdicts=%d' % (
+                  stats.decisions_appended, stats.decisions_skipped,
+                  stats.observations_appended, stats.observations_skipped,
+                  stats.fingerprints, rows))
+    finally:
+        conn.close()
+    return 0
+
+
+def _cmd_report(args: argparse.Namespace) -> int:
+    """``report``: open a built ledger and print the current-verdict report."""
+    from divergulent.classify import verdict
+
+    conn = sqlite3.connect(args.ledger)
+    try:
+        print(verdict.render_report(verdict.summarise_ledger(conn)))
+    finally:
+        conn.close()
+    return 0
+
+
+def _cmd_supersede(args: argparse.Namespace) -> int:
+    """``supersede``: supersede a rule version's decisions/observations + re-queue."""
+    from divergulent.classify import verdict
+
+    conn = sqlite3.connect(args.ledger)
+    try:
+        result = supersede_rule(
+            conn, rule_id=args.rule_id, version=args.version,
+            superseded_at=_cli_now(), retire=not args.keep)
+        if not args.no_rebuild:
+            verdict.rebuild_current_verdict(conn)
+        queue_size = len(verdict.queue(conn))
+        print('superseded rule %s v%d: decisions=%d observations=%d retired=%s' % (
+            result.rule_id, result.version, result.decisions_superseded,
+            result.observations_superseded, result.retired))
+        print('queue size (phase-4 residue): %d' % queue_size)
+    finally:
+        conn.close()
+    return 0
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog='python -m divergulent.classify.ledger',
+        description='Build, report on, and surgically redo the append-only decision '
+                    'ledger (curation-side; offline). The current verdict is always '
+                    'derived, never stored; superseding a rule re-queues only its '
+                    'fingerprints. No malice is ever pronounced.')
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    build = subparsers.add_parser(
+        'build', help='create a ledger from a corpus and print the verdict report')
+    build.add_argument('corpus_dir', help='directory of a corpus built by classify.corpus')
+    build.add_argument('--index', default=None,
+                       help='path to the phase-1 sqlite fingerprint index (default: '
+                            '<corpus_dir>/fingerprints.sqlite)')
+    build.add_argument('--out', default=None,
+                       help='path for the ledger sqlite (default: <corpus_dir>/ledger.sqlite)')
+    build.set_defaults(func=_cmd_build)
+
+    report = subparsers.add_parser(
+        'report', help='print the current-verdict/queue report for a built ledger')
+    report.add_argument('ledger', help='path to a ledger sqlite built by `build`')
+    report.set_defaults(func=_cmd_report)
+
+    supersede = subparsers.add_parser(
+        'supersede', help="supersede a rule version's decisions and re-queue its fingerprints")
+    supersede.add_argument('ledger', help='path to a ledger sqlite built by `build`')
+    supersede.add_argument('rule_id', help='the rule id to supersede (e.g. doc-only)')
+    supersede.add_argument('version', type=int, help='the rule version to supersede')
+    supersede.add_argument('--keep', action='store_true',
+                           help='do not retire the rule (supersede its decisions only)')
+    supersede.add_argument('--no-rebuild', action='store_true',
+                           help='do not rebuild the current_verdict cache after superseding')
+    supersede.set_defaults(func=_cmd_supersede)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """``python -m divergulent.classify.ledger``: build / report / supersede.
+
+    The single clock read of the ledger stack lives here (in the subcommand
+    handlers via :func:`_cli_now`); it is threaded down as ``decided_at`` /
+    ``superseded_at`` so every other module stays deterministic.
+    """
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == '__main__':
+    sys.exit(main())
