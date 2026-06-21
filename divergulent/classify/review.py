@@ -90,6 +90,9 @@ SOURCES_BASE = 'https://sources.debian.org'
 SOURCE_FILE_NAMESPACE = 'review-original-source'
 SOURCE_FILE_TTL_SECONDS = 30 * 24 * 60 * 60  # 30 days
 
+# The production Sigstore OAuth issuer (sigstore 4.x has no Issuer.production()).
+_SIGSTORE_OAUTH_ISSUER = 'https://oauth2.sigstore.dev/auth'
+
 # How many lines of original context to show around each diff hunk when the file
 # is too large to show whole.
 DEFAULT_CONTEXT_WINDOW = 12
@@ -343,22 +346,23 @@ def sigstore_signer(record_bytes: bytes) -> tuple[str, str]:
     the Fulcio/Rekor calls); the tests inject a fake signer and never reach it.
     """
     try:
-        import io
-
         from sigstore.oidc import Issuer
-        from sigstore.sign import SigningContext
+        from sigstore.sign import ClientTrustConfig, SigningContext
     except ImportError as exc:
         raise RuntimeError(
             'sigstore not installed; run "pip install divergulent[verify]" to '
             'sign a human-review decision') from exc
 
-    identity_token = Issuer.production().identity_token()
-    signing_context = SigningContext.production()
+    # sigstore 4.x API: build the OAuth issuer from its URL (there is no
+    # Issuer.production()), get an interactive identity token, and build the
+    # signing context from the production trust config (not SigningContext
+    # .production()). sign_artifact takes raw bytes, not a file object.
+    identity_token = Issuer(_SIGSTORE_OAUTH_ISSUER).identity_token()
+    signing_context = SigningContext.from_trust_config(ClientTrustConfig.production())
     with signing_context.signer(identity_token) as signer:
-        bundle = signer.sign_artifact(io.BytesIO(record_bytes))
+        bundle = signer.sign_artifact(record_bytes)
 
-    signed_by = identity_token.identity
-    return bundle.to_json(), signed_by
+    return bundle.to_json(), identity_token.identity
 
 
 # ---------------------------------------------------------------------------
@@ -567,10 +571,10 @@ def _real_fetch():
     the on-disk cache), so the original-source fetch is throttled and cached like
     every other network access in the project.
     """
-    from divergulent.cache import Cache
+    from divergulent.cache import Cache, default_cache_dir
     from divergulent.http import HttpClient
 
-    client = HttpClient(Cache())
+    client = HttpClient(Cache(default_cache_dir()))
 
     def fetch(url: str) -> str | None:
         return client.get_text(

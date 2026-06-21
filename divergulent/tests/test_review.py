@@ -372,3 +372,28 @@ class SigstoreSignerAbsentTestCase(testtools.TestCase):
         exc = self.assertRaises(
             RuntimeError, review.sigstore_signer, b'record')
         self.assertIn('pip install divergulent[verify]', str(exc))
+
+
+class RealFetchTestCase(testtools.TestCase):
+    """The real fetch builder is wired by the CLI but injected away in every
+    other test, so it had no coverage. Exercise its construction directly: it
+    must build an HttpClient over a real Cache and return a callable without
+    touching the network (Cache stores its root lazily). This guards the
+    ``Cache(default_cache_dir())`` wiring that a missing argument once broke."""
+
+    def test_real_fetch_builds_a_callable(self):
+        # Point the cache at a temp dir so nothing under $HOME is created.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        old = os.environ.get('DIVERGULENT_CACHE_DIR')
+        os.environ['DIVERGULENT_CACHE_DIR'] = tmp.name
+
+        def restore():
+            if old is None:
+                os.environ.pop('DIVERGULENT_CACHE_DIR', None)
+            else:
+                os.environ['DIVERGULENT_CACHE_DIR'] = old
+        self.addCleanup(restore)
+
+        fetch = review._real_fetch()
+        self.assertTrue(callable(fetch))
