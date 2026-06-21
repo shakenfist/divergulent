@@ -205,16 +205,50 @@ def _read_fingerprint_groups(index_path: str) -> dict[str, dict]:
     return groups
 
 
-def classify_index(corpus_dir: str, index_path: str) -> ClassifyResult:
-    """Classify every distinct fingerprint in ``index_path`` against ``corpus_dir``.
+@dataclass(frozen=True)
+class ClassifiedFingerprint:
+    """The shared per-fingerprint pass result: counts + the raw extractor output.
 
-    Reads each representative body once via ``measure.read_body``, runs the
-    claim/content/rules extractors, and derives consistency + review flag.  Pure
-    apart from reading the index and the body files (no network, no subprocess).
+    One record per distinct fingerprint, carrying everything BOTH callers (the
+    measurement in ``classify_index`` and the phase-3 recorder in ``record.py``)
+    need: the recurrence counts and representative provenance, plus the raw
+    ``claim`` / ``profile`` / ``verdict`` objects so neither caller re-runs the
+    extractors.  Factoring the per-fingerprint work here keeps the
+    measurement and the ledger recorder reading the diff exactly once and in
+    exactly the same way -- no duplication, no drift.
+    """
+
+    fingerprint: str
+    n_occurrences: int
+    n_packages: int
+    representative_sha: str
+    representative_package: str
+    representative_patch_name: str
+
+    claim: object
+    """The ``claim.Claim`` for the representative occurrence."""
+
+    profile: object
+    """The ``content.ContentProfile`` for the (fingerprint-stable) body."""
+
+    verdict: object
+    """The ``rules.ContentVerdict`` for the body (category + signals + flags)."""
+
+
+def iter_classified(corpus_dir: str, index_path: str):
+    """Yield one :class:`ClassifiedFingerprint` per distinct fingerprint.
+
+    The single shared per-fingerprint pass over the phase-1 index: for each
+    distinct fingerprint (sorted for determinism) it reads the representative
+    body once via ``measure.read_body`` and runs ``extract_claim`` +
+    ``content.profile`` + ``classify_content``, yielding the raw extractor
+    objects alongside the recurrence counts.  Both ``classify_index`` (the
+    phase-2 measurement) and the phase-3 ledger recorder consume this generator,
+    so the diff is read and classified exactly once per fingerprint and in one
+    place.  Pure apart from reading the index and the body files (no network, no
+    subprocess).
     """
     groups = _read_fingerprint_groups(index_path)
-
-    classifications: list[Classification] = []
     for fingerprint in sorted(groups):
         group = groups[fingerprint]
         rep_sha = group['rep_sha']
@@ -223,6 +257,33 @@ def classify_index(corpus_dir: str, index_path: str) -> ClassifyResult:
         claim = extract_claim(group['rep_patch_name'], body)
         prof = content_mod.profile(body)
         verdict = classify_content(claim, prof, body)
+
+        yield ClassifiedFingerprint(
+            fingerprint=fingerprint,
+            n_occurrences=group['n_occurrences'],
+            n_packages=len(group['packages']),
+            representative_sha=rep_sha,
+            representative_package=group['rep_package'],
+            representative_patch_name=group['rep_patch_name'],
+            claim=claim,
+            profile=prof,
+            verdict=verdict,
+        )
+
+
+def classify_index(corpus_dir: str, index_path: str) -> ClassifyResult:
+    """Classify every distinct fingerprint in ``index_path`` against ``corpus_dir``.
+
+    Builds the phase-2 ``Classification`` list from the shared
+    :func:`iter_classified` pass, deriving consistency + review flag from each
+    record's raw extractor output.  Pure apart from reading the index and the
+    body files (no network, no subprocess).
+    """
+    classifications: list[Classification] = []
+    for record in iter_classified(corpus_dir, index_path):
+        claim = record.claim
+        prof = record.profile
+        verdict = record.verdict
 
         flag_details = sorted({flag.detail for flag in verdict.flags})
         flag_evidence = [flag.evidence for flag in verdict.flags]
@@ -234,17 +295,17 @@ def classify_index(corpus_dir: str, index_path: str) -> ClassifyResult:
             prof.touches_code, has_dangerous_flag)
 
         classifications.append(Classification(
-            fingerprint=fingerprint,
-            representative_sha=rep_sha,
-            representative_package=group['rep_package'],
-            representative_patch_name=group['rep_patch_name'],
+            fingerprint=record.fingerprint,
+            representative_sha=record.representative_sha,
+            representative_package=record.representative_package,
+            representative_patch_name=record.representative_patch_name,
             content_category=verdict.content_category,
             claim_category=claim.claimed_category,
             confidence=verdict.confidence,
             consistency=consistency,
             review_flag=review_flag,
-            n_occurrences=group['n_occurrences'],
-            n_packages=len(group['packages']),
+            n_occurrences=record.n_occurrences,
+            n_packages=record.n_packages,
             flag_count=len(verdict.flags),
             flag_details=flag_details,
             signals=list(verdict.signals),
