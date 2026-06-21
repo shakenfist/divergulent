@@ -44,6 +44,13 @@ divergulent = "divergulent.cli:main"
 verify = [
     "sigstore>=4.3,<5",  # apache2 — Sigstore keyless signature verification
 ]
+# Optional, opt-in LLM triage of the substantive patch residue. Curation-side
+# only (the cache builder), never a runtime import; the base install stays
+# stdlib + python-debian. The anthropic SDK is imported lazily in
+# classify/triage.py, mirroring the sigstore verify extra.
+triage = [
+    "anthropic>=0.40",  # mit — Anthropic API client for LLM triage
+]
 test = [
     "coverage",         # apache2
     "testtools<2.9.2",  # mit; stestr uses _b removed in 2.8
