@@ -703,13 +703,25 @@ def _cli_now() -> str:
 def _cmd_build(args: argparse.Namespace) -> int:
     """``build``: create a ledger from a corpus and print the verdict report."""
     from divergulent.classify import record, verdict
+    from divergulent.progress import Progress
 
     index_path = args.index or os.path.join(args.corpus_dir, 'fingerprints.sqlite')
     out_path = args.out or os.path.join(args.corpus_dir, 'ledger.sqlite')
 
+    # Count the distinct fingerprints up front so the build shows live progress
+    # over the ~3-4 minute deterministic pass instead of going silent.
+    index_conn = sqlite3.connect(index_path)
+    try:
+        (total,) = index_conn.execute('SELECT COUNT(DISTINCT fingerprint) FROM patch').fetchone()
+    finally:
+        index_conn.close()
+    print('recording deterministic decisions for %d fingerprints...' % total, file=sys.stderr)
+    progress = Progress(total)
+
     conn = create_ledger(out_path)
     try:
-        stats = record.record_to_ledger(conn, args.corpus_dir, index_path, now=_cli_now())
+        stats = record.record_to_ledger(
+            conn, args.corpus_dir, index_path, now=_cli_now(), progress=progress)
         rows = verdict.rebuild_current_verdict(conn)
         print(verdict.render_report(verdict.summarise_ledger(conn)))
         print('built ledger: %s' % out_path)

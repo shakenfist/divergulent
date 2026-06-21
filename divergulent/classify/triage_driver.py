@@ -211,7 +211,7 @@ class TriagedItem:
 
 
 def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
-               model=DEFAULT_MODEL):
+               model=DEFAULT_MODEL, progress=None):
     """Triage a BOUNDED slice of the prioritised residue; record each result.
 
     Builds the prioritised work-list (:func:`build_work_list`), takes the first
@@ -233,9 +233,18 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
     stats = TriageRunStats(queue_size=len(verdict_mod.queue(conn)))
     triaged: list[TriagedItem] = []
 
-    for item in selected:
+    total = len(selected)
+    for position, item in enumerate(selected, start=1):
         body = measure.read_body(corpus_dir, item.representative_sha)
         claim_category = extract_claim(item.representative_patch_name, body).claimed_category
+
+        # Each triage is two (slow) LLM calls; announce the item BEFORE the call
+        # so the run is not silent while claude works, then the verdict after.
+        if progress is not None:
+            flag = ' [dangerous-construct]' if item.has_dangerous_construct else ''
+            progress('[%d/%d] triaging %s (%s, %d pkgs)%s ...' % (
+                position, total, item.representative_patch_name,
+                item.fingerprint[:12], item.n_packages, flag))
 
         result = triage_and_verify(
             body, call=call, claim_category=claim_category,
@@ -254,6 +263,9 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
             stats.needs_human += 1
         if 'claim/content mismatch' in result.reason:
             stats.claim_mismatches += 1
+
+        if progress is not None:
+            progress('[%d/%d]   -> %s (%s)' % (position, total, category, result.routing))
 
         triaged.append(TriagedItem(item=item, result=result))
 
