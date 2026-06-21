@@ -63,12 +63,14 @@ nothing else.
 2. The queue is the same ~43k residue, now a live view rather than a number —
    phase 4 appends into the ledger and the queue shrinks automatically.
 
-## Known follow-up (performance)
+## Performance: per-row commits batched (fixed)
 
-The build took **~11 minutes** for 60,640 decisions because the append
-primitives `commit()` per row (60k commits + a per-fingerprint existence
-query). Correct, but slow. Batching the recorder into a single transaction (and
-committing once) would drop this to seconds — worth doing before the build is
-re-run routinely (the multi-release matrix, periodic refreshes). It is a
-curation-side one-off, so it does not block phase 3, but it is the clear next
-optimisation.
+The first build took **~11 minutes** for 60,640 decisions because the append
+primitives `commit()`-ed per row — 60k fsyncs. The recorder now appends with
+`commit=False` and commits **once** at the end (one transaction), which cut the
+build to **~3m40s** for the same output. The fsync storm is gone; the remaining
+time is the genuine compute floor — the classification pass (loading 60k bodies
+and running the rules, ~42s alone) plus the 60k per-fingerprint idempotency
+checks. A further optional win (skipping the idempotency `SELECT` when building
+into a fresh, empty ledger) could trim it more, but is not needed: the
+transactional fix removed the dominant cost.

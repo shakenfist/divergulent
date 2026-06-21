@@ -311,13 +311,19 @@ def append_decision(conn: sqlite3.Connection, *, fingerprint: str, category: str
                     confidence: str, decided_by: str, rule_version: int, kind: str,
                     evidence: str | None, decided_at: str,
                     input_snapshot: str | None = None,
-                    input_fresh_until: str | None = None) -> int:
+                    input_fresh_until: str | None = None, commit: bool = True) -> int:
     """Append one immutable ``decision`` row; returns its new id.
 
     INSERT only — this never edits or replaces an existing row.  ``decided_at``
     is supplied by the caller (this module never reads a clock).
     ``input_snapshot`` / ``input_fresh_until`` are reserved for external rules
     (phase 6) and default to ``None`` for the pure phase-2 rules.
+
+    ``commit`` defaults to True (each append is durable on its own).  A bulk
+    caller (the recorder appending ~60k rows) passes ``commit=False`` and
+    commits once at the end, turning 60k fsyncs into one transaction;
+    same-connection reads still see the uncommitted rows, so the recorder's
+    idempotency check is unaffected.
     """
     cursor = conn.execute(
         'INSERT INTO decision '
@@ -326,18 +332,20 @@ def append_decision(conn: sqlite3.Connection, *, fingerprint: str, category: str
         'VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)',
         (fingerprint, category, confidence, decided_by, rule_version, kind, evidence,
          decided_at, input_snapshot, input_fresh_until))
-    conn.commit()
+    if commit:
+        conn.commit()
     return int(cursor.lastrowid)
 
 
 def append_observation(conn: sqlite3.Connection, *, fingerprint: str, kind: str,
                        detail: str, evidence: str | None, observed_by: str,
-                       rule_version: int, observed_at: str) -> int:
+                       rule_version: int, observed_at: str, commit: bool = True) -> int:
     """Append one immutable ``observation`` row; returns its new id.
 
     INSERT only.  An observation (e.g. a dangerous-construct flag) is never a
     category decision; it rides alongside one.  ``observed_at`` is caller-
-    supplied.
+    supplied.  ``commit`` defaults to True; a bulk caller passes ``commit=False``
+    and commits once at the end (see :func:`append_decision`).
     """
     cursor = conn.execute(
         'INSERT INTO observation '
@@ -345,7 +353,8 @@ def append_observation(conn: sqlite3.Connection, *, fingerprint: str, kind: str,
         'observed_at, superseded_at) '
         'VALUES (?, ?, ?, ?, ?, ?, ?, NULL)',
         (fingerprint, kind, detail, evidence, observed_by, rule_version, observed_at))
-    conn.commit()
+    if commit:
+        conn.commit()
     return int(cursor.lastrowid)
 
 

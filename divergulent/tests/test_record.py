@@ -148,6 +148,25 @@ class RecordToLedgerTestCase(testtools.TestCase):
     def _live_by_fingerprint(self, conn):
         return {row['fingerprint']: row for row in ledger_mod.live_decisions(conn)}
 
+    def test_batched_decisions_persist_across_connections(self):
+        # The recorder appends with commit=False and commits once at the end; a
+        # SECOND connection must see the rows, proving the batch was committed.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        index_path = _build_synthetic_corpus(tmp.name)
+        path = os.path.join(tmp.name, 'ledger.sqlite')
+        conn = ledger_mod.create_ledger(path)
+        stats = record.record_to_ledger(conn, tmp.name, index_path, now=WHEN)
+        conn.close()
+
+        other = sqlite3.connect(path)
+        self.addCleanup(other.close)
+        (decisions,) = other.execute('SELECT COUNT(*) FROM decision').fetchone()
+        (observations,) = other.execute('SELECT COUNT(*) FROM observation').fetchone()
+        self.assertEqual(stats.decisions_appended, decisions)
+        self.assertEqual(stats.observations_appended, observations)
+        self.assertGreater(decisions, 0)
+
     def test_one_live_decision_per_fingerprint(self):
         conn, stats = self._run()
         # Four distinct fingerprints -> four decisions.

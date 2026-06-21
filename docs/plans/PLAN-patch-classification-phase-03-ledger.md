@@ -14,8 +14,8 @@ unknown / 13,382 packaging / 4,351 documentation) with full provenance; the
 derived queue is the 42,907-fingerprint residue, and supersession re-queues
 surgically.** Full analysis in
 [PLAN-patch-classification-phase-03-findings.md](PLAN-patch-classification-phase-03-findings.md).
-Known follow-up: the per-row-commit build takes ~11 min; batching to one
-transaction would make it seconds.
+The build's per-row commits were batched into one transaction, cutting it from
+~11 min to ~3m40s.
 
 ## Why this is phase 3 (after the extractors)
 

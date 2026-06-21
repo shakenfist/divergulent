@@ -119,7 +119,7 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None):
                 conn, fingerprint=record.fingerprint,
                 category=verdict.content_category, confidence=verdict.confidence,
                 decided_by=decided_by, rule_version=rule_version, kind='heuristic',
-                evidence=' | '.join(verdict.signals), decided_at=now)
+                evidence=' | '.join(verdict.signals), decided_at=now, commit=False)
             stats.decisions_appended += 1
 
         for flag in verdict.flags:
@@ -133,7 +133,12 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None):
                     conn, fingerprint=record.fingerprint, kind=flag.kind,
                     detail=flag.detail, evidence=flag.evidence,
                     observed_by=_SCAN_RULE_ID, rule_version=RULES_VERSION,
-                    observed_at=now)
+                    observed_at=now, commit=False)
                 stats.observations_appended += 1
 
+    # One commit for the whole batch: the appends above ran ``commit=False`` so
+    # ~60k inserts are a single transaction (one fsync) rather than one per row,
+    # which turns an ~11-minute build into seconds. Same-connection reads during
+    # the loop still saw the uncommitted rows, so idempotency was unaffected.
+    conn.commit()
     return stats
