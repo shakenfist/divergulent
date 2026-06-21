@@ -457,3 +457,41 @@ class ResilienceTestCase(DriverFixture, testtools.TestCase):
         self.assertEqual(5, stats.too_large)
         self.assertEqual(5, stats.needs_human)
         self.assertEqual(5, len(ledger_mod.pending_review_items(conn)))
+
+
+class CrossBatchClusteringTestCase(DriverFixture, testtools.TestCase):
+    """Rule discovery must cluster across the whole ledger, not just one run --
+    a pattern that accumulates over several batches still surfaces a candidate."""
+
+    def _seed_verified(self, conn, fingerprints, names, category='bugfix'):
+        for name in names:
+            ledger_mod.append_decision(
+                conn, fingerprint=fingerprints[name], category=category,
+                confidence='high', decided_by='llm-triage:m', rule_version=1,
+                kind='llm', verified=True, evidence='', decided_at=WHEN, commit=False)
+        conn.commit()
+
+    def test_clusters_verified_decisions_across_batches(self):
+        corpus_dir, index_path, _, conn, fingerprints = self._setup()
+        # Three look-alike code-only patches verified as bugfix -- as if triaged
+        # across separate runs (no single run's `triaged` list held all three).
+        self._seed_verified(conn, fingerprints, ['bug-a.patch', 'bug-b.patch', 'bug-c.patch'])
+
+        from_ledger = triage_driver.candidate_rules_from_ledger(conn, corpus_dir, index_path)
+        self.assertEqual(1, len(from_ledger))
+        self.assertEqual(3, from_ledger[0].member_count)
+        self.assertEqual('bugfix', from_ledger[0].category)
+
+        # The per-run view over an empty run finds nothing -- proving the value is
+        # the cross-batch ledger clustering, not a single run.
+        self.assertEqual([], triage_driver.candidate_rules(corpus_dir, []))
+
+    def test_unverified_decisions_do_not_cluster_from_the_ledger(self):
+        corpus_dir, index_path, _, conn, fingerprints = self._setup()
+        for name in ['bug-a.patch', 'bug-b.patch', 'bug-c.patch']:
+            ledger_mod.append_decision(
+                conn, fingerprint=fingerprints[name], category='bugfix',
+                confidence='high', decided_by='llm-triage:m', rule_version=1,
+                kind='llm', verified=False, evidence='', decided_at=WHEN, commit=False)
+        conn.commit()
+        self.assertEqual([], triage_driver.candidate_rules_from_ledger(conn, corpus_dir, index_path))

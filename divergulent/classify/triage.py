@@ -690,7 +690,9 @@ def main(argv: list[str] | None = None) -> int:
             conn, args.corpus_dir, index_path, call=call, now=_cli_now(),
             limit=args.limit, model=args.model,
             progress=lambda msg: print(msg, file=sys.stderr, flush=True))
-        candidates = triage_driver.candidate_rules(args.corpus_dir, triaged)
+        # Cluster across the WHOLE ledger (every verified decision from every
+        # batch), not just this run -- a pattern accumulates over batches.
+        candidates = triage_driver.candidate_rules_from_ledger(conn, args.corpus_dir, index_path)
         verdict_mod.rebuild_current_verdict(conn)
     finally:
         conn.close()

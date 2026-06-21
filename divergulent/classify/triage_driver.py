@@ -407,6 +407,48 @@ def candidate_rules(corpus_dir, triaged, *, min_members=DEFAULT_RULE_MIN_MEMBERS
     return candidates
 
 
+def candidate_rules_from_ledger(conn, corpus_dir, index_path, *,
+                                min_members=DEFAULT_RULE_MIN_MEMBERS):
+    """Cluster EVERY verified LLM decision in the ledger into candidate rules.
+
+    The cross-batch view: rule discovery is a property of the accumulated ledger,
+    not one run.  A pattern that builds up over several triage batches (two
+    matching verdicts this run, two more next run) only reaches the threshold
+    when clustered over the whole ledger -- clustering a single run's ``triaged``
+    list (:func:`candidate_rules`) would miss it.
+
+    Pulls all live, ``verified`` ``llm`` decisions, groups them by
+    ``(category, structural key)`` (the key from each fingerprint's representative
+    body), and returns clusters of at least ``min_members``.  Only verified
+    decisions count: an unverified draft is not a settled signal worth a rule.
+    NEVER writes a rule -- the proposal goes to a human.
+    """
+    groups = _index_groups(index_path)
+    rows = conn.execute(
+        "SELECT fingerprint, category FROM decision "
+        "WHERE kind = 'llm' AND verified = 1 AND superseded_at IS NULL").fetchall()
+
+    clusters: dict[tuple[str, str], list[tuple[str, int]]] = defaultdict(list)
+    for fingerprint, category in rows:
+        group = groups.get(fingerprint)
+        if group is None:  # queued fingerprint with no provenance row -- skip
+            continue
+        key = _structural_key(corpus_dir, group['rep_sha'])
+        clusters[(category, key)].append((fingerprint, group['n_occurrences']))
+
+    candidates: list[CandidateRule] = []
+    for (category, key), members in clusters.items():
+        if len(members) < min_members:
+            continue
+        candidates.append(CandidateRule(
+            category=category, structural_key=key, member_count=len(members),
+            fingerprints=sorted(fp for fp, _ in members),
+            occurrences=sum(occ for _, occ in members)))
+
+    candidates.sort(key=lambda c: (c.member_count, c.occurrences), reverse=True)
+    return candidates
+
+
 # ---------------------------------------------------------------------------
 # The findings report.
 # ---------------------------------------------------------------------------
