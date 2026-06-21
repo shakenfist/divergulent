@@ -177,3 +177,58 @@ def record_triage_result(conn, fingerprint, result, *, now, register=True,
 
     conn.commit()
     return stats
+
+
+def record_triage_to_human(conn, fingerprint, reason, *, now, model,
+                           prompt_version=triage_mod.PROMPT_VERSION, register=True, priority=0):
+    """Record a fingerprint we could NOT triage so a human handles it; idempotent.
+
+    For a patch the LLM could not classify -- too large for the model's context,
+    or a backend error -- appends an ``llm`` ``decision`` (category ``unknown``,
+    ``verified=False``, evidence noting the failure) under the SAME
+    ``(model, prompt_version)`` rule identity as a normal triage, plus a pending
+    ``review_queue`` item carrying ``reason``. Recording the decision means a
+    later run finds a live decision for that triple and SKIPS the fingerprint
+    instead of re-calling the failing/expensive model on it -- the budget is
+    spent at most once. The human (step 4e) decides the real category from the
+    full diff. ``now`` is caller-supplied; the call commits.
+    """
+    decided_by = _decided_by(model)
+    if register:
+        ledger_mod.register_rules(conn, [_registered_rule(model, prompt_version)])
+
+    stats = TriageRecordStats(verified=False)
+    if ledger_mod.live_decision_exists(
+            conn, fingerprint=fingerprint, decided_by=decided_by, rule_version=prompt_version):
+        stats.decision_skipped = True
+    else:
+        ledger_mod.append_decision(
+            conn, fingerprint=fingerprint, category='unknown', confidence='low',
+            decided_by=decided_by, rule_version=prompt_version, kind='llm', verified=False,
+            evidence=json.dumps({'triage_error': reason}, sort_keys=True),
+            decided_at=now, commit=False)
+        stats.decision_appended = True
+
+    if ledger_mod.pending_review_item_exists(conn, fingerprint=fingerprint, decided_by=decided_by):
+        stats.review_skipped = True
+    else:
+        ledger_mod.append_review_item(
+            conn, fingerprint=fingerprint, reason=reason,
+            draft_category='unknown', draft_confidence='low',
+            enqueued_at=now, priority=priority, commit=False)
+        stats.review_appended = True
+
+    conn.commit()
+    return stats
+
+
+def already_triaged(conn, fingerprint, *, model, prompt_version=triage_mod.PROMPT_VERSION) -> bool:
+    """Whether ``fingerprint`` already has a live LLM decision for this model.
+
+    The driver checks this BEFORE calling the (slow, paid) model, so a resumed or
+    re-run pass never re-triages a fingerprint that was already decided -- the
+    idempotency that ``record_triage_result`` enforces at write time, lifted to
+    skip the LLM call itself.
+    """
+    return ledger_mod.live_decision_exists(
+        conn, fingerprint=fingerprint, decided_by=_decided_by(model), rule_version=prompt_version)

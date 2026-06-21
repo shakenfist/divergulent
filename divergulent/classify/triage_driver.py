@@ -49,6 +49,14 @@ from divergulent.classify.claim import extract_claim
 from divergulent.classify.ledger import live_observations
 from divergulent.classify.triage import DEFAULT_MODEL, triage_and_verify
 
+# Diffs larger than this (characters) are routed straight to a human rather than
+# sent to the model: a giant auto-generated patch (e.g. debian-changes) overflows
+# the context window ("Prompt is too long"), and truncating it would yield a
+# partial, misleading classification. The human reviews the full diff anyway.
+# Generous so genuine large patches still get an LLM read; the per-item error
+# handler backstops anything that slips through.
+MAX_DIFF_CHARS_FOR_LLM = 400_000
+
 # The dangerous-construct observation kind the phase-2 scan writes (see
 # ``record.py`` / the ledger).  A live observation of this kind on a fingerprint
 # both raises its triage priority and forces the result to human review.
@@ -195,6 +203,10 @@ class TriageRunStats:
     claim_mismatches: int = 0
     by_category: dict[str, int] = field(default_factory=dict)
     untriaged_remaining: int = 0
+    # Items in the slice that did NOT go through the model this run.
+    skipped_already_triaged: int = 0   # a live decision already existed (resume)
+    too_large: int = 0                 # diff too big for the model -> routed to a human
+    errored: int = 0                   # the backend raised -> routed to a human
 
 
 @dataclass(frozen=True)
@@ -235,8 +247,31 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
 
     total = len(selected)
     for position, item in enumerate(selected, start=1):
+        # Resume safely: if this fingerprint already has a live LLM decision for
+        # this model, skip it WITHOUT re-calling the (slow, paid) model. The
+        # budget for a fingerprint is spent at most once, even across re-runs.
+        if triage_record.already_triaged(conn, item.fingerprint, model=model):
+            stats.skipped_already_triaged += 1
+            if progress is not None:
+                progress('[%d/%d] %s already triaged, skipping' % (
+                    position, total, item.fingerprint[:12]))
+            continue
+
         body = measure.read_body(corpus_dir, item.representative_sha)
         claim_category = extract_claim(item.representative_patch_name, body).claimed_category
+
+        # A giant diff overflows the model; route it to a human (full diff in
+        # review) rather than truncate to a misleading partial classification.
+        if len(body) > MAX_DIFF_CHARS_FOR_LLM:
+            reason = 'diff too large for LLM triage (%d chars); routed to a human' % len(body)
+            triage_record.record_triage_to_human(
+                conn, item.fingerprint, reason, now=now, model=model, priority=_priority_key(item)[1])
+            stats.too_large += 1
+            stats.needs_human += 1
+            if progress is not None:
+                progress('[%d/%d]   -> too large (%d chars) -> needs_human' % (
+                    position, total, len(body)))
+            continue
 
         # Each triage is two (slow) LLM calls; announce the item BEFORE the call
         # so the run is not silent while claude works, then the verdict after.
@@ -246,13 +281,24 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
                 position, total, item.representative_patch_name,
                 item.fingerprint[:12], item.n_packages, flag))
 
-        result = triage_and_verify(
-            body, call=call, claim_category=claim_category,
-            has_dangerous_construct=item.has_dangerous_construct, model=model)
+        try:
+            result = triage_and_verify(
+                body, call=call, claim_category=claim_category,
+                has_dangerous_construct=item.has_dangerous_construct, model=model)
+        except Exception as exc:  # noqa: BLE001 -- one bad patch must not abort the run
+            # Route the failing patch to a human and RECORD it, so it is neither
+            # lost, re-tried-as-LLM forever, nor allowed to crash the whole batch.
+            reason = 'LLM triage failed: %s' % exc
+            triage_record.record_triage_to_human(
+                conn, item.fingerprint, reason, now=now, model=model, priority=_priority_key(item)[1])
+            stats.errored += 1
+            stats.needs_human += 1
+            if progress is not None:
+                progress('[%d/%d]   -> triage error -> needs_human: %s' % (position, total, exc))
+            continue
 
         triage_record.record_triage_result(
-            conn, item.fingerprint, result, now=now,
-            priority=_priority_key(item)[1])
+            conn, item.fingerprint, result, now=now, priority=_priority_key(item)[1])
 
         stats.triaged += 1
         category = result.draft.category
@@ -394,6 +440,9 @@ def render_run_report(stats: TriageRunStats, candidates: list[CandidateRule]) ->
     lines.append('- Verified: %d' % stats.verified)
     lines.append('- Needs human review: %d' % stats.needs_human)
     lines.append('- Claim/content mismatches: %d' % stats.claim_mismatches)
+    lines.append('- Skipped (already triaged on a prior run): %d' % stats.skipped_already_triaged)
+    lines.append('- Routed to human, too large for the model: %d' % stats.too_large)
+    lines.append('- Routed to human, triage error: %d' % stats.errored)
     lines.append('- **Untriaged remaining (budget did not cover): %d**'
                  % stats.untriaged_remaining)
     lines.append('')
@@ -423,6 +472,9 @@ def print_run_summary(stats: TriageRunStats, candidates: list[CandidateRule]) ->
     print('triaged %d of %d queued; verified=%d needs_human=%d claim_mismatches=%d' % (
         stats.triaged, stats.queue_size, stats.verified, stats.needs_human,
         stats.claim_mismatches))
+    if stats.skipped_already_triaged or stats.too_large or stats.errored:
+        print('skipped (already triaged)=%d; routed-to-human too-large=%d, errored=%d' % (
+            stats.skipped_already_triaged, stats.too_large, stats.errored))
     if stats.by_category:
         print('drafted categories:')
         for category in sorted(stats.by_category, key=lambda k: (-stats.by_category[k], k)):

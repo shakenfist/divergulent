@@ -24,6 +24,7 @@ import json
 import os
 import sqlite3
 import tempfile
+from unittest import mock
 from contextlib import redirect_stdout
 
 import testtools
@@ -395,3 +396,64 @@ class CliTestCase(DriverFixture, testtools.TestCase):
         self.assertEqual(5, len(llm))
         # The current_verdict cache exists (rebuild ran).
         self.assertTrue(verdict_mod.current_verdict(check))
+
+
+class ResilienceTestCase(DriverFixture, testtools.TestCase):
+    """Resume safely and never let one bad patch abort the run or re-spend budget."""
+
+    def test_a_re_run_never_recalls_the_model(self):
+        # Budget safety: after a full run, a second run must spend NOTHING on the
+        # model -- verified items have left the queue (settled), and any items
+        # still queued (routed to human) are skipped because they are already
+        # triaged. Either way the model is not called again.
+        corpus_dir, index_path, _, conn, _ = self._setup()
+        call = _fixed_call(
+            triage_response=_triage_json(category='bugfix'),
+            verify_response=_verify_json(agrees=True))
+        first, _ = triage_driver.run_triage(
+            conn, corpus_dir, index_path, call=call, now=WHEN, limit=5)
+        self.assertEqual(5, first.triaged)
+
+        calls = []
+
+        def counting_call(prompt, *, model):
+            calls.append(1)
+            return _triage_json(category='bugfix')
+
+        second, _ = triage_driver.run_triage(
+            conn, corpus_dir, index_path, call=counting_call, now=WHEN, limit=5)
+        self.assertEqual(0, len(calls), 'the model must not be re-called on a re-run')
+        self.assertEqual(0, second.triaged)
+
+    def test_backend_error_routes_each_to_human_and_does_not_crash(self):
+        corpus_dir, index_path, _, conn, _ = self._setup()
+
+        def boom(prompt, *, model):
+            raise RuntimeError('claude -p failed (exit 1): Prompt is too long')
+
+        stats, _ = triage_driver.run_triage(
+            conn, corpus_dir, index_path, call=boom, now=WHEN, limit=5)
+        self.assertEqual(0, stats.triaged)
+        self.assertEqual(5, stats.errored)
+        self.assertEqual(5, stats.needs_human)
+        self.assertEqual(5, len(ledger_mod.pending_review_items(conn)))
+
+        # The errored fingerprints were RECORDED, so a re-run skips them (no
+        # re-spend, no crash) rather than re-calling the failing backend.
+        second, _ = triage_driver.run_triage(
+            conn, corpus_dir, index_path, call=boom, now=WHEN, limit=5)
+        self.assertEqual(5, second.skipped_already_triaged)
+
+    def test_oversized_diff_routed_to_human_without_calling_the_model(self):
+        corpus_dir, index_path, _, conn, _ = self._setup()
+
+        def boom(prompt, *, model):
+            raise AssertionError('the model must not be called for an oversized diff')
+
+        with mock.patch('divergulent.classify.triage_driver.MAX_DIFF_CHARS_FOR_LLM', 1):
+            stats, _ = triage_driver.run_triage(
+                conn, corpus_dir, index_path, call=boom, now=WHEN, limit=5)
+        self.assertEqual(0, stats.triaged)
+        self.assertEqual(5, stats.too_large)
+        self.assertEqual(5, stats.needs_human)
+        self.assertEqual(5, len(ledger_mod.pending_review_items(conn)))
