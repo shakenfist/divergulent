@@ -52,8 +52,12 @@ import sys
 import urllib.parse
 from dataclasses import dataclass
 
+from divergulent.classify import fingerprint as fp
+from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import measure
 from divergulent.classify.claim import extract_claim
+
+_DEV_NULL = '/dev/null'
 
 # ---------------------------------------------------------------------------
 # Versioned constants.
@@ -139,20 +143,123 @@ def source_file_url(source_package: str, version: str, path: str, *, area: str =
         quoted_path)
 
 
+def _candidate_versions(version: str):
+    """The version forms to try on sources.debian.org, as installed then epoch-stripped.
+
+    sources.debian.org omits the Debian epoch (the ``N:`` prefix) from its
+    ``/data/...`` path, so a version like ``1:0.13-4`` is served under
+    ``0.13-4``.  We try the version as recorded first, then the epoch-stripped
+    form -- mirroring the patches adapter's ``_candidate_versions`` so the review
+    fetch resolves the same versions the corpus build did.
+    """
+    yield version
+    if ':' in version:
+        yield version.split(':', 1)[1]
+
+
 def fetch_source_file(source_package: str, version: str, path: str, *, fetch,
                       area: str = 'main') -> str | None:
     """Fetch the ORIGINAL (pre-patch) upstream file for ``path`` at ``version``.
 
     Builds the sources.debian.org raw URL (:func:`source_file_url`) for the
     unpacked source tree -- the file state a quilt patch applies against -- and
-    fetches it via the injected ``fetch(url) -> str | None``.  ``fetch`` is
-    injected so the test suite runs fully offline; the CLI wires in a real
+    fetches it via the injected ``fetch(url) -> str | None``.  When ``version``
+    carries a Debian epoch, the first (with-epoch) URL 404s because
+    sources.debian.org strips the epoch from its path, so we fall back to the
+    epoch-stripped form (:func:`_candidate_versions`).  ``fetch`` is injected so
+    the test suite runs fully offline; the CLI wires in a real
     ``HttpClient.get_text``-backed fetcher.  Returns the file text, or ``None``
-    when the file cannot be fetched (a missing original is rendered as "no
-    original available", never a hard failure of the review).
+    when no candidate resolves (a missing original is rendered as "no original
+    available", never a hard failure of the review).
     """
-    url = source_file_url(source_package, version, path, area=area)
-    return fetch(url)
+    for candidate in _candidate_versions(version):
+        url = source_file_url(source_package, candidate, path, area=area)
+        text = fetch(url)
+        if text is not None:
+            return text
+    return None
+
+
+@dataclass(frozen=True)
+class _FileDiff:
+    """One touched file's segment of a multi-file diff body.
+
+    ``path`` is the source-tree path the patch modifies (the ``+++ b/<path>``
+    target, prefix- and timestamp-stripped -- exactly what sources.debian.org
+    serves), and ``body`` is the ``--- ``/``+++ `` headers plus the hunks for
+    that one file.  A patch that touches several files yields one of these per
+    file so each is fetched and rendered against its OWN original.
+    """
+
+    path: str
+    body: str
+
+
+def split_diff_by_file(diff_body: str) -> list[_FileDiff]:
+    """Split a unified-diff body into one :class:`_FileDiff` per touched file.
+
+    A new file segment opens at each ``--- `` header that is immediately
+    followed by a ``+++ `` header; its ``path`` is taken from the ``+++ ``
+    target (falling back to the ``--- `` source when the target is
+    ``/dev/null``, i.e. a deletion).  Reuses ``fingerprint``'s diff-start and
+    header-path semantics so the path matches the patch tier exactly.  A body
+    with no recognisable file header yields an empty list -- the caller then
+    renders the raw diff with no original context.
+    """
+    lines = fp._split_lines(diff_body)
+    start = fp._diff_start(lines)
+    segments: list[_FileDiff] = []
+    current_path: str | None = None
+    current_lines: list[str] | None = None
+
+    index = start
+    total = len(lines)
+    while index < total:
+        line = lines[index]
+        nxt = lines[index + 1] if index + 1 < total else ''
+        if line.startswith('--- ') and nxt.startswith('+++ '):
+            if current_lines is not None:
+                segments.append(_FileDiff(current_path, '\n'.join(current_lines)))
+            source = fp._header_path(line)
+            target = fp._header_path(nxt)
+            path = target
+            if target == _DEV_NULL and source and source != _DEV_NULL:
+                path = source
+            current_path = path
+            current_lines = [line]
+        elif current_lines is not None:
+            current_lines.append(line)
+        index += 1
+
+    if current_lines is not None:
+        segments.append(_FileDiff(current_path, '\n'.join(current_lines)))
+    return segments
+
+
+def build_context_view(source_package: str, version: str, diff_body: str, *,
+                       fetch, area: str = 'main') -> str:
+    """Render a whole patch in the context of EACH original file it touches.
+
+    Splits ``diff_body`` per file (:func:`split_diff_by_file`), fetches each
+    touched file's ORIGINAL (pre-patch) upstream content from sources.debian.org
+    by its real source-tree path -- NOT the quilt patch filename -- and renders
+    that file's hunks against it (:func:`render_in_context`).  The per-file
+    blocks are joined under a header naming each file (and noting when its
+    original could not be fetched).  A diff with no parseable file headers falls
+    back to showing the raw diff with no original context.
+    """
+    segments = split_diff_by_file(diff_body)
+    if not segments:
+        return render_in_context(None, diff_body)
+
+    blocks: list[str] = []
+    for segment in segments:
+        original = fetch_source_file(source_package, version, segment.path, fetch=fetch, area=area)
+        header = '### %s' % segment.path
+        if original is None:
+            header += '  [original not fetched -- showing the raw diff only]'
+        blocks.append('%s\n%s' % (header, render_in_context(original, segment.body)))
+    return '\n\n'.join(blocks)
 
 
 # ---------------------------------------------------------------------------
@@ -413,7 +520,6 @@ def _llm_draft(conn: sqlite3.Connection, fingerprint: str) -> sqlite3.Row | None
     triage recorder (step 4c) appended it; we read the latest live llm row from
     the audit trail so the reviewer sees the current draft, not a superseded one.
     """
-    from divergulent.classify import ledger as ledger_mod
     llm_rows = [
         row for row in ledger_mod.decisions_for(conn, fingerprint)
         if row['kind'] == 'llm' and row['superseded_at'] is None]
@@ -440,8 +546,6 @@ def review_one(conn: sqlite3.Connection, corpus_dir: str, index_path: str,
     fakes; ``now`` is the caller-supplied ISO-8601 timestamp (this module never
     reads a clock).
     """
-    from divergulent.classify import ledger as ledger_mod
-
     fingerprint = item['fingerprint']
     patch_info = _representative_patch(index_path, fingerprint)
     if patch_info is None:
@@ -457,8 +561,10 @@ def review_one(conn: sqlite3.Connection, corpus_dir: str, index_path: str,
     from divergulent.classify.triage import diff_body as extract_diff_body
     body_diff = extract_diff_body(body)
 
-    original = fetch_source_file(source_package, version, patch_name, fetch=fetch)
-    context_view = render_in_context(original, body_diff)
+    # Fetch the ORIGINAL upstream content for each file the patch touches, keyed
+    # by the file's real source-tree path (the ``+++ b/<path>`` target), NOT the
+    # quilt patch filename -- so sources.debian.org serves the right file.
+    context_view = build_context_view(source_package, version, body_diff, fetch=fetch)
 
     draft = _llm_draft(conn, fingerprint)
     context = ReviewContext(

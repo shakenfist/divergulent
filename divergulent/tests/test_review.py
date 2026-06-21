@@ -289,6 +289,24 @@ class ReviewOneTestCase(ReviewFixture, testtools.TestCase):
         self.assertIn('char buf[64]', context.context_view)   # original context
         self.assertIn('+    char buf[4096];', context.context_view)  # the change
 
+    def test_fetches_the_modified_source_file_not_the_patch_filename(self):
+        # Regression: the original-context fetch must use the file the patch
+        # MODIFIES (``+++ b/src/reader.c``), not the quilt patch filename
+        # (``fix-buffer.patch``), which would 404 -> "no original available".
+        conn, corpus_dir, index_path, fp_hex = self._setup(draft_category='bugfix')
+        fetch, seen = _recording_fetch()
+        signer, _ = _fake_signer()
+        ask, _ = _scripted_ask(review.CHOICE_DEFER)
+
+        review.review_one(
+            conn, corpus_dir, index_path, self._item(conn),
+            fetch=fetch, signer=signer, ask=ask, now=WHEN)
+
+        self.assertEqual(
+            'https://sources.debian.org/data/main/r/reader/1.2-3/src/reader.c',
+            seen['url'])
+        self.assertNotIn(PATCH_NAME, seen['url'])
+
 
 class FetchSourceFileTestCase(testtools.TestCase):
 
@@ -311,6 +329,22 @@ class FetchSourceFileTestCase(testtools.TestCase):
             return None
         self.assertIsNone(
             review.fetch_source_file('reader', '1.2-3', 'src/reader.c', fetch=fetch))
+
+    def test_epoch_version_falls_back_to_stripped_path(self):
+        # sources.debian.org strips the Debian epoch from its /data path, so the
+        # with-epoch URL 404s (returns None) and the stripped form must be tried.
+        seen = []
+
+        def fetch(url):
+            seen.append(url)
+            return None if '%3A' in url else ORIGINAL  # the epoch colon, URL-quoted
+
+        text = review.fetch_source_file('reader', '1:1.2-3', 'src/reader.c', fetch=fetch)
+        self.assertEqual(ORIGINAL, text)
+        self.assertEqual(
+            ['https://sources.debian.org/data/main/r/reader/1%3A1.2-3/src/reader.c',
+             'https://sources.debian.org/data/main/r/reader/1.2-3/src/reader.c'],
+            seen)
 
 
 class RenderInContextTestCase(testtools.TestCase):
@@ -335,6 +369,59 @@ class RenderInContextTestCase(testtools.TestCase):
         rendered = review.render_in_context(None, '--- a\n+++ b\n@@ -1 +1 @@\n-x\n+y\n')
         self.assertIn('no original', rendered)
         self.assertIn('+y', rendered)
+
+
+class SplitDiffByFileTestCase(testtools.TestCase):
+
+    def test_single_file_keyed_by_target_path(self):
+        segments = review.split_diff_by_file(
+            '--- a/src/reader.c\n+++ b/src/reader.c\n@@ -1 +1 @@\n-x\n+y\n')
+        self.assertEqual(1, len(segments))
+        self.assertEqual('src/reader.c', segments[0].path)
+        self.assertIn('+y', segments[0].body)
+
+    def test_multi_file_splits_into_one_segment_each(self):
+        segments = review.split_diff_by_file(
+            '--- a/src/foo.c\n+++ b/src/foo.c\n@@ -1 +1 @@\n-a\n+b\n'
+            '--- a/src/bar.c\n+++ b/src/bar.c\n@@ -2 +2 @@\n-c\n+d\n')
+        self.assertEqual(['src/foo.c', 'src/bar.c'], [s.path for s in segments])
+        self.assertIn('+b', segments[0].body)
+        self.assertNotIn('+d', segments[0].body)  # bar's hunk did not leak into foo
+        self.assertIn('+d', segments[1].body)
+
+    def test_deletion_uses_source_path_when_target_is_dev_null(self):
+        segments = review.split_diff_by_file(
+            '--- a/src/gone.c\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n')
+        self.assertEqual('src/gone.c', segments[0].path)
+
+    def test_no_file_header_yields_no_segments(self):
+        self.assertEqual([], review.split_diff_by_file('not a diff at all\n'))
+
+
+class BuildContextViewTestCase(testtools.TestCase):
+
+    def test_fetches_each_file_by_its_real_path(self):
+        seen = []
+
+        def fetch(url):
+            seen.append(url)
+            return None
+
+        review.build_context_view(
+            'reader', '1.2-3',
+            '--- a/src/foo.c\n+++ b/src/foo.c\n@@ -1 +1 @@\n-a\n+b\n'
+            '--- a/inc/bar.h\n+++ b/inc/bar.h\n@@ -2 +2 @@\n-c\n+d\n',
+            fetch=fetch)
+
+        self.assertEqual(
+            ['https://sources.debian.org/data/main/r/reader/1.2-3/src/foo.c',
+             'https://sources.debian.org/data/main/r/reader/1.2-3/inc/bar.h'],
+            seen)
+
+    def test_no_parseable_files_renders_raw_diff(self):
+        view = review.build_context_view(
+            'reader', '1.2-3', 'not a diff\n', fetch=lambda url: None)
+        self.assertIn('no original', view)
 
 
 class CanonicalRecordTestCase(testtools.TestCase):
