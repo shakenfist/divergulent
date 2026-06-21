@@ -143,6 +143,20 @@ and can grow into a **tiny local web UI** (stdlib `http.server`, no dependency)
 if reading diffs in a browser is nicer at volume. Either way it is local,
 never a runtime client feature.
 
+### The reviewer sees the diff *in the context of the original code*
+A unified diff's two or three lines of context are not enough to judge what a
+change really *does*. So the review tool **fetches the original upstream source**
+for the file(s) the patch touches and renders the diff **in context** (the
+surrounding original code, ideally the whole file) — what the human actually
+needs to make a confident call. This is **on-demand, per reviewed item** (a
+human looks at a handful at a time), which is exactly why it is cheap and why it
+**does not undo the bulk corpus's deliberate skip of `.orig`**: the 60k-package
+crawl stays lean; only the few patches under active review pull their original
+source. The fetch reuses the existing apt-source / sources.debian.org access
+(reconstructing the file state the patch applies against — `.orig` plus the
+earlier series patches), and is local, on-demand, and curation-side like the
+rest of review.
+
 ### Non-determinism is handled by the ledger, not wished away
 An LLM verdict is not reproducible, so: the **full model response is stored as
 `evidence`**; the **`rule_version` is `model-id + prompt-version`** (bumping
@@ -176,7 +190,7 @@ untouched.
 | 4b | high | opus | none | Add the **verifier**: an adversarial `verify(diff, draft, *, call=...) -> Verification(agrees, reasoning)` — an independent, claim-blind call prompted to confirm or REFUTE the drafted category, defaulting to refuse when unsure. A `triage_and_verify(...)` that returns a draft + verification + a routing decision: `verified` (agree, high confidence) vs `needs_human` (disagree / low confidence / claim mismatch / dangerous-construct present). Pure given an injected `call`; offline tests for agree→verified, refute→needs_human, and the claim-mismatch and dangerous-construct routing. |
 | 4c | high | opus | none | **Ledger integration + precedence.** Add a `verified` notion to the ledger for LLM decisions (schema bump: a `verified` column on `decision`, or a verification record — pick one and version it), a `signature` + `signed_by` column for human decisions (4e), and a human-review queue table. Refine `verdict.current_verdict` precedence to `human > verified-llm > heuristic > unverified-llm` (an unverified LLM decision never wins over a heuristic). A recorder path that appends an LLM decision (`kind='llm'`, `decided_by` = the prompt id, `rule_version` = model+prompt, `evidence` = the model response, `verified` set by 4b) and enqueues `needs_human` items. Tests: a verified LLM decision overrides the heuristic; an unverified one does not; a human confirmation (kind=human) tops both; the queue holds the routed items. |
 | 4d | high | opus | none | The **triage driver + rule discovery + findings**, over a *bounded* slice (NOT the whole 43k). A `python -m divergulent.classify.triage` CLI that pulls the queue, orders it (review-flagged, dangerous-construct, high-occurrence first), triages within a `--budget`/`--limit` using the `claude -p` backend by default, records via 4c, and reports: verdicts by category, verified vs human-queued, claim/content mismatches, and **candidate rules** (clusters of identical LLM verdicts on look-alike patches, surfaced for human approval — never auto-applied). Run it over a small, reviewed sample to produce a findings note. Tests use the fake `call`; the run is a reviewed operational step. |
-| 4e | high | opus | none | The **local, signed human-review tool** — `python -m divergulent.classify.review`. Pulls the next highest-priority *un-reviewed* item from the human-review queue, shows the diff + the LLM draft + the author's claim + flags, takes the human's verdict (accept-LLM / override-category / `unknown` / defer), and records a **signed ManualDecision** (`kind='human'`) into the ledger — reusing the Sigstore signing already in the cache pipeline, so the decision carries a verifiable `signed_by` identity (non-repudiation). Local and interactive (never CI, never a client feature); start as a CLI, with the option to grow into a stdlib `http.server` local web UI. Sign/verify behind the existing `verify` extra; tests inject a fake signer/verifier and a fake stdin, fully offline. |
+| 4e | high | opus | none | The **local, signed human-review tool** — `python -m divergulent.classify.review`. Pulls the next highest-priority *un-reviewed* item from the human-review queue, **fetches the original upstream source** for the touched file(s) on-demand and shows the diff **in the context of the original code** (reusing the apt-source / sources.debian.org access; reconstruct the pre-patch file state) alongside the LLM draft + the author's claim + flags, takes the human's verdict (accept-LLM / override-category / `unknown` / defer), and records a **signed ManualDecision** (`kind='human'`) into the ledger — reusing the Sigstore signing already in the cache pipeline, so the decision carries a verifiable `signed_by` identity (non-repudiation). Local and interactive (never CI, never a client feature); start as a CLI, with the option to grow into a stdlib `http.server` local web UI. Sign/verify behind the existing `verify` extra; tests inject a fake source-fetch, signer/verifier, and stdin, fully offline. |
 
 4a → 4b → 4c → 4d, with 4e (the local review tool) after 4c (it needs the
 human-decision schema). One commit per step. Steps 4a–4c and 4e are fully
@@ -249,6 +263,12 @@ untouched — no silent truncation.
   `http.server` local web UI (nicer diff reading, side-by-side, syntax
   highlighting)? And how to present the LLM draft + claim + flags so the human
   decides fast without anchoring on the LLM.
+- **Original-context fetch** — full `apt-get source` + quilt to reconstruct the
+  exact pre-patch file state (complete but heavier), vs a targeted
+  sources.debian.org fetch of just the touched file(s) at the version (lighter,
+  but needs care to land the patch in the right pre-patch context). Either way
+  it is on-demand per reviewed item; pick the one that renders trustworthy
+  context with the least machinery.
 
 ## Out of scope (later phases)
 
