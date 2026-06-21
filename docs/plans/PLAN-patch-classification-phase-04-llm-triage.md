@@ -66,13 +66,26 @@ Triage the substantive residue with a verified, curation-side LLM tier that:
 ## Design decisions
 
 ### The LLM is the last tier, behind an injectable, optional boundary
-A `triage(diff, *, model, prompt_version) -> LlmVerdict(category, reasoning,
-confidence)` boundary, **blind to the author's claim** (the DEP-3 header is
-stripped before the diff is sent — the LLM analyses *content*, exactly as the
-deterministic content rules do). The default backend calls the Anthropic API;
-it is an **optional extra** (`pip install divergulent[triage]`), never a
-runtime import — clients consume a signed bundle (phase 5) and never call an
-LLM. Tests inject a fake `triage`, so the suite stays offline and free.
+A `triage(diff, *, call, model, prompt_version) -> LlmVerdict(category,
+reasoning, confidence)` boundary, **blind to the author's claim** (the DEP-3
+header is stripped before the diff is sent — the LLM analyses *content*, exactly
+as the deterministic content rules do). The `call` is injected, so the model
+backend is swappable and tests run offline against a fake. Two real backends
+ship, both curation-side, neither a runtime import:
+
+- **`claude -p` (default).** Shell out to the local Claude Code CLI in print
+  mode, so triage is billed against the operator's **Claude subscription**
+  rather than separate API calls. This needs **no Python dependency at all** —
+  just the `claude` CLI on `PATH` — which suits divergulent's
+  dependency-minimalism best, so it is the default.
+- **Anthropic API (optional alternative).** For separately-billed API use, an
+  `anthropic`-SDK backend behind an **optional extra**
+  (`pip install divergulent[triage]`), imported lazily exactly like
+  `verify.py`/sigstore.
+
+Either way the runtime never triages — clients consume a signed bundle
+(phase 5) and never call an LLM. The injected fake keeps the suite offline and
+free.
 
 ### Always verified — adversarial check, then a human queue
 An LLM draft does not count until verified. Verification is an **independent
@@ -122,7 +135,7 @@ untouched.
 
 | Step | Effort | Model | Isolation | Brief for sub-agent |
 |------|--------|-------|-----------|---------------------|
-| 4a | high | opus | none | Add `divergulent/classify/triage.py`: the injectable LLM boundary. `LlmVerdict` dataclass (category, reasoning, confidence, model, prompt_version); `triage(diff, *, call=...) -> LlmVerdict` that strips the DEP-3 header (claim-blind) and prompts for a category from the diff alone; a default `call` using the Anthropic API behind an **optional extra** (lazy import, clear error if absent — mirror `verify.py`/sigstore); `PROMPT_VERSION` constant. Add the `triage` extra to pyproject.toml. Tests inject a fake `call` (offline): claim-blindness (the header is not in the prompt), the verdict parsing, and the absent-extra path. |
+| 4a | high | opus | none | Add `divergulent/classify/triage.py`: the injectable LLM boundary. `LlmVerdict` dataclass (category, reasoning, confidence, model, prompt_version, raw_response); `triage(patch, *, call, ...) -> LlmVerdict` that strips the DEP-3 header (claim-blind) and prompts for a category from the diff alone; `PROMPT_VERSION` constant. TWO backends: `claude_cli_call` (default — shell out to `claude -p`, subscription-billed, NO Python dependency) and `anthropic_call` (optional API alternative behind the `triage` extra, lazy import + clear error, mirroring `verify.py`/sigstore). Tests inject a fake `call` (offline): claim-blindness (the header is not in the prompt), verdict parsing, the absent-extra path, and the `claude -p` subprocess invocation (mock `subprocess.run`). |
 | 4b | high | opus | none | Add the **verifier**: an adversarial `verify(diff, draft, *, call=...) -> Verification(agrees, reasoning)` — an independent, claim-blind call prompted to confirm or REFUTE the drafted category, defaulting to refuse when unsure. A `triage_and_verify(...)` that returns a draft + verification + a routing decision: `verified` (agree, high confidence) vs `needs_human` (disagree / low confidence / claim mismatch / dangerous-construct present). Pure given an injected `call`; offline tests for agree→verified, refute→needs_human, and the claim-mismatch and dangerous-construct routing. |
 | 4c | high | opus | none | **Ledger integration + precedence.** Add a `verified` notion to the ledger for LLM decisions (schema bump: a `verified` column on `decision`, or a verification record — pick one and version it) and a human-review queue table. Refine `verdict.current_verdict` precedence to `human > verified-llm > heuristic > unverified-llm` (an unverified LLM decision never wins over a heuristic). A recorder path that appends an LLM decision (`kind='llm'`, `decided_by` = the prompt id, `rule_version` = model+prompt, `evidence` = the model response, `verified` set by 4b) and enqueues `needs_human` items. Tests: a verified LLM decision overrides the heuristic; an unverified one does not; a human confirmation (kind=human) tops both; the queue holds the routed items. |
 | 4d | high | opus | none | The **triage driver + rule discovery + findings**, over a *bounded* slice (NOT the whole 43k). A `python -m divergulent.classify.triage` CLI that pulls the queue, orders it (review-flagged, dangerous-construct, high-occurrence first), triages within a `--budget`/`--limit`, records via 4c, and reports: verdicts by category, verified vs human-queued, claim/content mismatches, and **candidate rules** (clusters of identical LLM verdicts on look-alike patches, surfaced for human approval — never auto-applied). Run it over a small, reviewed sample to produce a findings note. Tests use the fake `call`; the run is a reviewed operational step. |
@@ -145,7 +158,8 @@ untouched — no silent truncation.
 ## Testing requirements
 
 - The LLM boundary is **injected** in all tests; the suite stays offline and
-  free (no real API calls, ever, in tests).
+  free (no real API call and no real `claude -p` subprocess, ever, in tests —
+  the `claude -p` backend is tested with a mocked `subprocess.run`).
 - Claim-blindness is tested (the author's description never reaches the prompt).
 - Verification routing is tested both ways (verified vs human-queue).
 - Precedence is tested: unverified-llm < heuristic < verified-llm < human.
