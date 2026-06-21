@@ -66,6 +66,35 @@ class SchemaTestCase(LedgerFixture, testtools.TestCase):
         self.assertIn('input_snapshot', cols)
         self.assertIn('input_fresh_until', cols)
 
+    def test_schema_version_is_two(self):
+        # The step-4c migration bumped the schema to 2.
+        conn, _path = self._ledger()
+        self.assertEqual(2, ledger.LEDGER_SCHEMA_VERSION)
+        self.assertEqual('2', ledger.meta(conn)['schema_version'])
+
+    def test_decision_has_verified_and_signature_columns(self):
+        # Schema v2: an LLM decision carries an explicit verified flag; signature
+        # / signed_by are reserved for signed human ManualDecisions (step 4e).
+        conn, _path = self._ledger()
+        cols = {row[1] for row in conn.execute('PRAGMA table_info(decision)')}
+        self.assertIn('verified', cols)
+        self.assertIn('signature', cols)
+        self.assertIn('signed_by', cols)
+
+    def test_review_queue_table_and_indexes_exist(self):
+        conn, _path = self._ledger()
+        tables = {n for (n,) in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'")}
+        self.assertIn('review_queue', tables)
+        cols = {row[1] for row in conn.execute('PRAGMA table_info(review_queue)')}
+        self.assertEqual(
+            {'id', 'fingerprint', 'reason', 'draft_category', 'draft_confidence',
+             'priority', 'enqueued_at', 'reviewed_at'}, cols)
+        indexes = {n for (n,) in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'")}
+        self.assertIn('idx_review_queue_fingerprint', indexes)
+        self.assertIn('idx_review_queue_reviewed_at', indexes)
+
 
 class KindPrecedenceTestCase(testtools.TestCase):
 
@@ -158,6 +187,28 @@ class AppendTestCase(LedgerFixture, testtools.TestCase):
         self.assertEqual('shell-out', rows[0]['detail'])
         self.assertIsNone(rows[0]['superseded_at'])
 
+    def test_append_decision_defaults_unverified_unsigned(self):
+        # Every existing caller is preserved: a decision is unverified and
+        # unsigned unless explicitly stated.
+        conn, _path = self._ledger()
+        ledger.append_decision(
+            conn, fingerprint='fp1', category='unknown', confidence='low',
+            decided_by='substantive', rule_version=1, kind='heuristic',
+            evidence=None, decided_at=WHEN)
+        row = ledger.decisions_for(conn, 'fp1')[0]
+        self.assertEqual(0, row['verified'])
+        self.assertIsNone(row['signature'])
+        self.assertIsNone(row['signed_by'])
+
+    def test_append_decision_records_verified_flag(self):
+        conn, _path = self._ledger()
+        ledger.append_decision(
+            conn, fingerprint='fp1', category='bugfix', confidence='high',
+            decided_by='llm-triage:claude-sonnet-4-6', rule_version=1, kind='llm',
+            evidence='{}', decided_at=WHEN, verified=True)
+        row = ledger.decisions_for(conn, 'fp1')[0]
+        self.assertEqual(1, row['verified'])
+
     def test_distinct_ids_for_distinct_appends(self):
         conn, _path = self._ledger()
         id_a = ledger.append_decision(
@@ -241,6 +292,73 @@ class SupersedeTestCase(LedgerFixture, testtools.TestCase):
         rows = ledger.observations_for(conn, 'fp1')
         self.assertEqual(1, len(rows))
         self.assertEqual(LATER, rows[0]['superseded_at'])
+
+
+class ReviewQueueTestCase(LedgerFixture, testtools.TestCase):
+    """The human-review queue helpers (schema v2)."""
+
+    def test_append_and_pending_items(self):
+        conn, _path = self._ledger()
+        item_id = ledger.append_review_item(
+            conn, fingerprint='fp1', reason='verifier refuted', draft_category='security',
+            draft_confidence='high', enqueued_at=WHEN, priority=5)
+        self.assertIsInstance(item_id, int)
+        pending = ledger.pending_review_items(conn)
+        self.assertEqual(1, len(pending))
+        self.assertEqual('fp1', pending[0]['fingerprint'])
+        self.assertEqual('verifier refuted', pending[0]['reason'])
+        self.assertEqual('security', pending[0]['draft_category'])
+        self.assertEqual(5, pending[0]['priority'])
+        self.assertIsNone(pending[0]['reviewed_at'])
+
+    def test_pending_items_ordered_by_priority_then_id(self):
+        conn, _path = self._ledger()
+        ledger.append_review_item(
+            conn, fingerprint='low', reason=None, draft_category=None,
+            draft_confidence=None, enqueued_at=WHEN, priority=1)
+        ledger.append_review_item(
+            conn, fingerprint='high', reason=None, draft_category=None,
+            draft_confidence=None, enqueued_at=WHEN, priority=9)
+        pending = ledger.pending_review_items(conn)
+        self.assertEqual(['high', 'low'], [r['fingerprint'] for r in pending])
+
+    def test_pending_exists_is_per_fingerprint(self):
+        conn, _path = self._ledger()
+        self.assertFalse(ledger.pending_review_item_exists(conn, fingerprint='fp1'))
+        ledger.append_review_item(
+            conn, fingerprint='fp1', reason=None, draft_category=None,
+            draft_confidence=None, enqueued_at=WHEN)
+        self.assertTrue(ledger.pending_review_item_exists(conn, fingerprint='fp1'))
+        self.assertFalse(ledger.pending_review_item_exists(conn, fingerprint='fp2'))
+
+    def test_mark_reviewed_clears_one_item(self):
+        conn, _path = self._ledger()
+        item_id = ledger.append_review_item(
+            conn, fingerprint='fp1', reason=None, draft_category=None,
+            draft_confidence=None, enqueued_at=WHEN)
+        ledger.append_review_item(
+            conn, fingerprint='fp2', reason=None, draft_category=None,
+            draft_confidence=None, enqueued_at=WHEN)
+        touched = ledger.mark_reviewed(conn, item_id=item_id, reviewed_at=LATER)
+        self.assertEqual(1, touched)
+        pending = ledger.pending_review_items(conn)
+        self.assertEqual(['fp2'], [r['fingerprint'] for r in pending])
+        # The fingerprint is no longer pending; a reviewed item exists with the
+        # supplied timestamp.
+        self.assertFalse(ledger.pending_review_item_exists(conn, fingerprint='fp1'))
+
+    def test_mark_reviewed_is_idempotent(self):
+        conn, _path = self._ledger()
+        item_id = ledger.append_review_item(
+            conn, fingerprint='fp1', reason=None, draft_category=None,
+            draft_confidence=None, enqueued_at=WHEN)
+        ledger.mark_reviewed(conn, item_id=item_id, reviewed_at=LATER)
+        # A second mark touches nothing and does not re-stamp the timestamp.
+        again = ledger.mark_reviewed(conn, item_id=item_id, reviewed_at='2099-01-01T00:00:00Z')
+        self.assertEqual(0, again)
+        (reviewed_at,) = conn.execute(
+            'SELECT reviewed_at FROM review_queue WHERE id = ?', (item_id,)).fetchone()
+        self.assertEqual(LATER, reviewed_at)
 
 
 class AppendOnlyInvariantTestCase(testtools.TestCase):

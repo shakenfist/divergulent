@@ -186,13 +186,27 @@ append-only decision ledger: a versioned rule registry, an immutable `decision`
 table that is only ever *superseded* (never edited or deleted), and an
 `observation` table for the dangerous-construct flags (so a flag never becomes
 a category). The current verdict is **derived**, never stored — per fingerprint,
-the highest-precedence live decision at human > llm > heuristic — so it cannot
-drift, retiring a rule re-queues exactly its fingerprints (a surgical redo), and
-the llm/human seats are reserved so phase 4 and human review slot in without a
-schema change. `python -m divergulent.classify.ledger build|report|supersede`
-operates it; the CLI is the only place that reads a clock. The ledger
-reproduced the phase-2 distribution exactly with a 42,907-fingerprint derived
-queue. See `docs/plans/PLAN-patch-classification-phase-03-findings.md`.
+the highest-precedence live decision — so it cannot drift, and retiring a rule
+re-queues exactly its fingerprints (a surgical redo).
+`python -m divergulent.classify.ledger build|report|supersede` operates it; the
+CLI is the only place that reads a clock. The ledger reproduced the phase-2
+distribution exactly with a 42,907-fingerprint derived queue. See
+`docs/plans/PLAN-patch-classification-phase-03-findings.md`.
+
+Phase 4 fills the reserved llm/human seats. `triage.py` does the claim-blind LLM
+draft + an independent adversarial verification, routing each patch to
+`verified` or `needs_human`. Step 4c bumped the ledger to **schema v2**: a
+`verified` flag on `decision`, reserved `signature`/`signed_by` columns for
+signed human ManualDecisions (4e), and a `review_queue` worklist table. The
+precedence is now `human > verified-llm > heuristic > unverified-llm`
+(`verdict.decision_rank`) — an **unverified LLM guess never outranks a
+heuristic** (no cry wolf), and only the adversarial pass (or a human) promotes
+it. `triage_record.record_triage_result` records a `TriageResult` idempotently:
+an `llm` decision keyed `decided_by='llm-triage:<model>'` (a model swap is a new
+rule identity) / `rule_version=<prompt_version>` (a prompt bump is a new
+version), `verified` set from the routing, the draft+verification kept as JSON
+evidence, and a pending `review_queue` item for every `needs_human` result. See
+`docs/plans/PLAN-patch-classification-phase-04-llm-triage.md`.
 
 ## Scoring
 
