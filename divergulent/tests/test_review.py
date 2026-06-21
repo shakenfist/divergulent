@@ -497,3 +497,198 @@ class PagerTestCase(testtools.TestCase):
         with contextlib.redirect_stdout(buf):
             review._page('hello-context')
         self.assertIn('hello-context', buf.getvalue())
+
+
+class ResolveFingerprintTestCase(testtools.TestCase):
+    """``resolve_fingerprint`` matches a full hex or an unambiguous prefix."""
+
+    def _ledger(self, *fingerprints):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        conn = ledger_mod.create_ledger(os.path.join(tmp.name, 'ledger.sqlite'))
+        self.addCleanup(conn.close)
+        for fp_hex in fingerprints:
+            ledger_mod.append_decision(
+                conn, fingerprint=fp_hex, category='unknown', confidence='low',
+                decided_by='substantive', rule_version=1, kind='heuristic',
+                evidence=None, decided_at=WHEN, commit=False)
+        conn.commit()
+        return conn
+
+    def test_full_fingerprint_resolves(self):
+        conn = self._ledger('a' * 64, 'b' * 64)
+        resolved, matches = review.resolve_fingerprint(conn, 'a' * 64)
+        self.assertEqual('a' * 64, resolved)
+        self.assertEqual(['a' * 64], matches)
+
+    def test_unique_prefix_resolves(self):
+        conn = self._ledger('abc' + '0' * 61, 'def' + '0' * 61)
+        resolved, _ = review.resolve_fingerprint(conn, 'abc')
+        self.assertEqual('abc' + '0' * 61, resolved)
+
+    def test_ambiguous_prefix_returns_none_with_candidates(self):
+        conn = self._ledger('abc1' + '0' * 60, 'abc2' + '0' * 60)
+        resolved, matches = review.resolve_fingerprint(conn, 'abc')
+        self.assertIsNone(resolved)
+        self.assertEqual(2, len(matches))
+
+    def test_unknown_returns_none_empty(self):
+        conn = self._ledger('a' * 64)
+        resolved, matches = review.resolve_fingerprint(conn, 'zzz')
+        self.assertIsNone(resolved)
+        self.assertEqual([], matches)
+
+
+class RequeueTestCase(ReviewFixture, testtools.TestCase):
+    """``requeue_one`` supersedes the live human verdict and makes the fingerprint
+    pending again -- re-opening its item, or creating one when none exists."""
+
+    def _review_it(self, conn, corpus_dir, index_path):
+        fetch, _ = _recording_fetch()
+        signer, _ = _fake_signer()
+        ask, _ = _scripted_ask(review.CHOICE_ACCEPT)
+        return review.review_one(
+            conn, corpus_dir, index_path, self._item(conn),
+            fetch=fetch, signer=signer, ask=ask, now=WHEN)
+
+    def test_requeue_supersedes_human_and_reopens_item(self):
+        conn, corpus_dir, index_path, fp_hex = self._setup(draft_category='bugfix')
+        self._review_it(conn, corpus_dir, index_path)
+        self.assertEqual([], ledger_mod.pending_review_items(conn))  # cleared by review
+
+        outcome = review.requeue_one(conn, fp_hex, now='2026-06-15T00:00:00Z')
+        conn.commit()
+
+        self.assertEqual(1, outcome.superseded)
+        self.assertEqual(1, outcome.reopened)
+        self.assertFalse(outcome.created)
+        # Pending again, and no LIVE human decision remains (verdict falls back).
+        self.assertEqual(
+            [fp_hex], [p['fingerprint'] for p in ledger_mod.pending_review_items(conn)])
+        live_human = [r for r in ledger_mod.decisions_for(conn, fp_hex)
+                      if r['kind'] == 'human' and r['superseded_at'] is None]
+        self.assertEqual([], live_human)
+        # The superseded human row is preserved in history.
+        superseded_human = [r for r in ledger_mod.decisions_for(conn, fp_hex)
+                            if r['kind'] == 'human' and r['superseded_at'] is not None]
+        self.assertEqual(1, len(superseded_human))
+
+    def test_requeue_already_pending_is_a_noop_reopen(self):
+        # Without reviewing first, the fixture's item is still pending.
+        conn, _corpus, _index, fp_hex = self._setup()
+        outcome = review.requeue_one(conn, fp_hex, now='2026-06-15T00:00:00Z')
+        conn.commit()
+        self.assertEqual(0, outcome.reopened)
+        self.assertFalse(outcome.created)
+
+    def test_requeue_creates_item_when_none_exists(self):
+        # A fingerprint with a human decision but NO queue row -> created=True.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        conn = ledger_mod.create_ledger(os.path.join(tmp.name, 'ledger.sqlite'))
+        self.addCleanup(conn.close)
+        fp_hex = 'c' * 64
+        ledger_mod.append_decision(
+            conn, fingerprint=fp_hex, category='packaging', confidence='high',
+            decided_by=review.DECIDED_BY, rule_version=review.REVIEW_RULE_VERSION,
+            kind='human', verified=True, evidence=None, decided_at=WHEN, commit=False)
+        conn.commit()
+
+        outcome = review.requeue_one(conn, fp_hex, now='2026-06-15T00:00:00Z', reason='reconsidering')
+        conn.commit()
+
+        self.assertEqual(1, outcome.superseded)
+        self.assertEqual(0, outcome.reopened)
+        self.assertTrue(outcome.created)
+        pending = ledger_mod.pending_review_items(conn)
+        self.assertEqual([fp_hex], [p['fingerprint'] for p in pending])
+        self.assertEqual('reconsidering', pending[0]['reason'])
+
+
+class HistoryTestCase(ReviewFixture, testtools.TestCase):
+    """``recent_human_decisions`` + ``history`` list recent verdicts, newest first."""
+
+    def test_recent_human_decisions_newest_first_includes_superseded(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        conn = ledger_mod.create_ledger(os.path.join(tmp.name, 'ledger.sqlite'))
+        self.addCleanup(conn.close)
+        for i, cat in enumerate(('bugfix', 'security', 'packaging')):
+            ledger_mod.append_decision(
+                conn, fingerprint=('%064x' % i), category=cat, confidence='high',
+                decided_by=review.DECIDED_BY, rule_version=1, kind='human',
+                verified=True, signed_by='reviewer@example.org',
+                evidence='{"reviewed": {"source_package": "pkg%d"}}' % i,
+                decided_at=WHEN, commit=False)
+        conn.commit()
+
+        rows = ledger_mod.recent_human_decisions(conn, limit=2)
+        self.assertEqual(['packaging', 'security'], [r['category'] for r in rows])  # newest first
+
+    def test_history_command_prints_rows(self):
+        import io
+        import contextlib
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        ledger_path = os.path.join(tmp.name, 'ledger.sqlite')
+        conn = ledger_mod.create_ledger(ledger_path)
+        ledger_mod.append_decision(
+            conn, fingerprint=('d' * 64), category='packaging', confidence='high',
+            decided_by=review.DECIDED_BY, rule_version=1, kind='human', verified=True,
+            signed_by='reviewer@example.org',
+            evidence='{"reviewed": {"source_package": "mksh"}}', decided_at=WHEN, commit=False)
+        conn.commit()
+        conn.close()
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = review.main(['history', ledger_path, '--limit', '5'])
+        out = buf.getvalue()
+        self.assertEqual(0, rc)
+        self.assertIn('packaging', out)
+        self.assertIn('mksh', out)
+        self.assertIn('reviewer@example.org', out)
+
+
+class RequeueCommandTestCase(ReviewFixture, testtools.TestCase):
+    """The ``requeue`` subcommand end-to-end: resolve, requeue, rebuild verdict."""
+
+    def test_requeue_command_reopens_and_reports(self):
+        import io
+        import contextlib
+        conn, corpus_dir, index_path, fp_hex = self._setup()
+        ledger_path = os.path.join(corpus_dir, 'ledger.sqlite')
+        # Mark the item reviewed + add a live human decision, then close (the CLI
+        # opens its own connection).
+        ledger_mod.append_decision(
+            conn, fingerprint=fp_hex, category='packaging', confidence='high',
+            decided_by=review.DECIDED_BY, rule_version=review.REVIEW_RULE_VERSION,
+            kind='human', verified=True, evidence=None, decided_at=WHEN, commit=False)
+        ledger_mod.mark_reviewed(conn, item_id=self._item(conn)['id'], reviewed_at=WHEN)
+        conn.commit()
+        conn.close()
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = review.main(['requeue', ledger_path, fp_hex[:12]])
+        self.assertEqual(0, rc)
+        self.assertIn('re-queued', buf.getvalue())
+
+        check = sqlite3.connect(ledger_path)
+        self.addCleanup(check.close)
+        check.row_factory = sqlite3.Row
+        pending = ledger_mod.pending_review_items(check)
+        self.assertEqual([fp_hex], [p['fingerprint'] for p in pending])
+
+    def test_requeue_command_rejects_unknown_fingerprint(self):
+        import io
+        import contextlib
+        conn, corpus_dir, _index, _fp = self._setup()
+        ledger_path = os.path.join(corpus_dir, 'ledger.sqlite')
+        conn.close()
+
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            rc = review.main(['requeue', ledger_path, 'ffffffffffff'])
+        self.assertEqual(1, rc)
+        self.assertIn('no fingerprint matches', buf.getvalue())

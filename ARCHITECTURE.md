@@ -130,12 +130,19 @@ installed-package inventory never leaves the machine.
   of identical verified verdicts — for human approval, never auto-applied), and
   reports the untriaged remainder. `review.py` (the
   `python -m divergulent.classify.review` CLI) is the local, interactive human
-  tier: it shows each high-priority diff **in its original source context**
-  (fetched on-demand from sources.debian.org) with the LLM draft, and records a
-  **Sigstore-signed ManualDecision** (`kind='human'`, with `signature` +
-  `signed_by`) that tops the precedence — non-repudiation. The LLM backends
-  (`claude -p` default, Anthropic API optional) and signing are curation-side
-  only; clients never run either.
+  tier, with three subcommands. `review` drains the queue: it shows each
+  high-priority diff **in its original source context** — fetched on-demand from
+  sources.debian.org **per touched file by the file's real `+++ b/<path>` path**
+  (not the patch filename), with an **epoch-stripped version fallback** — beside
+  the LLM draft, and records a **Sigstore-signed ManualDecision** (`kind='human'`,
+  with `signature` + `signed_by`) that tops the precedence. It authenticates to
+  Sigstore **once per session** (the identity token is reused, not re-prompted
+  per item). `requeue <fingerprint>` sends one patch back for re-review
+  (superseding its live human verdict — preserved as history — and re-opening its
+  queue item, then rebuilding the verdict cache); `history` lists recent verdicts
+  including superseded ones, so a reviewer can spot and reconsider a past call.
+  The LLM backends (`claude -p` default, Anthropic API optional) and signing are
+  curation-side only; clients never run either.
 - `divergulent/bundle.py` — the precomputed cache **bundle** schema, a
   gzipped-JSON `write()` and `load()`. A bundle is the shareable half of
   a cold run: staleness and divergence for a whole Debian release,

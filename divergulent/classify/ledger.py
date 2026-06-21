@@ -418,6 +418,35 @@ def supersede_decisions(conn: sqlite3.Connection, *, decided_by: str, rule_versi
     return cursor.rowcount
 
 
+def supersede_decisions_for_fingerprint(conn: sqlite3.Connection, *, fingerprint: str,
+                                        kind: str | None = None, superseded_at: str,
+                                        commit: bool = True) -> int:
+    """Supersede the LIVE decisions of ONE fingerprint; returns the count.
+
+    The surgical, single-fingerprint counterpart to :func:`supersede_decisions`
+    (which is rule-wide): sets ``superseded_at`` only on currently-live rows for
+    ``fingerprint``, optionally narrowed to one ``kind`` (e.g. ``'human'`` to
+    redo just a human verdict).  Rows are never deleted — they stay as the audit
+    trail, marked superseded.  Used by the review tool's ``requeue`` so a single
+    patch can be sent back for human review without disturbing any other
+    fingerprint's verdict.  ``commit`` defaults to True; a multi-step caller
+    passes ``commit=False`` and commits once.
+    """
+    if kind is None:
+        cursor = conn.execute(
+            'UPDATE decision SET superseded_at = ? '
+            'WHERE fingerprint = ? AND superseded_at IS NULL',
+            (superseded_at, fingerprint))
+    else:
+        cursor = conn.execute(
+            'UPDATE decision SET superseded_at = ? '
+            'WHERE fingerprint = ? AND kind = ? AND superseded_at IS NULL',
+            (superseded_at, fingerprint, kind))
+    if commit:
+        conn.commit()
+    return cursor.rowcount
+
+
 def supersede_observations(conn: sqlite3.Connection, *, observed_by: str, rule_version: int,
                            superseded_at: str) -> int:
     """Supersede the LIVE observations of one rule version; returns the count.
@@ -480,6 +509,21 @@ def decisions_for(conn: sqlite3.Connection, fingerprint: str) -> list[sqlite3.Ro
     conn.row_factory = sqlite3.Row
     return conn.execute(
         'SELECT * FROM decision WHERE fingerprint = ? ORDER BY id', (fingerprint,)).fetchall()
+
+
+def recent_human_decisions(conn: sqlite3.Connection, *, limit: int) -> list[sqlite3.Row]:
+    """The most recent ``limit`` human decisions, newest first (live OR superseded).
+
+    Backs the review tool's ``history`` command: the reviewer's last N verdicts in
+    reverse-chronological (insert) order, INCLUDING superseded ones, so a reviewer
+    can spot and reconsider a call they later changed.  Ordered by ``id`` DESC
+    (insert order) rather than ``decided_at`` so the ordering is total even when
+    timestamps collide.
+    """
+    conn.row_factory = sqlite3.Row
+    return conn.execute(
+        "SELECT * FROM decision WHERE kind = 'human' ORDER BY id DESC LIMIT ?",
+        (limit,)).fetchall()
 
 
 def live_observations(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -594,6 +638,26 @@ def mark_reviewed(conn: sqlite3.Connection, *, item_id: int, reviewed_at: str) -
         'WHERE id = ? AND reviewed_at IS NULL',
         (reviewed_at, item_id))
     conn.commit()
+    return cursor.rowcount
+
+
+def reopen_review_items(conn: sqlite3.Connection, *, fingerprint: str,
+                        commit: bool = True) -> int:
+    """Re-open every ALREADY-REVIEWED queue item for ``fingerprint``; returns the count.
+
+    The inverse of :func:`mark_reviewed`: clears ``reviewed_at`` (back to NULL) on
+    items previously marked reviewed, so the fingerprint becomes pending again and
+    :func:`pending_review_items` pulls it for a fresh human pass.  Items already
+    pending are untouched (the filter requires ``reviewed_at IS NOT NULL``).  Used
+    by the review tool's ``requeue``.  ``commit`` defaults to True; a multi-step
+    caller passes ``commit=False`` and commits once.
+    """
+    cursor = conn.execute(
+        'UPDATE review_queue SET reviewed_at = NULL '
+        'WHERE fingerprint = ? AND reviewed_at IS NOT NULL',
+        (fingerprint,))
+    if commit:
+        conn.commit()
     return cursor.rowcount
 
 

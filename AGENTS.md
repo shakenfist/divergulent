@@ -210,12 +210,18 @@ evidence, and a pending `review_queue` item for every `needs_human` result.
 bounded, prioritised slice (never the whole queue by accident) and surfaces
 candidate deterministic rules for human approval; `python -m
 divergulent.classify.review` (in `review.py`) is the local, interactive,
-Sigstore-signed human tier — it shows each diff in its sources.debian.org
-original-source context and records a non-repudiable `kind='human'`
-ManualDecision that tops the precedence. The LLM backends (default `claude -p`,
-optional Anthropic API) and the signing are curation-side and injected, so the
-whole suite is offline; the actual triage/review pass is the operator's
-budgeted step. See
+Sigstore-signed human tier. It has three subcommands: `review <ledger>
+<corpus_dir>` drains the queue (showing each diff in its sources.debian.org
+original-source context — fetched per touched file by the file's real path, not
+the patch filename, with epoch-stripped version fallback — and authenticating to
+Sigstore ONCE per session) and records a non-repudiable `kind='human'`
+ManualDecision that tops the precedence; `requeue <ledger> <fingerprint>` sends
+one fingerprint back for re-review (superseding its settled human verdict, kept
+in history, and re-opening its queue item); `history <ledger>` lists recent
+verdicts (including superseded ones) so a reviewer can reconsider a past call.
+The LLM backends (default `claude -p`, optional Anthropic API) and the signing
+are curation-side and injected, so the whole suite is offline; the actual
+triage/review pass is the operator's budgeted step. See
 `docs/plans/PLAN-patch-classification-phase-04-llm-triage.md`.
 
 ## Scoring
