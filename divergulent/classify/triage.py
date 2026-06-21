@@ -53,6 +53,11 @@ from divergulent.classify import fingerprint as fp
 
 PROMPT_VERSION = 1
 
+# The verification prompt is versioned independently of the triage prompt: the
+# adversarial pass can be re-tuned without re-triaging, and the ledger keys on
+# both, so a verify-prompt bump supersedes the verification but not the draft.
+VERIFY_PROMPT_VERSION = 1
+
 # A capable, cost-conscious default for a large (~43k) residue: Sonnet triages
 # the bulk well within budget, leaving Opus available for the riskier
 # dangerous-construct / security candidates later (step 4d's prioritised slice).
@@ -182,6 +187,27 @@ def build_prompt(diff_body: str, *, prompt_version: int = PROMPT_VERSION) -> str
 # JSON parsing -- robust to surrounding prose / code fences
 # ---------------------------------------------------------------------------
 
+def _first_json_object(text: str) -> dict | None:
+    """Extract and parse the first ``{...}`` JSON object from a model response.
+
+    Robust to a response wrapped in ```json fences or surrounded by prose: the
+    first brace-delimited object is parsed. Returns ``None`` when there is no
+    JSON object, it does not parse, or it is not an object -- the callers each
+    decide what their own safe degradation is (``triage`` -> ``unknown``;
+    ``verify`` -> ``agrees=False``).
+    """
+    match = _JSON_OBJECT_RE.search(text)
+    if match is None:
+        return None
+    try:
+        data = json.loads(match.group(0))
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
 def _parse_response(text: str) -> tuple[str, str, str]:
     """Extract ``(category, confidence, reasoning)`` from a model response.
 
@@ -192,17 +218,9 @@ def _parse_response(text: str) -> tuple[str, str, str]:
     the triage run. The category is validated against ``TRIAGE_CATEGORIES`` by
     the caller; confidence is validated here.
     """
-    match = _JSON_OBJECT_RE.search(text)
-    if match is None:
-        return ('unknown', 'low', 'model response contained no JSON object')
-
-    try:
-        data = json.loads(match.group(0))
-    except (ValueError, TypeError):
-        return ('unknown', 'low', 'model response JSON did not parse')
-
-    if not isinstance(data, dict):
-        return ('unknown', 'low', 'model response JSON was not an object')
+    data = _first_json_object(text)
+    if data is None:
+        return ('unknown', 'low', 'model response had no usable JSON object')
 
     category = data.get('category')
     confidence = data.get('confidence')
@@ -257,6 +275,251 @@ def triage(patch_text: str, *, call, model: str = DEFAULT_MODEL,
         prompt_version=prompt_version,
         raw_response=raw_response,
     )
+
+
+# ---------------------------------------------------------------------------
+# The adversarial verifier (step 4b)
+#
+# An LLM draft does not count until an INDEPENDENT pass confirms it. The verify
+# pass is itself claim-blind (it sees only the diff body + the proposed
+# category, never the author's claim) and adversarial (prompted to try to break
+# the draft, defaulting to REFUTE when unsure). Agreement at sufficient
+# confidence is the only path to ``verified``; everything else routes to a human.
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Verification:
+    """One independent, claim-blind adversarial read of a proposed category.
+
+    The verifier confirms or refutes a category that ``triage`` drafted, from
+    the diff alone. ``agrees=False`` is the safe default: a garbled or missing
+    answer is treated as *unverified*, never as confirmation.
+    """
+
+    agrees: bool
+    """Whether the verifier CONFIRMS the proposed category. ``False`` is the
+    safe default -- a disagreement, or an unparseable answer, leaves the draft
+    unverified and routes it to a human."""
+
+    confidence: str
+    """``'high'`` / ``'medium'`` / ``'low'`` -- the verifier's stated
+    confidence. Low confidence routes to human review even when it agrees."""
+
+    reasoning: str
+    """The verifier's one/two-sentence justification, drawn from the diff and
+    the proposed category alone."""
+
+    model: str
+    """The model id that produced this verification (part of the
+    ``rule_version``)."""
+
+    prompt_version: int
+    """The ``VERIFY_PROMPT_VERSION`` that produced this verification (part of
+    the ``rule_version``)."""
+
+    raw_response: str
+    """The full verifier text, stored verbatim as auditable evidence -- the
+    verification is non-deterministic and must be inspectable after the fact."""
+
+
+def build_verify_prompt(diff_body: str, proposed_category: str, *,
+                        prompt_version: int = VERIFY_PROMPT_VERSION) -> str:
+    """Build the independent, claim-blind ADVERSARIAL verification prompt.
+
+    Deterministic given ``(diff_body, proposed_category, prompt_version)``. The
+    prompt states the *proposed* category and asks the model to CONFIRM or
+    REFUTE it from the diff alone. It is given ONLY the diff body and the
+    proposed category -- NEVER the author's claim -- so this is a genuinely
+    independent second read, not a rubber stamp of the same evidence the draft
+    already had plus the author's framing.
+
+    The discipline is adversarial: the model is told to default to REFUTE when
+    unsure, and that confirming a wrong category is worse than refuting a right
+    one. The cost asymmetry is deliberate -- a false ``verified`` lets a wrong
+    LLM call finalise unreviewed, whereas a false refutal merely sends a correct
+    draft to a human, who can still accept it.
+    """
+    categories = ', '.join(TRIAGE_CATEGORIES)
+    return (
+        f'You are an adversarial reviewer checking a proposed classification of '
+        f'a single Debian patch. (verify prompt version {prompt_version})\n'
+        '\n'
+        'Another classifier proposed that the diff below belongs to the '
+        f'category: {proposed_category}.\n'
+        '\n'
+        'You are given ONLY the diff body and that proposed category. You are '
+        "NOT given the patch author's description, and you must not assume one: "
+        'judge the proposal purely from the code the diff adds and removes.\n'
+        '\n'
+        'Your job is to try to BREAK the proposal. Decide whether the diff '
+        f'genuinely supports the category {proposed_category} (chosen from: '
+        f'{categories}).\n'
+        '\n'
+        'Be adversarial and skeptical:\n'
+        '  - DEFAULT TO REFUTE when you are unsure. Do not give the proposal '
+        'the benefit of the doubt.\n'
+        '  - Confirming a WRONG category is worse than refuting a RIGHT one: a '
+        'wrong confirmation lets a bad call stand unreviewed, while a wrong '
+        'refusal merely sends a correct call to a human who can still accept '
+        'it.\n'
+        '  - Only set "agrees" to true if the diff clearly and specifically '
+        f'supports {proposed_category}.\n'
+        '\n'
+        'Respond with STRICT JSON and nothing else, in exactly this shape:\n'
+        '{"agrees": true|false, "confidence": "high|medium|low", "reasoning": "..."}\n'
+        'Keep "reasoning" to one or two sentences, grounded in the diff.\n'
+        '\n'
+        'Diff body:\n'
+        '\n'
+        f'{diff_body}\n'
+    )
+
+
+def _parse_verification(text: str) -> tuple[bool, str, str]:
+    """Extract ``(agrees, confidence, reasoning)`` from a verifier response.
+
+    Robust to fences / surrounding prose via ``_first_json_object``. A missing
+    or non-boolean ``agrees``, or an unparseable response, degrades to
+    ``(False, 'low', ...)`` -- ``agrees=False`` is the SAFE default: an
+    unreadable answer leaves the draft unverified, which routes it to a human,
+    rather than silently confirming it. Confidence is validated against
+    ``_CONFIDENCES`` and degrades to ``'low'``.
+    """
+    data = _first_json_object(text)
+    if data is None:
+        return (False, 'low', 'verifier response had no usable JSON object')
+
+    agrees = data.get('agrees')
+    confidence = data.get('confidence')
+    reasoning = data.get('reasoning')
+
+    if not isinstance(agrees, bool):
+        return (False, 'low',
+                'verifier response had no boolean "agrees" field; '
+                'defaulting to unverified')
+
+    confidence = confidence if confidence in _CONFIDENCES else 'low'
+    reasoning = reasoning if isinstance(reasoning, str) else ''
+
+    return (agrees, confidence, reasoning)
+
+
+def verify(patch_text: str, proposed_category: str, *, call,
+           model: str = DEFAULT_MODEL,
+           prompt_version: int = VERIFY_PROMPT_VERSION) -> Verification:
+    """Independently, adversarially verify a proposed category for one patch.
+
+    Extracts the claim-blind ``diff_body``, builds the adversarial verify prompt
+    (which sees only the diff and the proposed category, never the claim),
+    invokes ``call(prompt, model=model) -> str`` (the same injectable backend
+    boundary ``triage`` uses), parses the JSON robustly, and returns a
+    ``Verification`` carrying the full raw response as evidence.
+
+    ``call`` is required (no default) so the function is pure given an injected
+    fake -- the test suite never touches the network. A missing or garbled
+    ``agrees`` degrades to ``agrees=False`` at low confidence: unverified is the
+    safe default, never a silent confirmation.
+    """
+    body = diff_body(patch_text)
+    prompt = build_verify_prompt(body, proposed_category, prompt_version=prompt_version)
+
+    raw_response = call(prompt, model=model)
+
+    agrees, confidence, reasoning = _parse_verification(raw_response)
+
+    return Verification(
+        agrees=agrees,
+        confidence=confidence,
+        reasoning=reasoning,
+        model=model,
+        prompt_version=prompt_version,
+        raw_response=raw_response,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routing: draft + verify -> verified | needs_human (step 4b)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class TriageResult:
+    """A draft, its adversarial verification, and the resulting routing.
+
+    The whole point of step 4b: the ``draft`` (an ``LlmVerdict``) does not count
+    on its own -- only a ``routing`` of ``'verified'`` lets it stand as a
+    verified LLM decision (step 4c). ``'needs_human'`` enqueues it for the local
+    interactive review tool (step 4e), with ``reason`` recording why.
+    """
+
+    draft: LlmVerdict
+    """The claim-blind LLM draft from ``triage``."""
+
+    verification: Verification
+    """The independent adversarial check of ``draft.category``."""
+
+    routing: str
+    """``'verified'`` or ``'needs_human'`` -- whether the draft may stand or
+    must go to a human."""
+
+    reason: str
+    """The deciding reason(s). For ``'needs_human'`` this lists every condition
+    that fired (verifier disagreed, low confidence, claim mismatch, dangerous
+    construct); for ``'verified'`` it states the draft passed."""
+
+
+def triage_and_verify(patch_text: str, *, call, claim_category: str | None = None,
+                      has_dangerous_construct: bool = False,
+                      model: str = DEFAULT_MODEL) -> TriageResult:
+    """Draft a category, independently verify it, and route the result.
+
+    Runs ``triage`` (the claim-blind draft) then ``verify`` (the independent
+    adversarial check of the drafted category). The result routes to
+    ``'needs_human'`` when ANY of these fire, otherwise ``'verified'``:
+
+      * the verifier does not agree;
+      * the draft OR the verification confidence is ``'low'``;
+      * a claim/content mismatch -- ``claim_category`` is given, is not ``None``
+        or ``'unknown'``, and differs from the drafted category (the loud signal:
+        the author's claim and the content read disagree);
+      * a live dangerous-construct observation (``has_dangerous_construct``).
+
+    ``claim_category`` and ``has_dangerous_construct`` are supplied by the 4d
+    driver from the ledger/classification, and are parameters (not re-derived
+    here) so this function stays pure and testable.
+
+    Note the security/malice escape hatch: a ``security`` draft that the verifier
+    confirms STILL routes to ``'needs_human'`` if it carries a dangerous-construct
+    flag or a claim mismatch. The LLM never finalises a security or malice call
+    on its own -- a human does (step 4e). ``security`` from the LLM is only ever
+    a *candidate for human confirmation*.
+    """
+    draft = triage(patch_text, call=call, model=model)
+    verification = verify(patch_text, draft.category, call=call, model=model)
+
+    reasons: list[str] = []
+
+    if not verification.agrees:
+        reasons.append('verifier refuted the drafted category')
+    if draft.confidence == 'low':
+        reasons.append('draft confidence is low')
+    if verification.confidence == 'low':
+        reasons.append('verification confidence is low')
+    if (claim_category is not None and claim_category != 'unknown'
+            and claim_category != draft.category):
+        reasons.append(
+            'claim/content mismatch: author claims %r but content reads %r'
+            % (claim_category, draft.category))
+    if has_dangerous_construct:
+        reasons.append('a dangerous-construct observation is present')
+
+    if reasons:
+        return TriageResult(
+            draft=draft, verification=verification,
+            routing='needs_human', reason='; '.join(reasons))
+
+    return TriageResult(
+        draft=draft, verification=verification, routing='verified',
+        reason='verifier confirmed the drafted category at sufficient confidence')
 
 
 # ---------------------------------------------------------------------------
