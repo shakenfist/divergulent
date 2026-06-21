@@ -38,10 +38,14 @@ never a final judgement.
 """
 from __future__ import annotations
 
+import argparse
+import datetime
 import json
 import os
 import re
+import sqlite3
 import subprocess
+import sys
 from dataclasses import dataclass
 
 from divergulent.classify import fingerprint as fp
@@ -584,3 +588,112 @@ def anthropic_call(prompt: str, *, model: str) -> str:
         messages=[{'role': 'user', 'content': prompt}],
     )
     return ''.join(block.text for block in response.content if block.type == 'text')
+
+
+# ---------------------------------------------------------------------------
+# The bounded triage-run CLI (``python -m divergulent.classify.triage``).
+#
+# This is the ONLY place in the triage stack that reads a wall clock and that
+# selects a REAL backend: ``main`` captures one ``now`` ISO-8601 string and a
+# ``call`` (``claude_cli_call`` by default, ``anthropic_call`` with
+# ``--backend api``) and threads them into the driver, which runs the bounded,
+# prioritised triage slice and records each result.  The run is curation-side and
+# off-box; clients never reach this path.
+#
+# ``triage_driver`` is LAZY-imported inside ``main``, not at module top: the
+# driver imports this module (for ``triage_and_verify`` / the backends), so
+# importing it here would be a cycle.  Keeping this module import-time clean (only
+# its own deps + stdlib) is what lets the driver import it freely.  The tests
+# inject a fake ``call`` and never reach a real backend.
+# ---------------------------------------------------------------------------
+
+# A small, deliberate default cap: a budgeted run never sweeps the whole ~43k
+# residue by accident.  The plan is explicit that the full sweep is the
+# operator's call, taken iteratively; ``--limit`` makes each slice a choice.
+DEFAULT_LIMIT = 50
+
+
+def _cli_now() -> str:
+    """The single clock read of the triage stack: an ISO-8601 UTC timestamp.
+
+    Only the CLI entry point reads the clock; the value is threaded down as the
+    recorder's ``decided_at`` so every deterministic module path stays
+    re-runnable, exactly as the ledger CLI's ``_cli_now`` does.
+    """
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog='python -m divergulent.classify.triage',
+        description='Run a BOUNDED, prioritised LLM triage pass over the phase-4 '
+                    'residue (curation-side; off-box). Drafts a category blind to the '
+                    "author's claim, verifies it adversarially, records each result in "
+                    'the ledger, and surfaces candidate deterministic rules for human '
+                    'approval. No malice is ever pronounced; the LLM never self-certifies.')
+    parser.add_argument('ledger', help='path to a ledger sqlite built by classify.ledger')
+    parser.add_argument('corpus_dir', help='directory of a corpus built by classify.corpus')
+    parser.add_argument('--index', default=None,
+                        help='path to the phase-1 sqlite fingerprint index (default: '
+                             '<corpus_dir>/fingerprints.sqlite)')
+    parser.add_argument('--limit', type=int, default=DEFAULT_LIMIT,
+                        help='max fingerprints to triage this run -- the budget cap, so '
+                             'the whole residue is never swept by accident (default: %d). '
+                             'untriaged_remaining reports what the cap did not cover.'
+                             % DEFAULT_LIMIT)
+    parser.add_argument('--model', default=DEFAULT_MODEL,
+                        help='the model id to triage and verify with (default: %s)' % DEFAULT_MODEL)
+    parser.add_argument('--backend', choices=('claude', 'api'), default='claude',
+                        help='LLM backend: "claude" shells out to the claude CLI '
+                             '(subscription-billed, the default), "api" uses the Anthropic '
+                             'API (pip install divergulent[triage])')
+    parser.add_argument('--findings', default=None,
+                        help='path for the markdown findings note (default: '
+                             '<corpus_dir>/triage-findings.md)')
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """``python -m divergulent.classify.triage``: a bounded, prioritised triage run.
+
+    Opens the ledger, selects the real backend (``claude_cli_call`` by default,
+    ``anthropic_call`` with ``--backend api``), runs the bounded triage slice via
+    the driver (recording each result), rebuilds the current-verdict cache, writes
+    the findings note, and prints the honest summary -- including
+    ``untriaged_remaining``, the residue the budget did not cover.  The single
+    clock read of the triage stack lives here (:func:`_cli_now`).
+    """
+    from divergulent.classify import triage_driver
+    from divergulent.classify import verdict as verdict_mod
+
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    index_path = args.index or os.path.join(args.corpus_dir, 'fingerprints.sqlite')
+    findings_path = args.findings or os.path.join(args.corpus_dir, 'triage-findings.md')
+
+    call = anthropic_call if args.backend == 'api' else claude_cli_call
+
+    conn = sqlite3.connect(args.ledger)
+    try:
+        stats, triaged = triage_driver.run_triage(
+            conn, args.corpus_dir, index_path, call=call, now=_cli_now(),
+            limit=args.limit, model=args.model)
+        candidates = triage_driver.candidate_rules(args.corpus_dir, triaged)
+        verdict_mod.rebuild_current_verdict(conn)
+    finally:
+        conn.close()
+
+    directory = os.path.dirname(findings_path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    with open(findings_path, 'w', encoding='utf-8') as handle:
+        handle.write(triage_driver.render_run_report(stats, candidates))
+
+    triage_driver.print_run_summary(stats, candidates)
+    print('wrote findings note: %s' % findings_path)
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
