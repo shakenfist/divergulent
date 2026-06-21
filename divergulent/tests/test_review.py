@@ -397,3 +397,16 @@ class RealFetchTestCase(testtools.TestCase):
 
         fetch = review._real_fetch()
         self.assertTrue(callable(fetch))
+
+
+class PagerTestCase(testtools.TestCase):
+    """The pager must fall back to plain print when stdout is not a TTY, so
+    scripted/non-interactive use (and the test suite) is unaffected."""
+
+    def test_page_prints_when_not_a_tty(self):
+        import io
+        import contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            review._page('hello-context')
+        self.assertIn('hello-context', buf.getvalue())

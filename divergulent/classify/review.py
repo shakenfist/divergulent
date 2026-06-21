@@ -584,32 +584,59 @@ def _real_fetch():
     return fetch
 
 
-def _interactive_ask(context: ReviewContext) -> str:
-    """The real interactive ``ask``: print the context + draft + claim, read stdin.
+def _page(text: str) -> None:
+    """Show ``text`` through a pager so a big diff does not scroll off-screen.
 
-    Shows the diff IN CONTEXT, the LLM draft (category + confidence + reasoning),
-    the author's claim, and the routing reason, then reads the human's choice
-    from stdin: accept the LLM draft, override to a named category, ``unknown``,
-    or defer.  The reading of stdin is confined here (the CLI entry); every other
-    path takes ``choice`` as data.
+    Honours ``$PAGER`` (defaulting to ``less -FRX``: ``-F`` quits immediately if
+    the content fits one screen so short diffs are not trapped in the pager,
+    ``-R`` passes raw control chars, ``-X`` does not clear the screen). When
+    stdout is not a TTY, or no pager is available, or the pager errors, it falls
+    back to a plain ``print`` -- so scripted/non-interactive use is unaffected.
+    """
+    import os
+    import shutil
+    import subprocess
+    import sys
+
+    if not sys.stdout.isatty():
+        print(text)
+        return
+    pager = os.environ.get('PAGER') or ('less -FRX' if shutil.which('less') else '')
+    if not pager:
+        print(text)
+        return
+    try:
+        subprocess.run(pager, shell=True, input=text, text=True, check=False)
+    except OSError:
+        print(text)
+
+
+def _interactive_ask(context: ReviewContext) -> str:
+    """The real interactive ``ask``: page the context + draft + claim, read stdin.
+
+    Pages the diff IN CONTEXT, the LLM draft (category + confidence + reasoning),
+    the author's claim, and the routing reason through ``$PAGER`` so a large diff
+    is navigable, then reads the human's choice from stdin: accept the LLM draft,
+    override to a named category, ``unknown``, or defer.  The reading of stdin is
+    confined here (the CLI entry); every other path takes ``choice`` as data.
     """
     from divergulent.classify.triage import TRIAGE_CATEGORIES
 
-    print('=' * 78)
-    print('fingerprint: %s' % context.fingerprint)
+    view = ['=' * 78, 'fingerprint: %s' % context.fingerprint]
     if context.reason:
-        print('routed to review because: %s' % context.reason)
-    print('author claim category: %s' % context.claim_category)
+        view.append('routed to review because: %s' % context.reason)
+    view.append('author claim category: %s' % context.claim_category)
     if context.draft_category is not None:
-        print('LLM draft: %s (confidence %s)' % (
+        view.append('LLM draft: %s (confidence %s)' % (
             context.draft_category, context.draft_confidence))
         if context.draft_reasoning:
-            print('LLM reasoning: %s' % context.draft_reasoning)
+            view.append('LLM reasoning: %s' % context.draft_reasoning)
     else:
-        print('LLM draft: (none)')
-    print('-' * 78)
-    print(context.context_view)
-    print('-' * 78)
+        view.append('LLM draft: (none)')
+    view.append('-' * 78)
+    view.append(context.context_view)
+    view.append('-' * 78)
+    _page('\n'.join(view))
 
     options = []
     if context.draft_category is not None:
