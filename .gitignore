@@ -34,3 +34,6 @@ sample-output/
 
 # Local Claude Code settings
 .claude/
+
+# Local divergence-cache build artifacts (published via GitHub releases, never committed)
+/cache-*.json.gz

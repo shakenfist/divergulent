@@ -55,8 +55,14 @@ from divergulent.classify.rules import RULES_VERSION, _CATEGORY_RULES
 # reinterpretation (see the plan's "Versioning is explicit").
 # ---------------------------------------------------------------------------
 
-LEDGER_SCHEMA_VERSION = 1
-"""The on-disk schema version, recorded in the ``meta`` table."""
+LEDGER_SCHEMA_VERSION = 2
+"""The on-disk schema version, recorded in the ``meta`` table.
+
+Version 2 (phase 4, step 4c) adds three columns to ``decision`` -- ``verified``
+(an LLM decision counts only once an adversarial pass or a human confirms it),
+``signature`` / ``signed_by`` (reserved for signed human ManualDecisions in
+step 4e) -- and a ``review_queue`` table backing the human-review worklist.
+Every bump is a tracked migration, never a silent reinterpretation."""
 
 CATEGORY_ENUM_VERSION = 1
 """The category-enum version that travels on every rule and decision.  The
@@ -241,6 +247,12 @@ def create_ledger(path: str) -> sqlite3.Connection:
     # superseded (superseded_at set); never edited, never deleted.
     # input_snapshot / input_fresh_until are reserved for purity='external'
     # rules (phase 6) — nullable and unused now.
+    #
+    # verified (schema v2): an LLM decision counts only once an adversarial pass
+    # (or a human) confirms it; a heuristic decision is always unverified (0) and
+    # the precedence treats an unverified LLM as below a heuristic.  signature /
+    # signed_by (schema v2) are reserved for signed human ManualDecisions
+    # (step 4e) — nullable and unused now.
     conn.execute(
         'CREATE TABLE decision ('
         'id INTEGER PRIMARY KEY AUTOINCREMENT, '
@@ -254,10 +266,31 @@ def create_ledger(path: str) -> sqlite3.Connection:
         'decided_at TEXT, '
         'superseded_at TEXT, '
         'input_snapshot TEXT, '
-        'input_fresh_until TEXT)')
+        'input_fresh_until TEXT, '
+        'verified INTEGER NOT NULL DEFAULT 0, '
+        'signature TEXT, '
+        'signed_by TEXT)')
     conn.execute('CREATE INDEX idx_decision_fingerprint ON decision (fingerprint)')
     conn.execute(
         'CREATE INDEX idx_decision_decided_by_version ON decision (decided_by, rule_version)')
+
+    # The human-review queue (schema v2): a ledger-backed worklist of fingerprints
+    # the LLM tier routed to a human (step 4b).  An item is "pending" while
+    # reviewed_at IS NULL; the index on reviewed_at makes that filter fast.  The
+    # queue is a worklist, not a verdict store — a human's verdict is a signed
+    # kind='human' decision (step 4e), and recording it is what clears the item.
+    conn.execute(
+        'CREATE TABLE review_queue ('
+        'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+        'fingerprint TEXT NOT NULL, '
+        'reason TEXT, '
+        'draft_category TEXT, '
+        'draft_confidence TEXT, '
+        'priority INTEGER NOT NULL DEFAULT 0, '
+        'enqueued_at TEXT, '
+        'reviewed_at TEXT)')
+    conn.execute('CREATE INDEX idx_review_queue_fingerprint ON review_queue (fingerprint)')
+    conn.execute('CREATE INDEX idx_review_queue_reviewed_at ON review_queue (reviewed_at)')
 
     # Observations (e.g. dangerous-construct flags) — same append-only/supersede
     # discipline as decisions, but never a category.
@@ -311,13 +344,21 @@ def append_decision(conn: sqlite3.Connection, *, fingerprint: str, category: str
                     confidence: str, decided_by: str, rule_version: int, kind: str,
                     evidence: str | None, decided_at: str,
                     input_snapshot: str | None = None,
-                    input_fresh_until: str | None = None, commit: bool = True) -> int:
+                    input_fresh_until: str | None = None,
+                    verified: bool = False, signature: str | None = None,
+                    signed_by: str | None = None, commit: bool = True) -> int:
     """Append one immutable ``decision`` row; returns its new id.
 
     INSERT only — this never edits or replaces an existing row.  ``decided_at``
     is supplied by the caller (this module never reads a clock).
     ``input_snapshot`` / ``input_fresh_until`` are reserved for external rules
     (phase 6) and default to ``None`` for the pure phase-2 rules.
+
+    ``verified`` (schema v2) defaults to ``False`` so every existing caller is
+    preserved: a heuristic decision is unverified, and only an LLM decision the
+    adversarial pass confirmed (or a human) is recorded ``verified=True``.
+    ``signature`` / ``signed_by`` (schema v2) default to ``None`` and are
+    reserved for signed human ManualDecisions (step 4e).
 
     ``commit`` defaults to True (each append is durable on its own).  A bulk
     caller (the recorder appending ~60k rows) passes ``commit=False`` and
@@ -328,10 +369,12 @@ def append_decision(conn: sqlite3.Connection, *, fingerprint: str, category: str
     cursor = conn.execute(
         'INSERT INTO decision '
         '(fingerprint, category, confidence, decided_by, rule_version, kind, evidence, '
-        'decided_at, superseded_at, input_snapshot, input_fresh_until) '
-        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)',
+        'decided_at, superseded_at, input_snapshot, input_fresh_until, '
+        'verified, signature, signed_by) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)',
         (fingerprint, category, confidence, decided_by, rule_version, kind, evidence,
-         decided_at, input_snapshot, input_fresh_until))
+         decided_at, input_snapshot, input_fresh_until,
+         1 if verified else 0, signature, signed_by))
     if commit:
         conn.commit()
     return int(cursor.lastrowid)
@@ -474,6 +517,84 @@ def observations_for(conn: sqlite3.Connection, fingerprint: str) -> list[sqlite3
 def meta(conn: sqlite3.Connection) -> dict[str, str]:
     """The ``meta`` table as a ``{key: value}`` dict (schema/enum versions)."""
     return dict(conn.execute('SELECT key, value FROM meta').fetchall())
+
+
+# ---------------------------------------------------------------------------
+# The human-review queue (schema v2).
+#
+# A small worklist: the LLM tier (step 4b) routes a fingerprint here when it
+# cannot self-certify (verifier refuted, low confidence, claim mismatch, or a
+# dangerous construct).  An item is "pending" while ``reviewed_at IS NULL``.
+# The queue is NOT a verdict store: a human's verdict is a signed kind='human'
+# decision (step 4e), and :func:`mark_reviewed` is what closes the item.
+# ---------------------------------------------------------------------------
+
+
+def pending_review_item_exists(conn: sqlite3.Connection, *, fingerprint: str,
+                               decided_by: str | None = None) -> bool:
+    """Whether a PENDING (``reviewed_at IS NULL``) review item exists.
+
+    The idempotency check for enqueuing: re-running triage over the same residue
+    must not enqueue a second pending item for a fingerprint already awaiting
+    review.  ``decided_by`` is accepted for call-site clarity but not matched
+    here — pending-ness is per fingerprint, so one human review settles it.
+    SELECT-only; never mutates.
+    """
+    del decided_by  # pending-ness is per fingerprint; one review settles it.
+    row = conn.execute(
+        'SELECT 1 FROM review_queue '
+        'WHERE fingerprint = ? AND reviewed_at IS NULL LIMIT 1',
+        (fingerprint,)).fetchone()
+    return row is not None
+
+
+def append_review_item(conn: sqlite3.Connection, *, fingerprint: str,
+                       reason: str | None, draft_category: str | None,
+                       draft_confidence: str | None, enqueued_at: str,
+                       priority: int = 0, commit: bool = True) -> int:
+    """Append one ``review_queue`` item; returns its new id.
+
+    INSERT only.  ``enqueued_at`` is caller-supplied (this module never reads a
+    clock).  The new item is pending (``reviewed_at`` is NULL).  ``commit``
+    defaults to True; a bulk caller passes ``commit=False`` and commits once.
+    """
+    cursor = conn.execute(
+        'INSERT INTO review_queue '
+        '(fingerprint, reason, draft_category, draft_confidence, priority, '
+        'enqueued_at, reviewed_at) '
+        'VALUES (?, ?, ?, ?, ?, ?, NULL)',
+        (fingerprint, reason, draft_category, draft_confidence, priority, enqueued_at))
+    if commit:
+        conn.commit()
+    return int(cursor.lastrowid)
+
+
+def pending_review_items(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Every pending (``reviewed_at IS NULL``) review item, priority-then-id order.
+
+    Highest ``priority`` first (the prioritised slice the local review tool pulls
+    from), then insertion order for a stable, deterministic worklist.
+    """
+    conn.row_factory = sqlite3.Row
+    return conn.execute(
+        'SELECT * FROM review_queue WHERE reviewed_at IS NULL '
+        'ORDER BY priority DESC, id').fetchall()
+
+
+def mark_reviewed(conn: sqlite3.Connection, *, item_id: int, reviewed_at: str) -> int:
+    """Mark one PENDING review item reviewed; returns the count touched (0 or 1).
+
+    Sets ``reviewed_at`` only on a currently-pending item (``reviewed_at IS
+    NULL``) with the given id, so re-marking an already-reviewed item is a no-op
+    and never overwrites its original timestamp.  ``reviewed_at`` is caller-
+    supplied; this module never reads a clock.
+    """
+    cursor = conn.execute(
+        'UPDATE review_queue SET reviewed_at = ? '
+        'WHERE id = ? AND reviewed_at IS NULL',
+        (reviewed_at, item_id))
+    conn.commit()
+    return cursor.rowcount
 
 
 # ---------------------------------------------------------------------------

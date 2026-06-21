@@ -40,17 +40,52 @@ from divergulent.classify import ledger as ledger_mod
 # Per fingerprint we pick the single winning LIVE decision.  The ordering, in
 # strict priority, is:
 #
-#   1. kind          — human > llm > heuristic (``ledger.kind_rank``)
-#   2. decided_at    — most recent wins (a fresher verdict of the same kind)
+#   1. decision rank — human > verified-llm > heuristic > unverified-llm
+#                      (``decision_rank``, which folds the ``verified`` flag into
+#                      the kind ranking — see below)
+#   2. decided_at    — most recent wins (a fresher verdict of the same rank)
 #   3. confidence    — high > medium > low
 #   4. decision id   — most recent insert wins (full determinism on ties)
 #
 # Implemented as a sort key returning a tuple of "higher is better" components,
 # so ``max(..., key=...)`` selects the winner.  ``decided_at`` is an ISO-8601
 # string and sorts correctly lexically; we guard ``None`` to the bottom.
+#
+# The step-4c refinement: kind alone is no longer the top component.  An LLM
+# draft does not count until an adversarial pass (or a human) verifies it, so an
+# UNVERIFIED llm decision must NEVER outrank a heuristic — no cry wolf from an
+# unreviewed guess.  ``decision_rank`` folds the ``verified`` flag into the
+# ranking to encode ``human > verified-llm > heuristic > unverified-llm``.
 # ---------------------------------------------------------------------------
 
 _CONFIDENCE_RANK: dict[str, int] = {'low': 0, 'medium': 1, 'high': 2}
+
+
+def decision_rank(kind: str, verified: object) -> int:
+    """Precedence rank of a decision, folding ``verified`` into ``kind``.
+
+    Encodes ``human > verified-llm > heuristic > unverified-llm`` (higher wins):
+
+      * ``human``                       -> 3  (always authoritative; a human
+        verdict tops everything regardless of the ``verified`` flag)
+      * ``llm`` with ``verified`` truthy -> 2  (an adversarially-confirmed draft)
+      * ``heuristic``                    -> 1
+      * ``llm`` NOT verified             -> 0  (an unreviewed guess; below the
+        deterministic heuristic — it is recorded for the audit trail/cache but
+        must not win)
+
+    A human decision is treated as authoritative regardless of ``verified``: the
+    ``verified`` flag only ever promotes an ``llm`` row from 0 to 2.  Raises
+    ``ValueError`` for an unknown kind so a typo cannot silently sort to the
+    bottom.
+    """
+    if kind == 'human':
+        return 3
+    if kind == 'llm':
+        return 2 if verified else 0
+    if kind == 'heuristic':
+        return 1
+    raise ValueError('unknown decision kind: %r' % kind)
 
 
 def _confidence_rank(confidence: str | None) -> int:
@@ -68,13 +103,14 @@ def _confidence_rank(confidence: str | None) -> int:
 def _selection_key(row: sqlite3.Row) -> tuple[int, str, int, int]:
     """The precedence sort key for one live decision (higher tuple wins).
 
-    Ordered: ``kind_rank`` (human > llm > heuristic), then ``decided_at`` (most
-    recent), then ``confidence`` rank (high > medium > low), then ``id`` (most
-    recent insert).  ``decided_at`` is normalised to ``''`` when ``NULL`` so it
-    sorts to the bottom rather than raising.
+    Ordered: :func:`decision_rank` (human > verified-llm > heuristic >
+    unverified-llm), then ``decided_at`` (most recent), then ``confidence`` rank
+    (high > medium > low), then ``id`` (most recent insert).  ``decided_at`` is
+    normalised to ``''`` when ``NULL`` so it sorts to the bottom rather than
+    raising.  An unverified LLM decision therefore never outranks a heuristic.
     """
     return (
-        ledger_mod.kind_rank(row['kind']),
+        decision_rank(row['kind'], row['verified']),
         row['decided_at'] or '',
         _confidence_rank(row['confidence']),
         int(row['id']))
@@ -100,6 +136,7 @@ class Verdict:
     evidence: str | None
     decided_at: str | None
     decision_id: int
+    verified: bool = False
 
 
 def _verdict_from_row(row: sqlite3.Row) -> Verdict:
@@ -112,7 +149,8 @@ def _verdict_from_row(row: sqlite3.Row) -> Verdict:
         confidence=row['confidence'],
         evidence=row['evidence'],
         decided_at=row['decided_at'],
-        decision_id=int(row['id']))
+        decision_id=int(row['id']),
+        verified=bool(row['verified']))
 
 
 def current_verdict(conn: sqlite3.Connection) -> dict[str, Verdict]:

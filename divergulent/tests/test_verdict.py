@@ -45,21 +45,22 @@ class VerdictFixture:
 
     def _decide(self, conn, fingerprint, *, category='unknown', confidence='low',
                 decided_by='substantive', rule_version=1, kind='heuristic',
-                evidence=None, decided_at=WHEN):
+                evidence=None, decided_at=WHEN, verified=False):
         return ledger_mod.append_decision(
             conn, fingerprint=fingerprint, category=category, confidence=confidence,
             decided_by=decided_by, rule_version=rule_version, kind=kind,
-            evidence=evidence, decided_at=decided_at)
+            evidence=evidence, decided_at=decided_at, verified=verified)
 
 
 class PrecedenceTestCase(VerdictFixture, testtools.TestCase):
 
-    def test_human_beats_llm_beats_heuristic(self):
+    def test_human_beats_verified_llm_beats_heuristic(self):
         conn = self._ledger()
-        # All three kinds live for one fingerprint; human must win.
+        # All three kinds live for one fingerprint; human must win.  The llm
+        # decision is VERIFIED (an unverified one would sit below the heuristic).
         self._decide(conn, 'fp1', category='unknown', kind='heuristic', decided_at=WHEN)
         self._decide(conn, 'fp1', category='documentation', confidence='medium',
-                     decided_by='llm-triage', kind='llm', decided_at=LATER)
+                     decided_by='llm-triage', kind='llm', verified=True, decided_at=LATER)
         self._decide(conn, 'fp1', category='packaging', confidence='high',
                      decided_by='human-review', kind='human', decided_at=LATEST)
         winner = verdict_mod.current_verdict(conn)['fp1']
@@ -67,16 +68,81 @@ class PrecedenceTestCase(VerdictFixture, testtools.TestCase):
         self.assertEqual('packaging', winner.category)
         self.assertEqual('human-review', winner.decided_by)
 
-    def test_llm_beats_heuristic_when_no_human(self):
+    def test_verified_llm_beats_heuristic_when_no_human(self):
         conn = self._ledger()
         self._decide(conn, 'fp1', category='unknown', kind='heuristic', decided_at=LATEST)
         self._decide(conn, 'fp1', category='documentation', confidence='medium',
-                     decided_by='llm-triage', kind='llm', decided_at=WHEN)
+                     decided_by='llm-triage', kind='llm', verified=True, decided_at=WHEN)
         winner = verdict_mod.current_verdict(conn)['fp1']
-        # kind outranks recency: the older llm decision still beats the newer
-        # heuristic one.
+        # rank outranks recency: the older VERIFIED llm decision still beats the
+        # newer heuristic one.
         self.assertEqual('llm', winner.kind)
         self.assertEqual('documentation', winner.category)
+
+    def test_unverified_llm_never_outranks_heuristic(self):
+        # The step-4c headline: an UNVERIFIED llm draft is recorded (audit trail,
+        # cache) but must NEVER win over the deterministic heuristic -- no cry
+        # wolf from an unreviewed guess.  Even though the llm decision is newer
+        # and higher confidence, the heuristic wins.
+        conn = self._ledger()
+        heuristic_id = self._decide(conn, 'fp1', category='unknown', kind='heuristic',
+                                    decided_at=WHEN)
+        self._decide(conn, 'fp1', category='security', confidence='high',
+                     decided_by='llm-triage:claude-sonnet-4-6', kind='llm',
+                     verified=False, decided_at=LATEST)
+        winner = verdict_mod.current_verdict(conn)['fp1']
+        self.assertEqual('heuristic', winner.kind)
+        self.assertEqual('unknown', winner.category)
+        self.assertEqual(heuristic_id, winner.decision_id)
+
+    def test_verifying_the_llm_flips_it_above_the_heuristic(self):
+        # Add a VERIFIED llm decision alongside the heuristic + unverified llm:
+        # now the verified one wins.  This is the explicit "verified" notion.
+        conn = self._ledger()
+        self._decide(conn, 'fp1', category='unknown', kind='heuristic', decided_at=WHEN)
+        self._decide(conn, 'fp1', category='security', confidence='high',
+                     decided_by='llm-triage:claude-sonnet-4-6', kind='llm',
+                     verified=False, decided_at=LATER)
+        self._decide(conn, 'fp1', category='bugfix', confidence='high',
+                     decided_by='llm-triage:claude-opus-4-6', kind='llm',
+                     verified=True, decided_at=LATEST)
+        winner = verdict_mod.current_verdict(conn)['fp1']
+        self.assertEqual('llm', winner.kind)
+        self.assertTrue(winner.verified)
+        self.assertEqual('bugfix', winner.category)
+
+    def test_human_tops_a_verified_llm(self):
+        # A human decision tops a verified llm (and everything else).
+        conn = self._ledger()
+        self._decide(conn, 'fp1', category='unknown', kind='heuristic', decided_at=WHEN)
+        self._decide(conn, 'fp1', category='bugfix', confidence='high',
+                     decided_by='llm-triage:claude-opus-4-6', kind='llm',
+                     verified=True, decided_at=LATER)
+        self._decide(conn, 'fp1', category='feature', confidence='medium',
+                     decided_by='human-review', kind='human', decided_at=LATEST)
+        winner = verdict_mod.current_verdict(conn)['fp1']
+        self.assertEqual('human', winner.kind)
+        self.assertEqual('feature', winner.category)
+
+    def test_superseded_verified_llm_falls_back(self):
+        # A superseded verified-llm drops out of the view, which falls back to
+        # the live heuristic -- NOT to a still-live unverified llm (that one
+        # still ranks below the heuristic).
+        conn = self._ledger()
+        heuristic_id = self._decide(conn, 'fp1', category='unknown', kind='heuristic',
+                                    decided_at=WHEN)
+        self._decide(conn, 'fp1', category='security', confidence='high',
+                     decided_by='llm-triage:claude-sonnet-4-6', kind='llm',
+                     verified=False, decided_at=LATER)
+        verified_id = self._decide(conn, 'fp1', category='bugfix', confidence='high',
+                                   decided_by='llm-triage:claude-opus-4-6', kind='llm',
+                                   verified=True, decided_at=LATEST)
+        conn.execute('UPDATE decision SET superseded_at = ? WHERE id = ?',
+                     ('2026-06-17T00:00:00Z', verified_id))
+        conn.commit()
+        winner = verdict_mod.current_verdict(conn)['fp1']
+        self.assertEqual('heuristic', winner.kind)
+        self.assertEqual(heuristic_id, winner.decision_id)
 
     def test_superseded_higher_kind_is_ignored(self):
         conn = self._ledger()

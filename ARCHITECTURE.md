@@ -110,10 +110,32 @@ installed-package inventory never leaves the machine.
   and a `python -m divergulent.classify.ledger` CLI), `record.py` (drives the
   rules into the ledger as decisions/observations, idempotently), and
   `verdict.py` (the **derived** current verdict — the highest-precedence live
-  decision per fingerprint at human > llm > heuristic — plus the phase-4
-  residue queue and a report). The current verdict is never stored, so it
-  cannot drift, and retiring a rule re-queues exactly its fingerprints. The llm
-  and human decision seats are reserved for phases 4+.
+  decision per fingerprint — plus the phase-4 residue queue and a report). The
+  current verdict is never stored, so it cannot drift, and retiring a rule
+  re-queues exactly its fingerprints. Phase 4 fills the llm/human seats:
+  `triage.py` runs the claim-blind LLM draft + adversarial verification, and
+  step 4c bumps the ledger to **schema v2** (a `verified` flag on `decision`,
+  reserved `signature`/`signed_by` columns for signed human ManualDecisions, and
+  a `review_queue` table) and refines the precedence to `human > verified-llm >
+  heuristic > unverified-llm` via `verdict.decision_rank` — an unverified LLM
+  guess never outranks a deterministic heuristic. `triage_record.py` records a
+  `TriageResult` into the ledger: an `llm` decision keyed
+  `decided_by='llm-triage:<model>'` / `rule_version=<prompt_version>` (so a model
+  swap is a new rule identity and a prompt bump a new version, both
+  supersedable), `verified` set from the routing, and a pending `review_queue`
+  item for every `needs_human` result — idempotently. `triage_driver.py` (the
+  `python -m divergulent.classify.triage` CLI) triages a **bounded, prioritised**
+  slice of the residue (dangerous-construct then high-occurrence first, never the
+  whole queue by accident), surfaces **candidate deterministic rules** (clusters
+  of identical verified verdicts — for human approval, never auto-applied), and
+  reports the untriaged remainder. `review.py` (the
+  `python -m divergulent.classify.review` CLI) is the local, interactive human
+  tier: it shows each high-priority diff **in its original source context**
+  (fetched on-demand from sources.debian.org) with the LLM draft, and records a
+  **Sigstore-signed ManualDecision** (`kind='human'`, with `signature` +
+  `signed_by`) that tops the precedence — non-repudiation. The LLM backends
+  (`claude -p` default, Anthropic API optional) and signing are curation-side
+  only; clients never run either.
 - `divergulent/bundle.py` — the precomputed cache **bundle** schema, a
   gzipped-JSON `write()` and `load()`. A bundle is the shareable half of
   a cold run: staleness and divergence for a whole Debian release,
