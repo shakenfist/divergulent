@@ -205,7 +205,17 @@ it. `triage_record.record_triage_result` records a `TriageResult` idempotently:
 an `llm` decision keyed `decided_by='llm-triage:<model>'` (a model swap is a new
 rule identity) / `rule_version=<prompt_version>` (a prompt bump is a new
 version), `verified` set from the routing, the draft+verification kept as JSON
-evidence, and a pending `review_queue` item for every `needs_human` result. See
+evidence, and a pending `review_queue` item for every `needs_human` result.
+`python -m divergulent.classify.triage` (in `triage_driver.py`) triages a
+bounded, prioritised slice (never the whole queue by accident) and surfaces
+candidate deterministic rules for human approval; `python -m
+divergulent.classify.review` (in `review.py`) is the local, interactive,
+Sigstore-signed human tier — it shows each diff in its sources.debian.org
+original-source context and records a non-repudiable `kind='human'`
+ManualDecision that tops the precedence. The LLM backends (default `claude -p`,
+optional Anthropic API) and the signing are curation-side and injected, so the
+whole suite is offline; the actual triage/review pass is the operator's
+budgeted step. See
 `docs/plans/PLAN-patch-classification-phase-04-llm-triage.md`.
 
 ## Scoring

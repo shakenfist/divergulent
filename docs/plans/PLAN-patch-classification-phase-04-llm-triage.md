@@ -6,7 +6,18 @@ non-free, off-box decider in the whole system, and the project's
 trustworthiness depends on it being *bounded*, *verified*, and *never run on a
 client*.
 
-**Status: not started.**
+**Status: implemented (operational run pending).** All steps are built,
+tested, and committed: 4a the claim-blind LLM boundary (`triage.py`, default
+`claude -p` backend), 4b the adversarial verifier + routing, 4c the ledger
+integration (schema v2: `verified` flag, signature columns, review queue; the
+`human > verified-llm > heuristic > unverified-llm` precedence), 4d the bounded
+prioritised driver + rule-discovery report, and 4e the local Sigstore-signed
+human-review CLI showing diffs in sources.debian.org original-source context.
+The suite is fully offline (injected LLM/signer/fetch). **The actual triage +
+review pass is the operator's separate, budgeted step** — run
+`python -m divergulent.classify.triage` over a small `--limit` slice (it spends
+subscription/API budget), then `python -m divergulent.classify.review` to
+sign-off the routed items; that produces the phase-4 findings.
 
 ## Why this is phase 4
 
