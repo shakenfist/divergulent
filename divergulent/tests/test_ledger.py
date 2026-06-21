@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import tempfile
 
 import testtools
@@ -94,6 +95,43 @@ class SchemaTestCase(LedgerFixture, testtools.TestCase):
             "SELECT name FROM sqlite_master WHERE type = 'index'")}
         self.assertIn('idx_review_queue_fingerprint', indexes)
         self.assertIn('idx_review_queue_reviewed_at', indexes)
+
+
+class OpenLedgerTestCase(LedgerFixture, testtools.TestCase):
+    """``open_ledger`` accepts a built ledger and rejects anything else clearly."""
+
+    def test_opens_a_built_ledger(self):
+        _conn, path = self._ledger()
+        opened = ledger.open_ledger(path)
+        self.addCleanup(opened.close)
+        # Usable + Row factory set (so callers get named-column access).
+        row = opened.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+        self.assertEqual(str(ledger.LEDGER_SCHEMA_VERSION), row['value'])
+
+    def test_missing_path_raises_does_not_exist(self):
+        missing = os.path.join(tempfile.mkdtemp(), 'nope.sqlite')
+        exc = self.assertRaises(ledger.LedgerError, ledger.open_ledger, missing)
+        self.assertIn('does not exist', str(exc))
+
+    def test_empty_database_raises_not_a_ledger(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = os.path.join(tmp.name, 'empty.sqlite')
+        sqlite3.connect(path).close()  # an empty db, exactly the mistyped-path trap
+        exc = self.assertRaises(ledger.LedgerError, ledger.open_ledger, path)
+        self.assertIn('not a divergulent ledger', str(exc))
+        self.assertIn('decision', str(exc))  # names the missing table(s)
+
+    def test_report_cli_exits_1_with_clear_message_on_bad_path(self):
+        import contextlib
+        import io
+        missing = os.path.join(tempfile.mkdtemp(), 'nope.sqlite')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc = ledger.main(['report', missing])
+        self.assertEqual(1, rc)
+        self.assertIn('error:', err.getvalue())
+        self.assertIn('does not exist', err.getvalue())
 
 
 class KindPrecedenceTestCase(testtools.TestCase):

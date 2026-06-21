@@ -207,6 +207,50 @@ def default_registry() -> list[RegisteredRule]:
 # Schema.
 # ---------------------------------------------------------------------------
 
+# The tables a built ledger must carry.  :func:`open_ledger` checks for these so
+# a mistyped path fails up front with an actionable message rather than deep in a
+# query with a baffling "no such table".
+REQUIRED_TABLES: frozenset[str] = frozenset({'meta', 'rule', 'decision', 'observation'})
+
+
+class LedgerError(Exception):
+    """A user-facing error: a path is not a built ledger (or does not exist).
+
+    Raised by :func:`open_ledger` and caught by the ledger / review CLIs, which
+    print its message to stderr and exit non-zero -- so an operator sees one
+    clear line, not a traceback.
+    """
+
+
+def open_ledger(path: str) -> sqlite3.Connection:
+    """Open an EXISTING built ledger at ``path``; fail clearly if it is not one.
+
+    A bare ``sqlite3.connect`` silently CREATES an empty database for a missing
+    path, so a mistyped or unbuilt ledger surfaces only later as a confusing
+    ``no such table: decision`` deep inside a query.  This guards the read/update
+    commands instead: it requires ``path`` to already exist and to carry the
+    ledger schema (:data:`REQUIRED_TABLES`), raising :class:`LedgerError` with an
+    actionable message otherwise.  Returns a connection with ``row_factory`` set
+    to :class:`sqlite3.Row` (the caller closes it).  ``build`` does NOT use this
+    -- it legitimately creates a new ledger via :func:`create_ledger`.
+    """
+    if not os.path.exists(path):
+        raise LedgerError(
+            '%r does not exist. Pass a ledger built by `ledger build`, '
+            'e.g. <corpus_dir>/ledger.sqlite.' % path)
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    present = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+    missing = REQUIRED_TABLES - present
+    if missing:
+        conn.close()
+        raise LedgerError(
+            '%r is not a divergulent ledger (missing table(s): %s). Did you mean '
+            'a built ledger such as <corpus_dir>/ledger.sqlite, or run '
+            '`ledger build` first?' % (path, ', '.join(sorted(missing))))
+    return conn
+
 
 def create_ledger(path: str) -> sqlite3.Connection:
     """Create a fresh ledger at ``path``, overwriting any existing file.
@@ -803,7 +847,7 @@ def _cmd_report(args: argparse.Namespace) -> int:
     """``report``: open a built ledger and print the current-verdict report."""
     from divergulent.classify import verdict
 
-    conn = sqlite3.connect(args.ledger)
+    conn = open_ledger(args.ledger)
     try:
         print(verdict.render_report(verdict.summarise_ledger(conn)))
     finally:
@@ -815,7 +859,7 @@ def _cmd_supersede(args: argparse.Namespace) -> int:
     """``supersede``: supersede a rule version's decisions/observations + re-queue."""
     from divergulent.classify import verdict
 
-    conn = sqlite3.connect(args.ledger)
+    conn = open_ledger(args.ledger)
     try:
         result = supersede_rule(
             conn, rule_id=args.rule_id, version=args.version,
@@ -879,7 +923,11 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = _build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except LedgerError as exc:
+        print('error: %s' % exc, file=sys.stderr)
+        return 1
 
 
 if __name__ == '__main__':

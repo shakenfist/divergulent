@@ -37,3 +37,8 @@ sample-output/
 
 # Local divergence-cache build artifacts (published via GitHub releases, never committed)
 /cache-*.json.gz
+
+# Curation-side classification artifacts: corpus, fingerprint index, and ledgers
+# live outside the repo, but a mistyped path can drop a stray (often empty) one
+# in the working tree — never commit those.
+*.sqlite

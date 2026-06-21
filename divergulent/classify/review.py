@@ -920,7 +920,7 @@ def _cmd_review(args) -> int:
     index_path = args.index or os.path.join(args.corpus_dir, 'fingerprints.sqlite')
 
     fetch = _real_fetch()
-    conn = sqlite3.connect(args.ledger)
+    conn = ledger_mod.open_ledger(args.ledger)
     try:
         pending = ledger_mod.pending_review_items(conn)
         # Authenticate to Sigstore ONCE for the whole session (the identity token
@@ -961,7 +961,7 @@ def _cmd_requeue(args) -> int:
     """
     from divergulent.classify import verdict as verdict_mod
 
-    conn = sqlite3.connect(args.ledger)
+    conn = ledger_mod.open_ledger(args.ledger)
     try:
         resolved, matches = resolve_fingerprint(conn, args.fingerprint)
         if resolved is None:
@@ -998,7 +998,7 @@ def _cmd_history(args) -> int:
     superseded -- so a reviewer can scan their recent calls and re-open any they
     want to reconsider.
     """
-    conn = sqlite3.connect(args.ledger)
+    conn = ledger_mod.open_ledger(args.ledger)
     try:
         rows = ledger_mod.recent_human_decisions(conn, limit=args.limit)
     finally:
@@ -1048,11 +1048,16 @@ def main(argv: list[str] | None = None) -> int:
 
     Parses the subcommand (``review`` / ``requeue`` / ``history``) and calls its
     handler.  Each handler owns its own ledger connection and the single clock
-    read; this entry point only routes.
+    read; this entry point only routes.  A bad ledger path raises
+    :class:`ledger.LedgerError`, which we render as one clear stderr line.
     """
     parser = _build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except ledger_mod.LedgerError as exc:
+        print('error: %s' % exc, file=sys.stderr)
+        return 1
 
 
 if __name__ == '__main__':
