@@ -106,6 +106,43 @@ unverified draft is recorded (audit trail, cache) but **must not** win over the
 deterministic heuristic — no cry wolf from an unreviewed guess. Only after the
 adversarial pass (or a human) does it outrank the heuristic.
 
+### A human verdict is a *signed* ManualDecision — non-repudiation
+A `kind='human'` decision is the top of the precedence, so it is the most
+trusted verdict in the system; it should also be the most *accountable*. A
+human review is recorded as a **ManualDecision carrying a signature** over the
+decision (fingerprint, category, what was reviewed, timestamp) bound to the
+reviewer's identity — **non-repudiation**: the reviewer cannot later deny the
+call, and any consumer can verify the human review is authentic and by whom.
+This reuses the project's **existing Sigstore posture** (the cache bundle is
+already Sigstore-signed; `sigstore` is already an optional extra), so a reviewer
+signs with their keyless OIDC identity and the `decision` row gains a
+`signature` + verified `signed_by` identity. The published classification bundle
+(phase 5) can then *prove* "this patch was human-reviewed by ⟨identity⟩ on
+⟨date⟩" — a strong, checkable trust signal, not just a flag.
+
+### Human review runs locally and interactively — *not* in CI
+The deterministic tiers and the LLM triage are batch, curation-side, and belong
+in CI; **human review is interactive and identity-bound and does not**. A
+GitHub Actions job cannot sit a person in front of a diff, and the reviewer's
+signing identity lives on *their* machine, not in CI. So the work splits
+cleanly:
+
+- **CI / curation-side (batch):** run the deterministic + LLM tiers, build and
+  publish the **prioritised human-review queue** (high-value, not-yet-reviewed
+  fingerprints — review-flagged, dangerous-construct, high-occurrence first).
+- **Local (the reviewer's machine, interactive):** a small **review tool**
+  pulls the next high-value un-reviewed item, shows the diff + the LLM draft +
+  the author's claim + any flags, takes the human's verdict (accept the LLM /
+  override / `unknown` / defer), and records a **signed ManualDecision** into
+  the ledger.
+
+This is the clean answer to "awkward in GitHub Actions": don't do it there. The
+review tool starts as a **local CLI** (`python -m divergulent.classify.review`)
+— dependency-free, fits the curation-CLI posture, runs where the identity is —
+and can grow into a **tiny local web UI** (stdlib `http.server`, no dependency)
+if reading diffs in a browser is nicer at volume. Either way it is local,
+never a runtime client feature.
+
 ### Non-determinism is handled by the ledger, not wished away
 An LLM verdict is not reproducible, so: the **full model response is stored as
 `evidence`**; the **`rule_version` is `model-id + prompt-version`** (bumping
@@ -137,12 +174,15 @@ untouched.
 |------|--------|-------|-----------|---------------------|
 | 4a | high | opus | none | Add `divergulent/classify/triage.py`: the injectable LLM boundary. `LlmVerdict` dataclass (category, reasoning, confidence, model, prompt_version, raw_response); `triage(patch, *, call, ...) -> LlmVerdict` that strips the DEP-3 header (claim-blind) and prompts for a category from the diff alone; `PROMPT_VERSION` constant. TWO backends: `claude_cli_call` (default — shell out to `claude -p`, subscription-billed, NO Python dependency) and `anthropic_call` (optional API alternative behind the `triage` extra, lazy import + clear error, mirroring `verify.py`/sigstore). Tests inject a fake `call` (offline): claim-blindness (the header is not in the prompt), verdict parsing, the absent-extra path, and the `claude -p` subprocess invocation (mock `subprocess.run`). |
 | 4b | high | opus | none | Add the **verifier**: an adversarial `verify(diff, draft, *, call=...) -> Verification(agrees, reasoning)` — an independent, claim-blind call prompted to confirm or REFUTE the drafted category, defaulting to refuse when unsure. A `triage_and_verify(...)` that returns a draft + verification + a routing decision: `verified` (agree, high confidence) vs `needs_human` (disagree / low confidence / claim mismatch / dangerous-construct present). Pure given an injected `call`; offline tests for agree→verified, refute→needs_human, and the claim-mismatch and dangerous-construct routing. |
-| 4c | high | opus | none | **Ledger integration + precedence.** Add a `verified` notion to the ledger for LLM decisions (schema bump: a `verified` column on `decision`, or a verification record — pick one and version it) and a human-review queue table. Refine `verdict.current_verdict` precedence to `human > verified-llm > heuristic > unverified-llm` (an unverified LLM decision never wins over a heuristic). A recorder path that appends an LLM decision (`kind='llm'`, `decided_by` = the prompt id, `rule_version` = model+prompt, `evidence` = the model response, `verified` set by 4b) and enqueues `needs_human` items. Tests: a verified LLM decision overrides the heuristic; an unverified one does not; a human confirmation (kind=human) tops both; the queue holds the routed items. |
-| 4d | high | opus | none | The **triage driver + rule discovery + findings**, over a *bounded* slice (NOT the whole 43k). A `python -m divergulent.classify.triage` CLI that pulls the queue, orders it (review-flagged, dangerous-construct, high-occurrence first), triages within a `--budget`/`--limit`, records via 4c, and reports: verdicts by category, verified vs human-queued, claim/content mismatches, and **candidate rules** (clusters of identical LLM verdicts on look-alike patches, surfaced for human approval — never auto-applied). Run it over a small, reviewed sample to produce a findings note. Tests use the fake `call`; the run is a reviewed operational step. |
+| 4c | high | opus | none | **Ledger integration + precedence.** Add a `verified` notion to the ledger for LLM decisions (schema bump: a `verified` column on `decision`, or a verification record — pick one and version it), a `signature` + `signed_by` column for human decisions (4e), and a human-review queue table. Refine `verdict.current_verdict` precedence to `human > verified-llm > heuristic > unverified-llm` (an unverified LLM decision never wins over a heuristic). A recorder path that appends an LLM decision (`kind='llm'`, `decided_by` = the prompt id, `rule_version` = model+prompt, `evidence` = the model response, `verified` set by 4b) and enqueues `needs_human` items. Tests: a verified LLM decision overrides the heuristic; an unverified one does not; a human confirmation (kind=human) tops both; the queue holds the routed items. |
+| 4d | high | opus | none | The **triage driver + rule discovery + findings**, over a *bounded* slice (NOT the whole 43k). A `python -m divergulent.classify.triage` CLI that pulls the queue, orders it (review-flagged, dangerous-construct, high-occurrence first), triages within a `--budget`/`--limit` using the `claude -p` backend by default, records via 4c, and reports: verdicts by category, verified vs human-queued, claim/content mismatches, and **candidate rules** (clusters of identical LLM verdicts on look-alike patches, surfaced for human approval — never auto-applied). Run it over a small, reviewed sample to produce a findings note. Tests use the fake `call`; the run is a reviewed operational step. |
+| 4e | high | opus | none | The **local, signed human-review tool** — `python -m divergulent.classify.review`. Pulls the next highest-priority *un-reviewed* item from the human-review queue, shows the diff + the LLM draft + the author's claim + flags, takes the human's verdict (accept-LLM / override-category / `unknown` / defer), and records a **signed ManualDecision** (`kind='human'`) into the ledger — reusing the Sigstore signing already in the cache pipeline, so the decision carries a verifiable `signed_by` identity (non-repudiation). Local and interactive (never CI, never a client feature); start as a CLI, with the option to grow into a stdlib `http.server` local web UI. Sign/verify behind the existing `verify` extra; tests inject a fake signer/verifier and a fake stdin, fully offline. |
 
-4a → 4b → 4c → 4d. One commit per step. Steps 4a–4c are fully offline
-(injected `call`); only 4d's *operational sample run* touches the real API, and
-that is a reviewed, budgeted step — not part of the test suite.
+4a → 4b → 4c → 4d, with 4e (the local review tool) after 4c (it needs the
+human-decision schema). One commit per step. Steps 4a–4c and 4e are fully
+offline (injected `call`, fake signer, fake stdin); only 4d's *operational
+sample run* spends real subscription/API budget, and that is a reviewed step —
+not part of the test suite.
 
 ## Operational note (cost and scale)
 
@@ -173,7 +213,10 @@ untouched — no silent truncation.
 - LLM verdicts live in the ledger as decisions (`kind='llm'`, response stored
   as evidence, model+prompt as version) and **only win once verified**;
   unverified drafts never outrank a heuristic; humans top all.
-- A human-review queue for what the verifier/claim/flags surface.
+- A human-review queue for what the verifier/claim/flags surface, drained by a
+  **local, interactive** review tool (not CI) that records a **signed
+  ManualDecision** (`kind='human'`, Sigstore identity → non-repudiation) topping
+  the precedence.
 - Rule-discovery: recurring LLM verdicts surface **candidate** deterministic
   rules (human-approved, never auto-applied) that shrink the residue.
 - Bounded and honest: prioritised, budgeted, iterative; no silent caps;
@@ -197,6 +240,15 @@ untouched — no silent truncation.
   occurrence count vs review-flag vs dangerous-construct.
 - **Category enum** — does triage want a richer enum than the deterministic
   tiers (e.g. split `security` into sub-kinds)? Keep versioned and provisional.
+- **Signing mechanism for ManualDecisions** — Sigstore keyless (reuses the cache
+  pipeline, OIDC identity, no key management) vs a local GPG/SSH signature
+  (offline, no browser). Lean Sigstore for consistency; confirm it works for an
+  interactive local reviewer, and decide what the signature covers (a canonical
+  decision record) and how phase 5 re-verifies it on export.
+- **Review-tool form** — start with the local CLI, or go straight to the stdlib
+  `http.server` local web UI (nicer diff reading, side-by-side, syntax
+  highlighting)? And how to present the LLM draft + claim + flags so the human
+  decides fast without anchoring on the LLM.
 
 ## Out of scope (later phases)
 
