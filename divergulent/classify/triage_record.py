@@ -222,6 +222,21 @@ def record_triage_to_human(conn, fingerprint, reason, *, now, model,
     return stats
 
 
+def triaged_fingerprints(conn, *, model, prompt_version=triage_mod.PROMPT_VERSION) -> set:
+    """Every fingerprint already triaged for this ``(model, prompt_version)``.
+
+    One query, so the driver can filter the work-list BEFORE applying ``--limit``
+    -- otherwise the limit is consumed re-scanning items already decided on a
+    prior run (chiefly the needs-human backlog, which stays queued until a human
+    reviews it). Returns the set of fingerprints with a live LLM decision.
+    """
+    rows = conn.execute(
+        'SELECT DISTINCT fingerprint FROM decision '
+        'WHERE decided_by = ? AND rule_version = ? AND superseded_at IS NULL',
+        (_decided_by(model), prompt_version)).fetchall()
+    return {row[0] for row in rows}
+
+
 def already_triaged(conn, fingerprint, *, model, prompt_version=triage_mod.PROMPT_VERSION) -> bool:
     """Whether ``fingerprint`` already has a live LLM decision for this model.
 

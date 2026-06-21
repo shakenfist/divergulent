@@ -240,23 +240,22 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
     deterministic.
     """
     work_list = build_work_list(conn, index_path)
-    selected = work_list[:limit]
+
+    # Filter out already-triaged fingerprints BEFORE the limit, so --limit
+    # triages that many NEW items rather than being consumed re-scanning the
+    # needs-human backlog (which stays queued until a human reviews it). The
+    # budget for a fingerprint is thus spent at most once, even across re-runs.
+    done = triage_record.triaged_fingerprints(conn, model=model)
+    pending_work = [item for item in work_list if item.fingerprint not in done]
+    selected = pending_work[:limit]
 
     stats = TriageRunStats(queue_size=len(verdict_mod.queue(conn)))
+    stats.skipped_already_triaged = len(work_list) - len(pending_work)
+    stats.untriaged_remaining = max(len(pending_work) - len(selected), 0)
     triaged: list[TriagedItem] = []
 
     total = len(selected)
     for position, item in enumerate(selected, start=1):
-        # Resume safely: if this fingerprint already has a live LLM decision for
-        # this model, skip it WITHOUT re-calling the (slow, paid) model. The
-        # budget for a fingerprint is spent at most once, even across re-runs.
-        if triage_record.already_triaged(conn, item.fingerprint, model=model):
-            stats.skipped_already_triaged += 1
-            if progress is not None:
-                progress('[%d/%d] %s already triaged, skipping' % (
-                    position, total, item.fingerprint[:12]))
-            continue
-
         body = measure.read_body(corpus_dir, item.representative_sha)
         claim_category = extract_claim(item.representative_patch_name, body).claimed_category
 
@@ -315,7 +314,6 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
 
         triaged.append(TriagedItem(item=item, result=result))
 
-    stats.untriaged_remaining = max(stats.queue_size - stats.triaged, 0)
     return stats, triaged
 
 
