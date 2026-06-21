@@ -546,18 +546,28 @@ def claude_cli_call(prompt: str, *, model: str = DEFAULT_MODEL, timeout: float =
     a clear, actionable error. The base install never needs this -- only an
     operator running a curation-side triage pass does.
     """
+    cmd = ['claude', '-p', '--model', model, '--output-format', 'text']
     try:
         result = subprocess.run(
-            ['claude', '-p', '--model', model, '--output-format', 'text'],
-            input=prompt, capture_output=True, text=True, timeout=timeout)
+            cmd, input=prompt, capture_output=True, text=True, timeout=timeout)
     except FileNotFoundError as exc:
         raise RuntimeError(
             'the "claude" CLI was not found on PATH; install Claude Code to use '
             'the default claude -p triage backend, or use the anthropic API '
             'backend (pip install divergulent[triage])') from exc
     if result.returncode != 0:
+        # claude writes its failure reason (auth, usage limit, ...) to stdout, so
+        # surface BOTH streams and the command -- an exit code alone is undebuggable.
+        detail = result.stderr.strip() or result.stdout.strip() or '(no output on stdout or stderr)'
         raise RuntimeError(
-            'claude -p failed (exit %d): %s' % (result.returncode, result.stderr.strip()))
+            'claude -p failed (exit %d).\n  command: %s\n  output: %s'
+            % (result.returncode, ' '.join(cmd), detail[:4000]))
+    if not result.stdout.strip():
+        # A zero exit with no output is also a failure for us (nothing to parse);
+        # surface stderr in case claude logged a warning there.
+        raise RuntimeError(
+            'claude -p returned an empty response (exit 0).\n  command: %s\n  stderr: %s'
+            % (' '.join(cmd), result.stderr.strip() or '(empty)'))
     return result.stdout
 
 
@@ -678,8 +688,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         stats, triaged = triage_driver.run_triage(
             conn, args.corpus_dir, index_path, call=call, now=_cli_now(),
-            limit=args.limit, model=args.model)
-        candidates = triage_driver.candidate_rules(args.corpus_dir, triaged)
+            limit=args.limit, model=args.model,
+            progress=lambda msg: print(msg, file=sys.stderr, flush=True))
+        # Cluster across the WHOLE ledger (every verified decision from every
+        # batch), not just this run -- a pattern accumulates over batches.
+        candidates = triage_driver.candidate_rules_from_ledger(conn, args.corpus_dir, index_path)
         verdict_mod.rebuild_current_verdict(conn)
     finally:
         conn.close()

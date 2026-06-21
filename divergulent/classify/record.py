@@ -72,7 +72,7 @@ def _category_rule_versions(registry: list[ledger_mod.RegisteredRule]) -> dict[s
     return {rule.rule_id: rule.version for rule in registry}
 
 
-def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None):
+def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progress=None):
     """Record the deterministic verdicts for a corpus into ``conn``; idempotent.
 
     Registers ``registry`` (or :func:`ledger.default_registry`) into the
@@ -103,6 +103,8 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None):
     stats = RecordStats()
     for record in iter_classified(corpus_dir, index_path):
         stats.fingerprints += 1
+        if progress is not None:
+            progress.step(record.fingerprint[:12])
         verdict = record.verdict
 
         # The winning content-category rule decided this fingerprint; record its
@@ -135,6 +137,9 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None):
                     observed_by=_SCAN_RULE_ID, rule_version=RULES_VERSION,
                     observed_at=now, commit=False)
                 stats.observations_appended += 1
+
+    if progress is not None:
+        progress.finish()
 
     # One commit for the whole batch: the appends above ran ``commit=False`` so
     # ~60k inserts are a single transaction (one fsync) rather than one per row,

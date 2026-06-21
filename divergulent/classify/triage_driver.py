@@ -49,6 +49,14 @@ from divergulent.classify.claim import extract_claim
 from divergulent.classify.ledger import live_observations
 from divergulent.classify.triage import DEFAULT_MODEL, triage_and_verify
 
+# Diffs larger than this (characters) are routed straight to a human rather than
+# sent to the model: a giant auto-generated patch (e.g. debian-changes) overflows
+# the context window ("Prompt is too long"), and truncating it would yield a
+# partial, misleading classification. The human reviews the full diff anyway.
+# Generous so genuine large patches still get an LLM read; the per-item error
+# handler backstops anything that slips through.
+MAX_DIFF_CHARS_FOR_LLM = 400_000
+
 # The dangerous-construct observation kind the phase-2 scan writes (see
 # ``record.py`` / the ledger).  A live observation of this kind on a fingerprint
 # both raises its triage priority and forces the result to human review.
@@ -195,6 +203,10 @@ class TriageRunStats:
     claim_mismatches: int = 0
     by_category: dict[str, int] = field(default_factory=dict)
     untriaged_remaining: int = 0
+    # Items in the slice that did NOT go through the model this run.
+    skipped_already_triaged: int = 0   # a live decision already existed (resume)
+    too_large: int = 0                 # diff too big for the model -> routed to a human
+    errored: int = 0                   # the backend raised -> routed to a human
 
 
 @dataclass(frozen=True)
@@ -211,7 +223,7 @@ class TriagedItem:
 
 
 def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
-               model=DEFAULT_MODEL):
+               model=DEFAULT_MODEL, progress=None):
     """Triage a BOUNDED slice of the prioritised residue; record each result.
 
     Builds the prioritised work-list (:func:`build_work_list`), takes the first
@@ -228,22 +240,64 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
     deterministic.
     """
     work_list = build_work_list(conn, index_path)
-    selected = work_list[:limit]
+
+    # Filter out already-triaged fingerprints BEFORE the limit, so --limit
+    # triages that many NEW items rather than being consumed re-scanning the
+    # needs-human backlog (which stays queued until a human reviews it). The
+    # budget for a fingerprint is thus spent at most once, even across re-runs.
+    done = triage_record.triaged_fingerprints(conn, model=model)
+    pending_work = [item for item in work_list if item.fingerprint not in done]
+    selected = pending_work[:limit]
 
     stats = TriageRunStats(queue_size=len(verdict_mod.queue(conn)))
+    stats.skipped_already_triaged = len(work_list) - len(pending_work)
+    stats.untriaged_remaining = max(len(pending_work) - len(selected), 0)
     triaged: list[TriagedItem] = []
 
-    for item in selected:
+    total = len(selected)
+    for position, item in enumerate(selected, start=1):
         body = measure.read_body(corpus_dir, item.representative_sha)
         claim_category = extract_claim(item.representative_patch_name, body).claimed_category
 
-        result = triage_and_verify(
-            body, call=call, claim_category=claim_category,
-            has_dangerous_construct=item.has_dangerous_construct, model=model)
+        # A giant diff overflows the model; route it to a human (full diff in
+        # review) rather than truncate to a misleading partial classification.
+        if len(body) > MAX_DIFF_CHARS_FOR_LLM:
+            reason = 'diff too large for LLM triage (%d chars); routed to a human' % len(body)
+            triage_record.record_triage_to_human(
+                conn, item.fingerprint, reason, now=now, model=model, priority=_priority_key(item)[1])
+            stats.too_large += 1
+            stats.needs_human += 1
+            if progress is not None:
+                progress('[%d/%d]   -> too large (%d chars) -> needs_human' % (
+                    position, total, len(body)))
+            continue
+
+        # Each triage is two (slow) LLM calls; announce the item BEFORE the call
+        # so the run is not silent while claude works, then the verdict after.
+        if progress is not None:
+            flag = ' [dangerous-construct]' if item.has_dangerous_construct else ''
+            progress('[%d/%d] triaging %s (%s, %d pkgs)%s ...' % (
+                position, total, item.representative_patch_name,
+                item.fingerprint[:12], item.n_packages, flag))
+
+        try:
+            result = triage_and_verify(
+                body, call=call, claim_category=claim_category,
+                has_dangerous_construct=item.has_dangerous_construct, model=model)
+        except Exception as exc:  # noqa: BLE001 -- one bad patch must not abort the run
+            # Route the failing patch to a human and RECORD it, so it is neither
+            # lost, re-tried-as-LLM forever, nor allowed to crash the whole batch.
+            reason = 'LLM triage failed: %s' % exc
+            triage_record.record_triage_to_human(
+                conn, item.fingerprint, reason, now=now, model=model, priority=_priority_key(item)[1])
+            stats.errored += 1
+            stats.needs_human += 1
+            if progress is not None:
+                progress('[%d/%d]   -> triage error -> needs_human: %s' % (position, total, exc))
+            continue
 
         triage_record.record_triage_result(
-            conn, item.fingerprint, result, now=now,
-            priority=_priority_key(item)[1])
+            conn, item.fingerprint, result, now=now, priority=_priority_key(item)[1])
 
         stats.triaged += 1
         category = result.draft.category
@@ -255,9 +309,11 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
         if 'claim/content mismatch' in result.reason:
             stats.claim_mismatches += 1
 
+        if progress is not None:
+            progress('[%d/%d]   -> %s (%s)' % (position, total, category, result.routing))
+
         triaged.append(TriagedItem(item=item, result=result))
 
-    stats.untriaged_remaining = max(stats.queue_size - stats.triaged, 0)
     return stats, triaged
 
 
@@ -351,6 +407,48 @@ def candidate_rules(corpus_dir, triaged, *, min_members=DEFAULT_RULE_MIN_MEMBERS
     return candidates
 
 
+def candidate_rules_from_ledger(conn, corpus_dir, index_path, *,
+                                min_members=DEFAULT_RULE_MIN_MEMBERS):
+    """Cluster EVERY verified LLM decision in the ledger into candidate rules.
+
+    The cross-batch view: rule discovery is a property of the accumulated ledger,
+    not one run.  A pattern that builds up over several triage batches (two
+    matching verdicts this run, two more next run) only reaches the threshold
+    when clustered over the whole ledger -- clustering a single run's ``triaged``
+    list (:func:`candidate_rules`) would miss it.
+
+    Pulls all live, ``verified`` ``llm`` decisions, groups them by
+    ``(category, structural key)`` (the key from each fingerprint's representative
+    body), and returns clusters of at least ``min_members``.  Only verified
+    decisions count: an unverified draft is not a settled signal worth a rule.
+    NEVER writes a rule -- the proposal goes to a human.
+    """
+    groups = _index_groups(index_path)
+    rows = conn.execute(
+        "SELECT fingerprint, category FROM decision "
+        "WHERE kind = 'llm' AND verified = 1 AND superseded_at IS NULL").fetchall()
+
+    clusters: dict[tuple[str, str], list[tuple[str, int]]] = defaultdict(list)
+    for fingerprint, category in rows:
+        group = groups.get(fingerprint)
+        if group is None:  # queued fingerprint with no provenance row -- skip
+            continue
+        key = _structural_key(corpus_dir, group['rep_sha'])
+        clusters[(category, key)].append((fingerprint, group['n_occurrences']))
+
+    candidates: list[CandidateRule] = []
+    for (category, key), members in clusters.items():
+        if len(members) < min_members:
+            continue
+        candidates.append(CandidateRule(
+            category=category, structural_key=key, member_count=len(members),
+            fingerprints=sorted(fp for fp, _ in members),
+            occurrences=sum(occ for _, occ in members)))
+
+    candidates.sort(key=lambda c: (c.member_count, c.occurrences), reverse=True)
+    return candidates
+
+
 # ---------------------------------------------------------------------------
 # The findings report.
 # ---------------------------------------------------------------------------
@@ -382,6 +480,9 @@ def render_run_report(stats: TriageRunStats, candidates: list[CandidateRule]) ->
     lines.append('- Verified: %d' % stats.verified)
     lines.append('- Needs human review: %d' % stats.needs_human)
     lines.append('- Claim/content mismatches: %d' % stats.claim_mismatches)
+    lines.append('- Skipped (already triaged on a prior run): %d' % stats.skipped_already_triaged)
+    lines.append('- Routed to human, too large for the model: %d' % stats.too_large)
+    lines.append('- Routed to human, triage error: %d' % stats.errored)
     lines.append('- **Untriaged remaining (budget did not cover): %d**'
                  % stats.untriaged_remaining)
     lines.append('')
@@ -411,6 +512,9 @@ def print_run_summary(stats: TriageRunStats, candidates: list[CandidateRule]) ->
     print('triaged %d of %d queued; verified=%d needs_human=%d claim_mismatches=%d' % (
         stats.triaged, stats.queue_size, stats.verified, stats.needs_human,
         stats.claim_mismatches))
+    if stats.skipped_already_triaged or stats.too_large or stats.errored:
+        print('skipped (already triaged)=%d; routed-to-human too-large=%d, errored=%d' % (
+            stats.skipped_already_triaged, stats.too_large, stats.errored))
     if stats.by_category:
         print('drafted categories:')
         for category in sorted(stats.by_category, key=lambda k: (-stats.by_category[k], k)):

@@ -52,8 +52,12 @@ import sys
 import urllib.parse
 from dataclasses import dataclass
 
+from divergulent.classify import fingerprint as fp
+from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import measure
 from divergulent.classify.claim import extract_claim
+
+_DEV_NULL = '/dev/null'
 
 # ---------------------------------------------------------------------------
 # Versioned constants.
@@ -89,6 +93,9 @@ SOURCES_BASE = 'https://sources.debian.org'
 # upstream source for a fixed (package, version) is immutable, so cache it long.
 SOURCE_FILE_NAMESPACE = 'review-original-source'
 SOURCE_FILE_TTL_SECONDS = 30 * 24 * 60 * 60  # 30 days
+
+# The production Sigstore OAuth issuer (sigstore 4.x has no Issuer.production()).
+_SIGSTORE_OAUTH_ISSUER = 'https://oauth2.sigstore.dev/auth'
 
 # How many lines of original context to show around each diff hunk when the file
 # is too large to show whole.
@@ -136,20 +143,123 @@ def source_file_url(source_package: str, version: str, path: str, *, area: str =
         quoted_path)
 
 
+def _candidate_versions(version: str):
+    """The version forms to try on sources.debian.org, as installed then epoch-stripped.
+
+    sources.debian.org omits the Debian epoch (the ``N:`` prefix) from its
+    ``/data/...`` path, so a version like ``1:0.13-4`` is served under
+    ``0.13-4``.  We try the version as recorded first, then the epoch-stripped
+    form -- mirroring the patches adapter's ``_candidate_versions`` so the review
+    fetch resolves the same versions the corpus build did.
+    """
+    yield version
+    if ':' in version:
+        yield version.split(':', 1)[1]
+
+
 def fetch_source_file(source_package: str, version: str, path: str, *, fetch,
                       area: str = 'main') -> str | None:
     """Fetch the ORIGINAL (pre-patch) upstream file for ``path`` at ``version``.
 
     Builds the sources.debian.org raw URL (:func:`source_file_url`) for the
     unpacked source tree -- the file state a quilt patch applies against -- and
-    fetches it via the injected ``fetch(url) -> str | None``.  ``fetch`` is
-    injected so the test suite runs fully offline; the CLI wires in a real
+    fetches it via the injected ``fetch(url) -> str | None``.  When ``version``
+    carries a Debian epoch, the first (with-epoch) URL 404s because
+    sources.debian.org strips the epoch from its path, so we fall back to the
+    epoch-stripped form (:func:`_candidate_versions`).  ``fetch`` is injected so
+    the test suite runs fully offline; the CLI wires in a real
     ``HttpClient.get_text``-backed fetcher.  Returns the file text, or ``None``
-    when the file cannot be fetched (a missing original is rendered as "no
-    original available", never a hard failure of the review).
+    when no candidate resolves (a missing original is rendered as "no original
+    available", never a hard failure of the review).
     """
-    url = source_file_url(source_package, version, path, area=area)
-    return fetch(url)
+    for candidate in _candidate_versions(version):
+        url = source_file_url(source_package, candidate, path, area=area)
+        text = fetch(url)
+        if text is not None:
+            return text
+    return None
+
+
+@dataclass(frozen=True)
+class _FileDiff:
+    """One touched file's segment of a multi-file diff body.
+
+    ``path`` is the source-tree path the patch modifies (the ``+++ b/<path>``
+    target, prefix- and timestamp-stripped -- exactly what sources.debian.org
+    serves), and ``body`` is the ``--- ``/``+++ `` headers plus the hunks for
+    that one file.  A patch that touches several files yields one of these per
+    file so each is fetched and rendered against its OWN original.
+    """
+
+    path: str
+    body: str
+
+
+def split_diff_by_file(diff_body: str) -> list[_FileDiff]:
+    """Split a unified-diff body into one :class:`_FileDiff` per touched file.
+
+    A new file segment opens at each ``--- `` header that is immediately
+    followed by a ``+++ `` header; its ``path`` is taken from the ``+++ ``
+    target (falling back to the ``--- `` source when the target is
+    ``/dev/null``, i.e. a deletion).  Reuses ``fingerprint``'s diff-start and
+    header-path semantics so the path matches the patch tier exactly.  A body
+    with no recognisable file header yields an empty list -- the caller then
+    renders the raw diff with no original context.
+    """
+    lines = fp._split_lines(diff_body)
+    start = fp._diff_start(lines)
+    segments: list[_FileDiff] = []
+    current_path: str | None = None
+    current_lines: list[str] | None = None
+
+    index = start
+    total = len(lines)
+    while index < total:
+        line = lines[index]
+        nxt = lines[index + 1] if index + 1 < total else ''
+        if line.startswith('--- ') and nxt.startswith('+++ '):
+            if current_lines is not None:
+                segments.append(_FileDiff(current_path, '\n'.join(current_lines)))
+            source = fp._header_path(line)
+            target = fp._header_path(nxt)
+            path = target
+            if target == _DEV_NULL and source and source != _DEV_NULL:
+                path = source
+            current_path = path
+            current_lines = [line]
+        elif current_lines is not None:
+            current_lines.append(line)
+        index += 1
+
+    if current_lines is not None:
+        segments.append(_FileDiff(current_path, '\n'.join(current_lines)))
+    return segments
+
+
+def build_context_view(source_package: str, version: str, diff_body: str, *,
+                       fetch, area: str = 'main') -> str:
+    """Render a whole patch in the context of EACH original file it touches.
+
+    Splits ``diff_body`` per file (:func:`split_diff_by_file`), fetches each
+    touched file's ORIGINAL (pre-patch) upstream content from sources.debian.org
+    by its real source-tree path -- NOT the quilt patch filename -- and renders
+    that file's hunks against it (:func:`render_in_context`).  The per-file
+    blocks are joined under a header naming each file (and noting when its
+    original could not be fetched).  A diff with no parseable file headers falls
+    back to showing the raw diff with no original context.
+    """
+    segments = split_diff_by_file(diff_body)
+    if not segments:
+        return render_in_context(None, diff_body)
+
+    blocks: list[str] = []
+    for segment in segments:
+        original = fetch_source_file(source_package, version, segment.path, fetch=fetch, area=area)
+        header = '### %s' % segment.path
+        if original is None:
+            header += '  [original not fetched -- showing the raw diff only]'
+        blocks.append('%s\n%s' % (header, render_in_context(original, segment.body)))
+    return '\n\n'.join(blocks)
 
 
 # ---------------------------------------------------------------------------
@@ -327,38 +437,61 @@ def sign_decision(record_bytes: bytes, *, signer) -> tuple[str, str]:
     return signer(record_bytes)
 
 
-def sigstore_signer(record_bytes: bytes) -> tuple[str, str]:
-    """KEYLESS Sigstore signing of ``record_bytes`` -> ``(bundle_json, identity)``.
+def build_sigstore_signer():
+    """Authenticate ONCE and return a reusable keyless Sigstore ``signer``.
 
-    The real signer: it runs the interactive keyless OIDC flow (a browser
-    authentication), signs ``record_bytes`` against the operator's identity, and
-    returns the Sigstore bundle as a JSON string (the ``signature``) plus the
-    OIDC identity the certificate was bound to (the ``signed_by``).  The
-    ``sigstore`` import is LAZY and behind the ``verify`` extra -- exactly as
+    Runs the interactive keyless OIDC flow (the browser authentication) a SINGLE
+    time, builds the signing context from the production trust config, and
+    returns a ``signer(record_bytes) -> (bundle_json, identity)`` closure that
+    reuses that one identity token for every call.  Draining a multi-item review
+    queue therefore authenticates once, not once per item -- the identity token
+    is valid for the whole session, so re-prompting the browser per review was
+    pure annoyance with no security benefit (every signature binds to the same
+    identity regardless).
+
+    The ``sigstore`` import is LAZY and behind the ``verify`` extra -- exactly as
     ``verify.py`` imports it -- so the base install never loads it; a missing
     dependency raises the same clear, actionable "pip install
-    divergulent[verify]" error.
-
-    This is the only function here that performs external I/O (the OIDC flow and
-    the Fulcio/Rekor calls); the tests inject a fake signer and never reach it.
+    divergulent[verify]" error.  This is the only place that performs external
+    I/O (the OIDC flow and the Fulcio/Rekor calls); the tests inject a fake
+    signer and never reach it.
     """
     try:
-        import io
-
         from sigstore.oidc import Issuer
-        from sigstore.sign import SigningContext
+        from sigstore.sign import ClientTrustConfig, SigningContext
     except ImportError as exc:
         raise RuntimeError(
             'sigstore not installed; run "pip install divergulent[verify]" to '
             'sign a human-review decision') from exc
 
-    identity_token = Issuer.production().identity_token()
-    signing_context = SigningContext.production()
-    with signing_context.signer(identity_token) as signer:
-        bundle = signer.sign_artifact(io.BytesIO(record_bytes))
+    # sigstore 4.x API: build the OAuth issuer from its URL (there is no
+    # Issuer.production()), get an interactive identity token ONCE, and build the
+    # signing context from the production trust config (not SigningContext
+    # .production()). Both are reused for every signature this session.
+    identity_token = Issuer(_SIGSTORE_OAUTH_ISSUER).identity_token()
+    signing_context = SigningContext.from_trust_config(ClientTrustConfig.production())
 
-    signed_by = identity_token.identity
-    return bundle.to_json(), signed_by
+    def signer(record_bytes: bytes) -> tuple[str, str]:
+        # A fresh signer context per artifact (cheap, no re-auth), but the SAME
+        # identity token -- so no browser prompt after the first. sign_artifact
+        # takes raw bytes, not a file object.
+        with signing_context.signer(identity_token) as one_shot:
+            bundle = one_shot.sign_artifact(record_bytes)
+        return bundle.to_json(), identity_token.identity
+
+    return signer
+
+
+def sigstore_signer(record_bytes: bytes) -> tuple[str, str]:
+    """Single-shot keyless Sigstore signing (authenticates, signs once).
+
+    A convenience wrapper over :func:`build_sigstore_signer` for callers signing
+    exactly one record; it authenticates and signs in one call.  Multi-item
+    callers (the review CLI) should call :func:`build_sigstore_signer` ONCE and
+    reuse the returned signer so the browser flow runs a single time per session
+    rather than once per item.
+    """
+    return build_sigstore_signer()(record_bytes)
 
 
 # ---------------------------------------------------------------------------
@@ -409,7 +542,6 @@ def _llm_draft(conn: sqlite3.Connection, fingerprint: str) -> sqlite3.Row | None
     triage recorder (step 4c) appended it; we read the latest live llm row from
     the audit trail so the reviewer sees the current draft, not a superseded one.
     """
-    from divergulent.classify import ledger as ledger_mod
     llm_rows = [
         row for row in ledger_mod.decisions_for(conn, fingerprint)
         if row['kind'] == 'llm' and row['superseded_at'] is None]
@@ -436,8 +568,6 @@ def review_one(conn: sqlite3.Connection, corpus_dir: str, index_path: str,
     fakes; ``now`` is the caller-supplied ISO-8601 timestamp (this module never
     reads a clock).
     """
-    from divergulent.classify import ledger as ledger_mod
-
     fingerprint = item['fingerprint']
     patch_info = _representative_patch(index_path, fingerprint)
     if patch_info is None:
@@ -453,8 +583,10 @@ def review_one(conn: sqlite3.Connection, corpus_dir: str, index_path: str,
     from divergulent.classify.triage import diff_body as extract_diff_body
     body_diff = extract_diff_body(body)
 
-    original = fetch_source_file(source_package, version, patch_name, fetch=fetch)
-    context_view = render_in_context(original, body_diff)
+    # Fetch the ORIGINAL upstream content for each file the patch touches, keyed
+    # by the file's real source-tree path (the ``+++ b/<path>`` target), NOT the
+    # quilt patch filename -- so sources.debian.org serves the right file.
+    context_view = build_context_view(source_package, version, body_diff, fetch=fetch)
 
     draft = _llm_draft(conn, fingerprint)
     context = ReviewContext(
@@ -536,17 +668,89 @@ def _representative_patch(index_path: str, fingerprint: str):
 
 
 # ---------------------------------------------------------------------------
-# 5. The CLI (``python -m divergulent.classify.review``).
+# 5. Re-queue and history (ledger operations -- no diff, no signing).
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class RequeueOutcome:
+    """What :func:`requeue_one` did for one fingerprint.
+
+    ``superseded`` is how many live human decisions were marked superseded (so the
+    prior verdict no longer stands while the patch is back under review);
+    ``reopened`` is how many already-reviewed queue items were re-opened; and
+    ``created`` is whether a fresh pending item had to be appended (the
+    fingerprint had no queue item at all).
+    """
+
+    fingerprint: str
+    superseded: int
+    reopened: int
+    created: bool
+
+
+def resolve_fingerprint(conn: sqlite3.Connection, query: str) -> tuple[str | None, list[str]]:
+    """Resolve a full-or-PREFIX fingerprint to the one it names; ``(resolved, matches)``.
+
+    A reviewer pastes a long hash or just its leading hex; this matches ``query``
+    as a prefix against every fingerprint known to the ledger (decisions OR the
+    review queue) and returns ``(fingerprint, [fingerprint])`` for a unique hit,
+    ``(None, [])`` for no match, and ``(None, matches)`` when the prefix is
+    ambiguous (so the caller can list the candidates rather than guess).
+    """
+    rows = conn.execute(
+        'SELECT fingerprint FROM ('
+        '  SELECT DISTINCT fingerprint FROM decision WHERE fingerprint LIKE ? '
+        '  UNION '
+        '  SELECT DISTINCT fingerprint FROM review_queue WHERE fingerprint LIKE ?'
+        ') ORDER BY fingerprint LIMIT 11',
+        (query + '%', query + '%')).fetchall()
+    matches = [row[0] for row in rows]
+    if len(matches) == 1:
+        return matches[0], matches
+    return None, matches
+
+
+def requeue_one(conn: sqlite3.Connection, fingerprint: str, *, now,
+                reason: str | None = None) -> RequeueOutcome:
+    """Put ``fingerprint`` back in the human-review queue; pure given ``now``.
+
+    Supersedes any live ``kind='human'`` decision for the fingerprint (so its
+    settled verdict no longer stands while it is re-reviewed), then makes it
+    pending again: re-opening an already-reviewed queue item if one exists, else
+    -- when there is neither a reviewed nor a pending item -- appending a fresh
+    pending item carrying ``reason``.  Does NOT commit or rebuild the verdict
+    cache; the CLI does both once.  ``now`` is caller-supplied (this module never
+    reads a clock).
+    """
+    superseded = ledger_mod.supersede_decisions_for_fingerprint(
+        conn, fingerprint=fingerprint, kind='human', superseded_at=now, commit=False)
+    reopened = ledger_mod.reopen_review_items(conn, fingerprint=fingerprint, commit=False)
+
+    created = False
+    if reopened == 0 and not ledger_mod.pending_review_item_exists(conn, fingerprint=fingerprint):
+        ledger_mod.append_review_item(
+            conn, fingerprint=fingerprint,
+            reason=reason or 'manually re-queued for human review',
+            draft_category=None, draft_confidence=None,
+            enqueued_at=now, priority=0, commit=False)
+        created = True
+
+    return RequeueOutcome(fingerprint, superseded, reopened, created)
+
+
+# ---------------------------------------------------------------------------
+# 6. The CLI (``python -m divergulent.classify.review <command>``).
 #
-# This is the ONLY place that reads a wall clock, selects the REAL Sigstore
-# signer, and reads interactive stdin: ``main`` captures one ``now``, wires the
-# real ``fetch`` / ``signer`` / ``ask``, and threads them into ``review_one`` for
-# each pulled item, up to ``--limit``.  The heavy/verify pieces are lazy-imported
-# inside ``main`` so the module stays import-time clean.  The tests inject fakes
-# and never reach a real backend.
+# Three subcommands: ``review`` (the default-feeling workhorse) drains the queue
+# interactively -- the ONLY place that reads a wall clock, selects the REAL
+# Sigstore signer, and reads interactive stdin; ``requeue`` sends one fingerprint
+# back for re-review; ``history`` lists recent human verdicts.  The heavy/verify
+# pieces are lazy-imported so the module stays import-time clean; the tests
+# inject fakes and never reach a real backend.
 # ---------------------------------------------------------------------------
 
 DEFAULT_LIMIT = 10
+DEFAULT_HISTORY = 20
 
 
 def _cli_now() -> str:
@@ -567,10 +771,10 @@ def _real_fetch():
     the on-disk cache), so the original-source fetch is throttled and cached like
     every other network access in the project.
     """
-    from divergulent.cache import Cache
+    from divergulent.cache import Cache, default_cache_dir
     from divergulent.http import HttpClient
 
-    client = HttpClient(Cache())
+    client = HttpClient(Cache(default_cache_dir()))
 
     def fetch(url: str) -> str | None:
         return client.get_text(
@@ -580,32 +784,59 @@ def _real_fetch():
     return fetch
 
 
-def _interactive_ask(context: ReviewContext) -> str:
-    """The real interactive ``ask``: print the context + draft + claim, read stdin.
+def _page(text: str) -> None:
+    """Show ``text`` through a pager so a big diff does not scroll off-screen.
 
-    Shows the diff IN CONTEXT, the LLM draft (category + confidence + reasoning),
-    the author's claim, and the routing reason, then reads the human's choice
-    from stdin: accept the LLM draft, override to a named category, ``unknown``,
-    or defer.  The reading of stdin is confined here (the CLI entry); every other
-    path takes ``choice`` as data.
+    Honours ``$PAGER`` (defaulting to ``less -FRX``: ``-F`` quits immediately if
+    the content fits one screen so short diffs are not trapped in the pager,
+    ``-R`` passes raw control chars, ``-X`` does not clear the screen). When
+    stdout is not a TTY, or no pager is available, or the pager errors, it falls
+    back to a plain ``print`` -- so scripted/non-interactive use is unaffected.
+    """
+    import os
+    import shutil
+    import subprocess
+    import sys
+
+    if not sys.stdout.isatty():
+        print(text)
+        return
+    pager = os.environ.get('PAGER') or ('less -FRX' if shutil.which('less') else '')
+    if not pager:
+        print(text)
+        return
+    try:
+        subprocess.run(pager, shell=True, input=text, text=True, check=False)
+    except OSError:
+        print(text)
+
+
+def _interactive_ask(context: ReviewContext) -> str:
+    """The real interactive ``ask``: page the context + draft + claim, read stdin.
+
+    Pages the diff IN CONTEXT, the LLM draft (category + confidence + reasoning),
+    the author's claim, and the routing reason through ``$PAGER`` so a large diff
+    is navigable, then reads the human's choice from stdin: accept the LLM draft,
+    override to a named category, ``unknown``, or defer.  The reading of stdin is
+    confined here (the CLI entry); every other path takes ``choice`` as data.
     """
     from divergulent.classify.triage import TRIAGE_CATEGORIES
 
-    print('=' * 78)
-    print('fingerprint: %s' % context.fingerprint)
+    view = ['=' * 78, 'fingerprint: %s' % context.fingerprint]
     if context.reason:
-        print('routed to review because: %s' % context.reason)
-    print('author claim category: %s' % context.claim_category)
+        view.append('routed to review because: %s' % context.reason)
+    view.append('author claim category: %s' % context.claim_category)
     if context.draft_category is not None:
-        print('LLM draft: %s (confidence %s)' % (
+        view.append('LLM draft: %s (confidence %s)' % (
             context.draft_category, context.draft_confidence))
         if context.draft_reasoning:
-            print('LLM reasoning: %s' % context.draft_reasoning)
+            view.append('LLM reasoning: %s' % context.draft_reasoning)
     else:
-        print('LLM draft: (none)')
-    print('-' * 78)
-    print(context.context_view)
-    print('-' * 78)
+        view.append('LLM draft: (none)')
+    view.append('-' * 78)
+    view.append(context.context_view)
+    view.append('-' * 78)
+    _page('\n'.join(view))
 
     options = []
     if context.draft_category is not None:
@@ -625,51 +856,83 @@ def _interactive_ask(context: ReviewContext) -> str:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='python -m divergulent.classify.review',
-        description='Drain the human-review queue LOCALLY and INTERACTIVELY '
-                    '(never CI, never a client feature): show each diff in the '
-                    'context of the original upstream code alongside the LLM draft '
-                    "and the author's claim, take the human's verdict, and record "
-                    'it as a SIGNED ManualDecision (Sigstore identity -> '
-                    'non-repudiation). No malice is ever pronounced by a machine.')
-    parser.add_argument('ledger', help='path to a ledger sqlite built by classify.ledger')
-    parser.add_argument('corpus_dir', help='directory of a corpus built by classify.corpus')
-    parser.add_argument('--index', default=None,
-                        help='path to the phase-1 sqlite fingerprint index (default: '
-                             '<corpus_dir>/fingerprints.sqlite)')
-    parser.add_argument('--limit', type=int, default=DEFAULT_LIMIT,
-                        help='max items to review this session (default: %d)' % DEFAULT_LIMIT)
+        description='The LOCAL, INTERACTIVE human-review tool (never CI, never a '
+                    'client feature). Review the queue, send a patch back for '
+                    're-review, or list recent verdicts. No malice is ever '
+                    'pronounced by a machine.')
+    sub = parser.add_subparsers(dest='command', required=True)
+
+    p_review = sub.add_parser(
+        'review', help='drain the human-review queue interactively',
+        description='Drain the queue: show each diff in the context of the original '
+                    'upstream code alongside the LLM draft and the author claim, take '
+                    "the human's verdict, and record it as a SIGNED ManualDecision "
+                    '(Sigstore identity -> non-repudiation).')
+    p_review.add_argument('ledger', help='path to a ledger sqlite built by classify.ledger')
+    p_review.add_argument('corpus_dir', help='directory of a corpus built by classify.corpus')
+    p_review.add_argument('--index', default=None,
+                          help='path to the phase-1 sqlite fingerprint index (default: '
+                               '<corpus_dir>/fingerprints.sqlite)')
+    p_review.add_argument('--limit', type=int, default=DEFAULT_LIMIT,
+                          help='max items to review this session (default: %d)' % DEFAULT_LIMIT)
+    p_review.set_defaults(func=_cmd_review)
+
+    p_requeue = sub.add_parser(
+        'requeue', help='send a fingerprint back to the human-review queue',
+        description='Re-open one fingerprint for human review: supersede its settled '
+                    'human verdict (kept in history) and make it pending again, so a '
+                    'reviewer can reconsider it. Accepts a full fingerprint or an '
+                    'unambiguous leading prefix.')
+    p_requeue.add_argument('ledger', help='path to a ledger sqlite built by classify.ledger')
+    p_requeue.add_argument('fingerprint', help='the fingerprint (full hex or unique prefix)')
+    p_requeue.add_argument('--reason', default=None,
+                           help='reason recorded on a freshly created queue item '
+                                '(default: "manually re-queued for human review")')
+    p_requeue.set_defaults(func=_cmd_requeue)
+
+    p_history = sub.add_parser(
+        'history', help='list recent human verdicts (newest first)',
+        description='Show the last N human review verdicts, newest first, including '
+                    'ones later superseded -- so a reviewer can spot and reconsider a '
+                    'call they have since changed (re-open it with "requeue").')
+    p_history.add_argument('ledger', help='path to a ledger sqlite built by classify.ledger')
+    p_history.add_argument('--limit', type=int, default=DEFAULT_HISTORY,
+                           help='how many recent verdicts to show (default: %d)' % DEFAULT_HISTORY)
+    p_history.set_defaults(func=_cmd_history)
+
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    """``python -m divergulent.classify.review``: drain the review queue locally.
+def _cmd_review(args) -> int:
+    """``review``: drain the queue locally, signing each human verdict.
 
     Pulls the highest-priority pending items (``pending_review_items``), reviews
     each via :func:`review_one` -- wiring the REAL ``fetch`` (cached HttpClient),
-    the REAL Sigstore ``signer``, the interactive stdin ``ask``, and the single
-    clock read -- up to ``--limit``, then rebuilds the current-verdict cache so a
-    fresh human verdict tops the precedence immediately.  The heavy/verify pieces
-    are lazy-imported here so the module stays import-time clean.
+    the REAL Sigstore ``signer`` (authenticated ONCE for the session), the
+    interactive stdin ``ask``, and the single clock read -- up to ``--limit``,
+    then rebuilds the current-verdict cache so a fresh human verdict tops the
+    precedence immediately.
     """
     import os
 
-    from divergulent.classify import ledger as ledger_mod
     from divergulent.classify import verdict as verdict_mod
-
-    parser = _build_parser()
-    args = parser.parse_args(argv)
 
     index_path = args.index or os.path.join(args.corpus_dir, 'fingerprints.sqlite')
 
     fetch = _real_fetch()
-    conn = sqlite3.connect(args.ledger)
+    conn = ledger_mod.open_ledger(args.ledger)
     try:
         pending = ledger_mod.pending_review_items(conn)
+        # Authenticate to Sigstore ONCE for the whole session (the identity token
+        # is reused across every signature) rather than once per reviewed item --
+        # only build it if there is at least one item to review, so an empty queue
+        # never triggers a browser prompt.
+        signer = build_sigstore_signer() if pending[:args.limit] else None
         reviewed = deferred = 0
         for item in pending[:args.limit]:
             outcome = review_one(
                 conn, args.corpus_dir, index_path, item,
-                fetch=fetch, signer=sigstore_signer, ask=_interactive_ask,
+                fetch=fetch, signer=signer, ask=_interactive_ask,
                 now=_cli_now())
             if outcome.recorded:
                 reviewed += 1
@@ -687,6 +950,90 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _cmd_requeue(args) -> int:
+    """``requeue``: send one fingerprint back to the human-review queue.
+
+    Resolves the fingerprint (full hex or unambiguous prefix), supersedes its
+    live human verdict, re-opens (or creates) its queue item, and rebuilds the
+    verdict cache so the fingerprint drops back to pending immediately.  Refuses
+    an unknown or ambiguous fingerprint with a clear, non-zero-exit message
+    rather than guessing.
+    """
+    from divergulent.classify import verdict as verdict_mod
+
+    conn = ledger_mod.open_ledger(args.ledger)
+    try:
+        resolved, matches = resolve_fingerprint(conn, args.fingerprint)
+        if resolved is None:
+            if not matches:
+                print('no fingerprint matches %r' % args.fingerprint, file=sys.stderr)
+            else:
+                print('ambiguous prefix %r matches %d fingerprints:' % (
+                    args.fingerprint, len(matches)), file=sys.stderr)
+                for fingerprint in matches[:10]:
+                    print('  %s' % fingerprint, file=sys.stderr)
+                if len(matches) > 10:
+                    print('  ... (more)', file=sys.stderr)
+            return 1
+
+        outcome = requeue_one(conn, resolved, now=_cli_now(), reason=args.reason)
+        conn.commit()
+        verdict_mod.rebuild_current_verdict(conn)
+    finally:
+        conn.close()
+
+    where = ('re-opened its existing queue item' if outcome.reopened
+             else 'created a new pending queue item' if outcome.created
+             else 'already pending -- left as is')
+    print('re-queued %s: superseded %d human verdict(s), %s' % (
+        resolved[:16], outcome.superseded, where))
+    return 0
+
+
+def _cmd_history(args) -> int:
+    """``history``: print the last N human verdicts, newest first.
+
+    Read-only.  Lists each recent ``kind='human'`` decision -- category, when,
+    who signed it, the source package it concerned, and whether it has since been
+    superseded -- so a reviewer can scan their recent calls and re-open any they
+    want to reconsider.
+    """
+    conn = ledger_mod.open_ledger(args.ledger)
+    try:
+        rows = ledger_mod.recent_human_decisions(conn, limit=args.limit)
+    finally:
+        conn.close()
+
+    if not rows:
+        print('no human reviews recorded yet')
+        return 0
+
+    print('last %d human verdict(s), newest first:' % len(rows))
+    for row in rows:
+        print(_format_history_row(row))
+    return 0
+
+
+def _format_history_row(row: sqlite3.Row) -> str:
+    """One compact ``history`` line for a human decision row."""
+    package = _history_package(row['evidence'])
+    when = (row['decided_at'] or '')[:19]
+    status = ' [SUPERSEDED]' if row['superseded_at'] else ''
+    signer = row['signed_by'] or '(unsigned)'
+    return '  %s  %-13s  %s  %-28s  %s%s' % (
+        row['fingerprint'][:16], row['category'], when, package, signer, status)
+
+
+def _history_package(evidence: str | None) -> str:
+    """The source package recorded in a human decision's evidence JSON, or ``'?'``."""
+    if not evidence:
+        return '?'
+    try:
+        return json.loads(evidence).get('reviewed', {}).get('source_package') or '?'
+    except (ValueError, TypeError):
+        return '?'
+
+
 def _signed_by(conn: sqlite3.Connection, decision_id: int | None) -> str:
     """The ``signed_by`` identity recorded on a decision row (for the CLI print)."""
     if decision_id is None:
@@ -694,6 +1041,23 @@ def _signed_by(conn: sqlite3.Connection, decision_id: int | None) -> str:
     row = conn.execute(
         'SELECT signed_by FROM decision WHERE id = ?', (decision_id,)).fetchone()
     return (row[0] if row and row[0] else '(unsigned)')
+
+
+def main(argv: list[str] | None = None) -> int:
+    """``python -m divergulent.classify.review <command>``: dispatch a subcommand.
+
+    Parses the subcommand (``review`` / ``requeue`` / ``history``) and calls its
+    handler.  Each handler owns its own ledger connection and the single clock
+    read; this entry point only routes.  A bad ledger path raises
+    :class:`ledger.LedgerError`, which we render as one clear stderr line.
+    """
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    try:
+        return args.func(args)
+    except ledger_mod.LedgerError as exc:
+        print('error: %s' % exc, file=sys.stderr)
+        return 1
 
 
 if __name__ == '__main__':

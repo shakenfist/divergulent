@@ -207,6 +207,50 @@ def default_registry() -> list[RegisteredRule]:
 # Schema.
 # ---------------------------------------------------------------------------
 
+# The tables a built ledger must carry.  :func:`open_ledger` checks for these so
+# a mistyped path fails up front with an actionable message rather than deep in a
+# query with a baffling "no such table".
+REQUIRED_TABLES: frozenset[str] = frozenset({'meta', 'rule', 'decision', 'observation'})
+
+
+class LedgerError(Exception):
+    """A user-facing error: a path is not a built ledger (or does not exist).
+
+    Raised by :func:`open_ledger` and caught by the ledger / review CLIs, which
+    print its message to stderr and exit non-zero -- so an operator sees one
+    clear line, not a traceback.
+    """
+
+
+def open_ledger(path: str) -> sqlite3.Connection:
+    """Open an EXISTING built ledger at ``path``; fail clearly if it is not one.
+
+    A bare ``sqlite3.connect`` silently CREATES an empty database for a missing
+    path, so a mistyped or unbuilt ledger surfaces only later as a confusing
+    ``no such table: decision`` deep inside a query.  This guards the read/update
+    commands instead: it requires ``path`` to already exist and to carry the
+    ledger schema (:data:`REQUIRED_TABLES`), raising :class:`LedgerError` with an
+    actionable message otherwise.  Returns a connection with ``row_factory`` set
+    to :class:`sqlite3.Row` (the caller closes it).  ``build`` does NOT use this
+    -- it legitimately creates a new ledger via :func:`create_ledger`.
+    """
+    if not os.path.exists(path):
+        raise LedgerError(
+            '%r does not exist. Pass a ledger built by `ledger build`, '
+            'e.g. <corpus_dir>/ledger.sqlite.' % path)
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    present = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()}
+    missing = REQUIRED_TABLES - present
+    if missing:
+        conn.close()
+        raise LedgerError(
+            '%r is not a divergulent ledger (missing table(s): %s). Did you mean '
+            'a built ledger such as <corpus_dir>/ledger.sqlite, or run '
+            '`ledger build` first?' % (path, ', '.join(sorted(missing))))
+    return conn
+
 
 def create_ledger(path: str) -> sqlite3.Connection:
     """Create a fresh ledger at ``path``, overwriting any existing file.
@@ -418,6 +462,35 @@ def supersede_decisions(conn: sqlite3.Connection, *, decided_by: str, rule_versi
     return cursor.rowcount
 
 
+def supersede_decisions_for_fingerprint(conn: sqlite3.Connection, *, fingerprint: str,
+                                        kind: str | None = None, superseded_at: str,
+                                        commit: bool = True) -> int:
+    """Supersede the LIVE decisions of ONE fingerprint; returns the count.
+
+    The surgical, single-fingerprint counterpart to :func:`supersede_decisions`
+    (which is rule-wide): sets ``superseded_at`` only on currently-live rows for
+    ``fingerprint``, optionally narrowed to one ``kind`` (e.g. ``'human'`` to
+    redo just a human verdict).  Rows are never deleted — they stay as the audit
+    trail, marked superseded.  Used by the review tool's ``requeue`` so a single
+    patch can be sent back for human review without disturbing any other
+    fingerprint's verdict.  ``commit`` defaults to True; a multi-step caller
+    passes ``commit=False`` and commits once.
+    """
+    if kind is None:
+        cursor = conn.execute(
+            'UPDATE decision SET superseded_at = ? '
+            'WHERE fingerprint = ? AND superseded_at IS NULL',
+            (superseded_at, fingerprint))
+    else:
+        cursor = conn.execute(
+            'UPDATE decision SET superseded_at = ? '
+            'WHERE fingerprint = ? AND kind = ? AND superseded_at IS NULL',
+            (superseded_at, fingerprint, kind))
+    if commit:
+        conn.commit()
+    return cursor.rowcount
+
+
 def supersede_observations(conn: sqlite3.Connection, *, observed_by: str, rule_version: int,
                            superseded_at: str) -> int:
     """Supersede the LIVE observations of one rule version; returns the count.
@@ -480,6 +553,21 @@ def decisions_for(conn: sqlite3.Connection, fingerprint: str) -> list[sqlite3.Ro
     conn.row_factory = sqlite3.Row
     return conn.execute(
         'SELECT * FROM decision WHERE fingerprint = ? ORDER BY id', (fingerprint,)).fetchall()
+
+
+def recent_human_decisions(conn: sqlite3.Connection, *, limit: int) -> list[sqlite3.Row]:
+    """The most recent ``limit`` human decisions, newest first (live OR superseded).
+
+    Backs the review tool's ``history`` command: the reviewer's last N verdicts in
+    reverse-chronological (insert) order, INCLUDING superseded ones, so a reviewer
+    can spot and reconsider a call they later changed.  Ordered by ``id`` DESC
+    (insert order) rather than ``decided_at`` so the ordering is total even when
+    timestamps collide.
+    """
+    conn.row_factory = sqlite3.Row
+    return conn.execute(
+        "SELECT * FROM decision WHERE kind = 'human' ORDER BY id DESC LIMIT ?",
+        (limit,)).fetchall()
 
 
 def live_observations(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -597,6 +685,26 @@ def mark_reviewed(conn: sqlite3.Connection, *, item_id: int, reviewed_at: str) -
     return cursor.rowcount
 
 
+def reopen_review_items(conn: sqlite3.Connection, *, fingerprint: str,
+                        commit: bool = True) -> int:
+    """Re-open every ALREADY-REVIEWED queue item for ``fingerprint``; returns the count.
+
+    The inverse of :func:`mark_reviewed`: clears ``reviewed_at`` (back to NULL) on
+    items previously marked reviewed, so the fingerprint becomes pending again and
+    :func:`pending_review_items` pulls it for a fresh human pass.  Items already
+    pending are untouched (the filter requires ``reviewed_at IS NOT NULL``).  Used
+    by the review tool's ``requeue``.  ``commit`` defaults to True; a multi-step
+    caller passes ``commit=False`` and commits once.
+    """
+    cursor = conn.execute(
+        'UPDATE review_queue SET reviewed_at = NULL '
+        'WHERE fingerprint = ? AND reviewed_at IS NOT NULL',
+        (fingerprint,))
+    if commit:
+        conn.commit()
+    return cursor.rowcount
+
+
 # ---------------------------------------------------------------------------
 # Supersession / redo (step 3d).
 #
@@ -703,13 +811,25 @@ def _cli_now() -> str:
 def _cmd_build(args: argparse.Namespace) -> int:
     """``build``: create a ledger from a corpus and print the verdict report."""
     from divergulent.classify import record, verdict
+    from divergulent.progress import Progress
 
     index_path = args.index or os.path.join(args.corpus_dir, 'fingerprints.sqlite')
     out_path = args.out or os.path.join(args.corpus_dir, 'ledger.sqlite')
 
+    # Count the distinct fingerprints up front so the build shows live progress
+    # over the ~3-4 minute deterministic pass instead of going silent.
+    index_conn = sqlite3.connect(index_path)
+    try:
+        (total,) = index_conn.execute('SELECT COUNT(DISTINCT fingerprint) FROM patch').fetchone()
+    finally:
+        index_conn.close()
+    print('recording deterministic decisions for %d fingerprints...' % total, file=sys.stderr)
+    progress = Progress(total)
+
     conn = create_ledger(out_path)
     try:
-        stats = record.record_to_ledger(conn, args.corpus_dir, index_path, now=_cli_now())
+        stats = record.record_to_ledger(
+            conn, args.corpus_dir, index_path, now=_cli_now(), progress=progress)
         rows = verdict.rebuild_current_verdict(conn)
         print(verdict.render_report(verdict.summarise_ledger(conn)))
         print('built ledger: %s' % out_path)
@@ -727,7 +847,7 @@ def _cmd_report(args: argparse.Namespace) -> int:
     """``report``: open a built ledger and print the current-verdict report."""
     from divergulent.classify import verdict
 
-    conn = sqlite3.connect(args.ledger)
+    conn = open_ledger(args.ledger)
     try:
         print(verdict.render_report(verdict.summarise_ledger(conn)))
     finally:
@@ -739,7 +859,7 @@ def _cmd_supersede(args: argparse.Namespace) -> int:
     """``supersede``: supersede a rule version's decisions/observations + re-queue."""
     from divergulent.classify import verdict
 
-    conn = sqlite3.connect(args.ledger)
+    conn = open_ledger(args.ledger)
     try:
         result = supersede_rule(
             conn, rule_id=args.rule_id, version=args.version,
@@ -803,7 +923,11 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = _build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except LedgerError as exc:
+        print('error: %s' % exc, file=sys.stderr)
+        return 1
 
 
 if __name__ == '__main__':

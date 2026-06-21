@@ -285,3 +285,23 @@ class ClaudeCliCallTestCase(testtools.TestCase):
         with mock.patch('divergulent.classify.triage.subprocess.run', return_value=completed):
             verdict = triage(_patch_with_description(), call=claude_cli_call)
         self.assertEqual('feature', verdict.category)
+
+
+class ClaudeCliErrorDetailTestCase(testtools.TestCase):
+    """claude writes its failure reason (auth, usage limit) to stdout, so the
+    error must surface stdout + the command, not just an exit code."""
+
+    def test_nonzero_exit_surfaces_stdout_and_command(self):
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout='Usage limit reached. Try again later.', stderr='')
+        with mock.patch('divergulent.classify.triage.subprocess.run', return_value=completed):
+            exc = self.assertRaises(RuntimeError, claude_cli_call, 'p', model=DEFAULT_MODEL)
+        self.assertIn('Usage limit reached', str(exc))
+        self.assertIn('claude -p', str(exc))
+
+    def test_empty_response_on_zero_exit_raises(self):
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout='   \n', stderr='')
+        with mock.patch('divergulent.classify.triage.subprocess.run', return_value=completed):
+            exc = self.assertRaises(RuntimeError, claude_cli_call, 'p', model=DEFAULT_MODEL)
+        self.assertIn('empty response', str(exc))
