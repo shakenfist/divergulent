@@ -690,6 +690,33 @@ def mark_reviewed(conn: sqlite3.Connection, *, item_id: int, reviewed_at: str) -
     return cursor.rowcount
 
 
+def resolve_settled_review_items(conn: sqlite3.Connection, *, now: str,
+                                 commit: bool = True) -> int:
+    """Dequeue pending review items whose fingerprint is now DETERMINISTICALLY settled.
+
+    When a deterministic rule (re)classifies a fingerprint to a settled category
+    -- e.g. ``ledger record`` applying ``test-only`` -> ``test`` -- a human no
+    longer needs to review it, but its pending ``review_queue`` item (enqueued
+    earlier when the LLM tier routed it to needs-human) would otherwise still be
+    pulled, wasting review effort on an already-settled patch.  This marks such
+    items reviewed (``reviewed_at = now``, the dequeue mechanism) when the
+    fingerprint's current winning verdict is a ``heuristic`` decision with a
+    non-``unknown`` category -- i.e. a real rule settled it, not the
+    ``substantive`` residue rule.  It reads the ``current_verdict`` cache, so the
+    caller must rebuild that first.  Returns the count cleared; ``now`` is
+    caller-supplied.
+    """
+    cursor = conn.execute(
+        'UPDATE review_queue SET reviewed_at = ? '
+        'WHERE reviewed_at IS NULL AND fingerprint IN ('
+        "  SELECT fingerprint FROM current_verdict "
+        "  WHERE kind = 'heuristic' AND category != 'unknown')",
+        (now,))
+    if commit:
+        conn.commit()
+    return cursor.rowcount
+
+
 def reopen_review_items(conn: sqlite3.Connection, *, fingerprint: str,
                         commit: bool = True) -> int:
     """Re-open every ALREADY-REVIEWED queue item for ``fingerprint``; returns the count.
@@ -919,8 +946,10 @@ def _cmd_record(args: argparse.Namespace) -> int:
     ledger and re-runs every deterministic rule append-only, superseding any
     heuristic decision whose winning rule has changed (so adding/bumping a rule --
     e.g. the new ``test-only`` rule -- reclassifies the affected fingerprints in
-    place), then bumps the recorded category-enum version and rebuilds the verdict
-    cache.  llm/human decisions and the review queue are untouched.
+    place), bumps the recorded category-enum version, rebuilds the verdict cache,
+    and DEQUEUES any pending review item whose fingerprint a rule has now settled
+    deterministically (so a test-only patch queued before the rule existed stops
+    being pulled for review).  llm/human decisions are untouched.
     """
     from divergulent.classify import record, verdict
     from divergulent.progress import Progress
@@ -931,6 +960,7 @@ def _cmd_record(args: argparse.Namespace) -> int:
             '%r does not exist; pass --index or build the corpus fingerprint index first.'
             % index_path)
 
+    now = _cli_now()
     conn = open_ledger(args.ledger)
     try:
         index_conn = sqlite3.connect(index_path)
@@ -944,7 +974,7 @@ def _cmd_record(args: argparse.Namespace) -> int:
         progress = Progress(total)
 
         stats = record.record_to_ledger(
-            conn, args.corpus_dir, index_path, now=_cli_now(), progress=progress,
+            conn, args.corpus_dir, index_path, now=now, progress=progress,
             reconcile=True)
         # A newly-applied rule may add a category (e.g. ``test`` at enum v2); record
         # the current enum version so ``meta`` reflects what the ledger now holds.
@@ -952,8 +982,12 @@ def _cmd_record(args: argparse.Namespace) -> int:
                      (str(CATEGORY_ENUM_VERSION),))
         conn.commit()
         rows = verdict.rebuild_current_verdict(conn)
+        # Drop now-settled fingerprints from the human-review queue (the cache the
+        # query reads was just rebuilt above).
+        dequeued = resolve_settled_review_items(conn, now=now)
         print(verdict.render_report(verdict.summarise_ledger(conn)))
         print('recorded into ledger: %s' % args.ledger)
+        print('dequeued %d now-settled review items' % dequeued)
         print('decisions appended=%d skipped=%d superseded=%d; observations appended=%d '
               'skipped=%d; fingerprints=%d; current verdicts=%d' % (
                   stats.decisions_appended, stats.decisions_skipped,
