@@ -443,17 +443,37 @@ def sign_decision(record_bytes: bytes, *, signer) -> tuple[str, str]:
     return signer(record_bytes)
 
 
-def build_sigstore_signer():
-    """Authenticate ONCE and return a reusable keyless Sigstore ``signer``.
+def _sign_with_refresh(attempt, refresh, expired_errors):
+    """Run ``attempt()``; on an expired-identity error, ``refresh()`` and retry ONCE.
 
-    Runs the interactive keyless OIDC flow (the browser authentication) a SINGLE
-    time, builds the signing context from the production trust config, and
-    returns a ``signer(record_bytes) -> (bundle_json, identity)`` closure that
-    reuses that one identity token for every call.  Draining a multi-item review
-    queue therefore authenticates once, not once per item -- the identity token
-    is valid for the whole session, so re-prompting the browser per review was
-    pure annoyance with no security benefit (every signature binds to the same
-    identity regardless).
+    The keyless OIDC identity token is short-lived (minutes), so a reviewer who
+    reads a diff longer than its lifetime would otherwise crash at sign time with
+    the verdict already given.  This retries exactly once after re-authenticating,
+    so a slow read costs at most one extra browser prompt -- never a lost verdict.
+    A second consecutive expiry (e.g. the reviewer abandons the re-auth) is
+    allowed to propagate.  ``expired_errors`` is the tuple of exception types that
+    mean "token expired"; kept as a parameter so this is testable without
+    ``sigstore`` installed.
+    """
+    try:
+        return attempt()
+    except expired_errors:
+        refresh()
+        return attempt()
+
+
+def build_sigstore_signer():
+    """Return a keyless Sigstore ``signer`` that authenticates lazily and refreshes.
+
+    Returns a ``signer(record_bytes) -> (bundle_json, identity)`` closure.  The
+    interactive keyless OIDC flow (the browser authentication) runs on the FIRST
+    signature and the resulting identity token is reused for every later one, so
+    draining a multi-item queue prompts the browser once, not once per item (and
+    a session where every item is deferred never prompts at all).  Because that
+    token is short-lived, if it has EXPIRED by the time a signature is made -- the
+    reviewer spent longer reading the diff than the token's lifetime -- the signer
+    re-authenticates and retries once (:func:`_sign_with_refresh`) rather than
+    crashing with the verdict already given.
 
     The ``sigstore`` import is LAZY and behind the ``verify`` extra -- exactly as
     ``verify.py`` imports it -- so the base install never loads it; a missing
@@ -463,7 +483,7 @@ def build_sigstore_signer():
     signer and never reach it.
     """
     try:
-        from sigstore.oidc import Issuer
+        from sigstore.oidc import ExpiredIdentity, Issuer
         from sigstore.sign import ClientTrustConfig, SigningContext
     except ImportError as exc:
         raise RuntimeError(
@@ -471,19 +491,30 @@ def build_sigstore_signer():
             'sign a human-review decision') from exc
 
     # sigstore 4.x API: build the OAuth issuer from its URL (there is no
-    # Issuer.production()), get an interactive identity token ONCE, and build the
-    # signing context from the production trust config (not SigningContext
-    # .production()). Both are reused for every signature this session.
-    identity_token = Issuer(_SIGSTORE_OAUTH_ISSUER).identity_token()
+    # Issuer.production()) and the signing context from the production trust
+    # config (not SigningContext.production()). The identity token is acquired
+    # lazily on first use and refreshed on expiry.
+    issuer = Issuer(_SIGSTORE_OAUTH_ISSUER)
     signing_context = SigningContext.from_trust_config(ClientTrustConfig.production())
+    holder: dict = {'token': None}
+
+    def refresh() -> None:
+        # (Re)run the browser OIDC flow; called on first sign and on expiry.
+        holder['token'] = issuer.identity_token()
 
     def signer(record_bytes: bytes) -> tuple[str, str]:
-        # A fresh signer context per artifact (cheap, no re-auth), but the SAME
-        # identity token -- so no browser prompt after the first. sign_artifact
-        # takes raw bytes, not a file object.
-        with signing_context.signer(identity_token) as one_shot:
-            bundle = one_shot.sign_artifact(record_bytes)
-        return bundle.to_json(), identity_token.identity
+        if holder['token'] is None:
+            refresh()
+
+        def attempt() -> tuple[str, str]:
+            token = holder['token']
+            # A fresh signer context per artifact (cheap, no re-auth) over the
+            # SAME token; sign_artifact takes raw bytes, not a file object.
+            with signing_context.signer(token) as one_shot:
+                bundle = one_shot.sign_artifact(record_bytes)
+            return bundle.to_json(), token.identity
+
+        return _sign_with_refresh(attempt, refresh, (ExpiredIdentity,))
 
     return signer
 
@@ -964,10 +995,9 @@ def _cmd_review(args) -> int:
 
     Pulls the highest-priority pending items (``pending_review_items``), reviews
     each via :func:`review_one` -- wiring the REAL ``fetch`` (cached HttpClient),
-    the REAL Sigstore ``signer`` (authenticated ONCE for the session), the
-    interactive stdin ``ask``, and the single clock read -- up to ``--limit``,
-    then rebuilds the current-verdict cache so a fresh human verdict tops the
-    precedence immediately.
+    the REAL Sigstore ``signer``, the interactive stdin ``ask``, and the single
+    clock read -- up to ``--limit``, then rebuilds the current-verdict cache so a
+    fresh human verdict tops the precedence immediately.
     """
     import os
 
@@ -979,10 +1009,9 @@ def _cmd_review(args) -> int:
     conn = ledger_mod.open_ledger(args.ledger)
     try:
         pending = ledger_mod.pending_review_items(conn)
-        # Authenticate to Sigstore ONCE for the whole session (the identity token
-        # is reused across every signature) rather than once per reviewed item --
-        # only build it if there is at least one item to review, so an empty queue
-        # never triggers a browser prompt.
+        # One signer for the whole session: it authenticates on the FIRST
+        # signature (so an all-defer session never prompts) and reuses the token
+        # for the rest, refreshing it if it expires while a diff is being read.
         signer = build_sigstore_signer() if pending[:args.limit] else None
         reviewed = deferred = 0
         for item in pending[:args.limit]:

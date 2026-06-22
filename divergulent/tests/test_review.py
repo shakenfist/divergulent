@@ -391,6 +391,54 @@ def _context(*, packages, source_package='reader', version='1.2-3'):
         source_package=source_package, version=version, packages=tuple(packages))
 
 
+class _FakeExpired(Exception):
+    """Stands in for sigstore.oidc.ExpiredIdentity in signer-refresh tests."""
+
+
+class SignWithRefreshTestCase(testtools.TestCase):
+    """The signer retries ONCE after re-auth when the identity token has expired,
+    so a slow read never loses a verdict (and a fast one never re-auths)."""
+
+    def test_success_does_not_refresh(self):
+        calls = {'attempt': 0, 'refresh': 0}
+
+        def attempt():
+            calls['attempt'] += 1
+            return 'sig'
+
+        def refresh():
+            calls['refresh'] += 1
+
+        result = review._sign_with_refresh(attempt, refresh, (_FakeExpired,))
+        self.assertEqual('sig', result)
+        self.assertEqual(1, calls['attempt'])
+        self.assertEqual(0, calls['refresh'])
+
+    def test_expiry_refreshes_once_then_succeeds(self):
+        calls = {'attempt': 0, 'refresh': 0}
+
+        def attempt():
+            calls['attempt'] += 1
+            if calls['attempt'] == 1:
+                raise _FakeExpired()
+            return 'sig-after-reauth'
+
+        def refresh():
+            calls['refresh'] += 1
+
+        result = review._sign_with_refresh(attempt, refresh, (_FakeExpired,))
+        self.assertEqual('sig-after-reauth', result)
+        self.assertEqual(2, calls['attempt'])   # retried exactly once
+        self.assertEqual(1, calls['refresh'])   # re-authenticated once
+
+    def test_second_consecutive_expiry_propagates(self):
+        def attempt():
+            raise _FakeExpired()
+
+        self.assertRaises(
+            _FakeExpired, review._sign_with_refresh, attempt, lambda: None, (_FakeExpired,))
+
+
 class FormatPackageLinesTestCase(testtools.TestCase):
     """The review UI names the representative package and the full blast radius."""
 
