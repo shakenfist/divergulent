@@ -288,3 +288,71 @@ class IdempotencyTestCase(testtools.TestCase):
         # And the surviving timestamps are the originals (nothing re-stamped).
         live = {row['fingerprint']: row for row in ledger_mod.live_decisions(conn)}
         self.assertEqual(WHEN, live[_fp(MODE_ONLY)]['decided_at'])
+
+
+class ReconcileTestCase(testtools.TestCase):
+    """``reconcile=True`` retires a fingerprint's stale heuristic decision when the
+    winning rule changed -- keeping exactly one live deterministic decision, while
+    llm/human verdicts (a different tier) are left untouched."""
+
+    def _corpus_ledger(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        index_path = _build_synthetic_corpus(tmp.name)
+        conn = ledger_mod.create_ledger(os.path.join(tmp.name, 'ledger.sqlite'))
+        self.addCleanup(conn.close)
+        ledger_mod.register_rules(conn, ledger_mod.default_registry())
+        record.record_to_ledger(conn, tmp.name, index_path, now=WHEN)
+        return conn, tmp.name, index_path
+
+    def _make_stale(self, conn, fp):
+        # Simulate a pre-rule-change state: the real winner ('substantive') is
+        # superseded and a DIFFERENT heuristic rule's decision is live instead.
+        ledger_mod.supersede_decisions_for_fingerprint(
+            conn, fingerprint=fp, kind='heuristic', superseded_at=WHEN)
+        ledger_mod.append_decision(
+            conn, fingerprint=fp, category='documentation', confidence='high',
+            decided_by='doc-only', rule_version=1, kind='heuristic',
+            evidence='stale', decided_at=WHEN)
+
+    def _live_heuristic(self, conn, fp):
+        return [r for r in ledger_mod.decisions_for(conn, fp)
+                if r['kind'] == 'heuristic' and r['superseded_at'] is None]
+
+    def test_reconcile_supersedes_stale_and_restores_winner(self):
+        conn, corpus_dir, index_path = self._corpus_ledger()
+        fp = _fp(SUBSTANTIVE)
+        self._make_stale(conn, fp)
+        # A verified llm verdict on the same fingerprint must survive reconcile.
+        ledger_mod.append_decision(
+            conn, fingerprint=fp, category='bugfix', confidence='high',
+            decided_by='llm-triage:m', rule_version=1, kind='llm', verified=True,
+            evidence=None, decided_at=WHEN)
+
+        stats = record.record_to_ledger(
+            conn, corpus_dir, index_path, now=LATER, reconcile=True)
+
+        live = self._live_heuristic(conn, fp)
+        self.assertEqual(1, len(live))                          # exactly one live heuristic
+        self.assertEqual('substantive', live[0]['decided_by'])  # the real winner restored
+        self.assertEqual('unknown', live[0]['category'])
+        self.assertEqual(1, stats.decisions_superseded)
+        # The llm decision is untouched.
+        llm = [r for r in ledger_mod.decisions_for(conn, fp)
+               if r['kind'] == 'llm' and r['superseded_at'] is None]
+        self.assertEqual(1, len(llm))
+        self.assertEqual('bugfix', llm[0]['category'])
+
+    def test_default_does_not_supersede(self):
+        # Without reconcile, the stale decision is left live -> two live heuristic
+        # decisions (the messy state reconcile exists to fix).
+        conn, corpus_dir, index_path = self._corpus_ledger()
+        fp = _fp(SUBSTANTIVE)
+        self._make_stale(conn, fp)
+
+        stats = record.record_to_ledger(conn, corpus_dir, index_path, now=LATER)
+
+        self.assertEqual(0, stats.decisions_superseded)
+        live = self._live_heuristic(conn, fp)
+        self.assertEqual(2, len(live))
+        self.assertEqual({'doc-only', 'substantive'}, {r['decided_by'] for r in live})

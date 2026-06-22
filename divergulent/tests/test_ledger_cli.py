@@ -270,6 +270,97 @@ class LedgerCliTestCase(testtools.TestCase):
         self.assertIn('# Ledger report', report_out)
         self.assertIn('Fingerprints with a live verdict: 2', report_out)
 
+    def _add_human_decision(self, ledger_path):
+        """Append an irreplaceable human decision to simulate review work at risk."""
+        conn = sqlite3.connect(ledger_path)
+        try:
+            ledger_mod.append_decision(
+                conn, fingerprint='h' * 64, category='packaging', confidence='high',
+                decided_by='human-review', rule_version=1, kind='human', verified=True,
+                evidence=None, decided_at=WHEN)
+        finally:
+            conn.close()
+
+    def _set_stdin(self, text, *, tty):
+        import sys
+
+        class _Stdin(io.StringIO):
+            def isatty(self):
+                return tty
+
+        original = sys.stdin
+        sys.stdin = _Stdin(text)
+        self.addCleanup(setattr, sys, 'stdin', original)
+
+    def test_rebuild_refused_without_force_noninteractively(self):
+        corpus_dir, _ = self._corpus()
+        ledger_path = os.path.join(corpus_dir, 'ledger.sqlite')
+        self._run_main(['build', corpus_dir])
+        self._add_human_decision(ledger_path)
+
+        self._set_stdin('', tty=False)  # no TTY -> must refuse, not silently wipe
+        code, _ = self._run_main(['build', corpus_dir])
+        self.assertEqual(1, code)
+        # The human decision survived: the ledger was NOT wiped.
+        conn = sqlite3.connect(ledger_path)
+        self.addCleanup(conn.close)
+        self.assertEqual(
+            1, conn.execute("SELECT COUNT(*) FROM decision WHERE kind='human'").fetchone()[0])
+
+    def test_rebuild_with_force_overwrites(self):
+        corpus_dir, _ = self._corpus()
+        ledger_path = os.path.join(corpus_dir, 'ledger.sqlite')
+        self._run_main(['build', corpus_dir])
+        self._add_human_decision(ledger_path)
+
+        code, _ = self._run_main(['build', corpus_dir, '--force'])
+        self.assertEqual(0, code)
+        # --force wiped and rebuilt: the human decision is gone.
+        conn = sqlite3.connect(ledger_path)
+        self.addCleanup(conn.close)
+        self.assertEqual(
+            0, conn.execute("SELECT COUNT(*) FROM decision WHERE kind='human'").fetchone()[0])
+
+    def test_rebuild_confirmed_interactively_proceeds(self):
+        corpus_dir, _ = self._corpus()
+        ledger_path = os.path.join(corpus_dir, 'ledger.sqlite')
+        self._run_main(['build', corpus_dir])
+        self._add_human_decision(ledger_path)
+
+        self._set_stdin('wipe\n', tty=True)  # operator confirms
+        code, _ = self._run_main(['build', corpus_dir])
+        self.assertEqual(0, code)
+        conn = sqlite3.connect(ledger_path)
+        self.addCleanup(conn.close)
+        self.assertEqual(
+            0, conn.execute("SELECT COUNT(*) FROM decision WHERE kind='human'").fetchone()[0])
+
+    def test_record_applies_rules_nondestructively(self):
+        corpus_dir, _ = self._corpus()
+        ledger_path = os.path.join(corpus_dir, 'ledger.sqlite')
+        self._run_main(['build', corpus_dir])
+        self._add_human_decision(ledger_path)
+
+        code, out = self._run_main(['record', ledger_path, corpus_dir])
+        self.assertEqual(0, code)
+        self.assertIn('# Ledger report', out)
+        self.assertIn('recorded into ledger', out)
+
+        conn = sqlite3.connect(ledger_path)
+        self.addCleanup(conn.close)
+        # The human decision survived (record never recreates the ledger)...
+        self.assertEqual(
+            1, conn.execute("SELECT COUNT(*) FROM decision WHERE kind='human'").fetchone()[0])
+        # ...and the recorded category-enum version reflects the current rules.
+        meta = dict(conn.execute('SELECT key, value FROM meta').fetchall())
+        self.assertEqual(str(ledger_mod.CATEGORY_ENUM_VERSION), meta['category_enum_version'])
+
+    def test_record_refuses_unbuilt_ledger(self):
+        corpus_dir, _ = self._corpus()
+        missing = os.path.join(corpus_dir, 'nope.sqlite')
+        code, _ = self._run_main(['record', missing, corpus_dir])
+        self.assertEqual(1, code)
+
     def test_supersede_through_main(self):
         corpus_dir, _ = self._corpus()
         ledger_path = os.path.join(corpus_dir, 'ledger.sqlite')

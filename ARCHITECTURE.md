@@ -98,8 +98,10 @@ installed-package inventory never leaves the machine.
   (dedup 1.02x — carried patches are overwhelmingly bespoke). Phase 2 adds the
   deterministic extractors: `claim.py` reads the author's (untrusted) claim
   from the DEP-3 header, `content.py` profiles what the diff touches (typing
-  files code-vs-prose), `rules.py` settles the easy categories
-  (packaging/documentation) and runs the code-aware dangerous-construct scan
+  files code-vs-prose), `rules.py` settles the structurally-determined categories
+  (packaging/documentation/test — the last being patches that touch only test
+  files, non-shipping, ~15% of the phase-4 residue) and runs the code-aware
+  dangerous-construct scan
   that surfaces candidates without ever pronouncing malice, and `classify.py`
   drives them over the index, deriving claim/content consistency + a review
   flag and writing a `classification` table. It measured 29.2% of patches as
@@ -107,8 +109,14 @@ installed-package inventory never leaves the machine.
   Phase 3 adds the provenance ledger: `ledger.py` (the append-only sqlite
   schema — a `rule` registry, an immutable `decision` table only ever
   superseded, and an `observation` table for flags — plus the supersession ops
-  and a `python -m divergulent.classify.ledger` CLI), `record.py` (drives the
-  rules into the ledger as decisions/observations, idempotently), and
+  and a `python -m divergulent.classify.ledger` CLI: `build` (create from
+  scratch — now guarded so it won't silently wipe a populated ledger's
+  appended llm/human work without `--force`), `record` (the non-destructive
+  counterpart — apply current/new rules to an EXISTING ledger, superseding a
+  fingerprint's stale heuristic decision when its winning rule changed, e.g.
+  rolling out `test-only`), `report`, `supersede`), `record.py` (drives the
+  rules into the ledger as decisions/observations, idempotently, with an
+  opt-in `reconcile` mode for the in-place re-record), and
   `verdict.py` (the **derived** current verdict — the highest-precedence live
   decision per fingerprint — plus the phase-4 residue queue and a report). The
   current verdict is never stored, so it cannot drift, and retiring a rule
@@ -134,7 +142,9 @@ installed-package inventory never leaves the machine.
   high-priority diff **in its original source context** — fetched on-demand from
   sources.debian.org **per touched file by the file's real `+++ b/<path>` path**
   (not the patch filename), with an **epoch-stripped version fallback** — beside
-  the LLM draft, and records a **Sigstore-signed ManualDecision** (`kind='human'`,
+  the LLM draft and the **source package(s) that carry the fingerprint** (a
+  deduplicated fingerprint can span dozens of packages; the list is capped), and
+  records a **Sigstore-signed ManualDecision** (`kind='human'`,
   with `signature` + `signed_by`) that tops the precedence. It authenticates to
   Sigstore **once per session** (the identity token is reused, not re-prompted
   per item). `requeue <fingerprint>` sends one patch back for re-review

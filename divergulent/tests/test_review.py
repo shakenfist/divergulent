@@ -307,6 +307,17 @@ class ReviewOneTestCase(ReviewFixture, testtools.TestCase):
             seen['url'])
         self.assertNotIn(PATCH_NAME, seen['url'])
 
+    def test_context_carries_the_package_names(self):
+        conn, corpus_dir, index_path, _fp = self._setup()
+        ask, ask_seen = _scripted_ask(review.CHOICE_DEFER)
+        review.review_one(
+            conn, corpus_dir, index_path, self._item(conn),
+            fetch=_recording_fetch()[0], signer=_fake_signer()[0], ask=ask, now=WHEN)
+        context = ask_seen['context']
+        self.assertEqual(SOURCE_PACKAGE, context.source_package)
+        self.assertEqual(VERSION, context.version)
+        self.assertEqual((SOURCE_PACKAGE,), context.packages)
+
 
 class FetchSourceFileTestCase(testtools.TestCase):
 
@@ -369,6 +380,83 @@ class RenderInContextTestCase(testtools.TestCase):
         rendered = review.render_in_context(None, '--- a\n+++ b\n@@ -1 +1 @@\n-x\n+y\n')
         self.assertIn('no original', rendered)
         self.assertIn('+y', rendered)
+
+
+def _context(*, packages, source_package='reader', version='1.2-3'):
+    """A minimal ReviewContext for exercising the package-line formatter."""
+    return review.ReviewContext(
+        fingerprint='f' * 64, diff_body='', context_view='',
+        draft_category=None, draft_confidence=None, draft_reasoning=None,
+        claim_category='unknown', reason=None,
+        source_package=source_package, version=version, packages=tuple(packages))
+
+
+class _FakeExpired(Exception):
+    """Stands in for sigstore.oidc.ExpiredIdentity in signer-refresh tests."""
+
+
+class SignWithRefreshTestCase(testtools.TestCase):
+    """The signer retries ONCE after re-auth when the identity token has expired,
+    so a slow read never loses a verdict (and a fast one never re-auths)."""
+
+    def test_success_does_not_refresh(self):
+        calls = {'attempt': 0, 'refresh': 0}
+
+        def attempt():
+            calls['attempt'] += 1
+            return 'sig'
+
+        def refresh():
+            calls['refresh'] += 1
+
+        result = review._sign_with_refresh(attempt, refresh, (_FakeExpired,))
+        self.assertEqual('sig', result)
+        self.assertEqual(1, calls['attempt'])
+        self.assertEqual(0, calls['refresh'])
+
+    def test_expiry_refreshes_once_then_succeeds(self):
+        calls = {'attempt': 0, 'refresh': 0}
+
+        def attempt():
+            calls['attempt'] += 1
+            if calls['attempt'] == 1:
+                raise _FakeExpired()
+            return 'sig-after-reauth'
+
+        def refresh():
+            calls['refresh'] += 1
+
+        result = review._sign_with_refresh(attempt, refresh, (_FakeExpired,))
+        self.assertEqual('sig-after-reauth', result)
+        self.assertEqual(2, calls['attempt'])   # retried exactly once
+        self.assertEqual(1, calls['refresh'])   # re-authenticated once
+
+    def test_second_consecutive_expiry_propagates(self):
+        def attempt():
+            raise _FakeExpired()
+
+        self.assertRaises(
+            _FakeExpired, review._sign_with_refresh, attempt, lambda: None, (_FakeExpired,))
+
+
+class FormatPackageLinesTestCase(testtools.TestCase):
+    """The review UI names the representative package and the full blast radius."""
+
+    def test_single_package_shows_only_the_representative(self):
+        lines = review._format_package_lines(_context(packages=['reader']))
+        self.assertEqual(['package: reader (1.2-3)'], lines)
+
+    def test_multiple_packages_listed(self):
+        lines = review._format_package_lines(
+            _context(packages=['alpha', 'beta', 'reader']))
+        self.assertEqual('package: reader (1.2-3)', lines[0])
+        self.assertEqual('carried by 3 packages: alpha, beta, reader', lines[1])
+
+    def test_long_list_is_truncated_with_count(self):
+        packages = ['p%02d' % i for i in range(20)]
+        lines = review._format_package_lines(_context(packages=packages), limit=8)
+        self.assertIn('carried by 20 packages: p00, p01, p02, p03, p04, p05, p06, p07', lines[1])
+        self.assertIn('(+12 more)', lines[1])
 
 
 class SplitDiffByFileTestCase(testtools.TestCase):

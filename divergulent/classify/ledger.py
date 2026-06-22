@@ -64,10 +64,14 @@ Version 2 (phase 4, step 4c) adds three columns to ``decision`` -- ``verified``
 step 4e) -- and a ``review_queue`` table backing the human-review worklist.
 Every bump is a tracked migration, never a silent reinterpretation."""
 
-CATEGORY_ENUM_VERSION = 1
+CATEGORY_ENUM_VERSION = 2
 """The category-enum version that travels on every rule and decision.  The
-category enum (packaging / documentation / unknown / ...) is still provisional;
-this version pins which enumeration a decision was made under."""
+category enum (packaging / documentation / test / unknown / ...) is still
+provisional; this version pins which enumeration a decision was made under.
+
+Version 2 adds the deterministic ``test`` category (a patch touching only test
+files -- non-shipping, structurally determined; see ``rules._rule_test_only``).
+Every bump is a tracked migration, applied when the ledger is next rebuilt."""
 
 # ---------------------------------------------------------------------------
 # The decision kinds and rule purities, and the precedence that ranks them.
@@ -151,6 +155,7 @@ _CATEGORY_RULE_DESCRIPTIONS: dict[str, str] = {
     'comment-only': 'every changed line is blank or a comment (prose in code) -> documentation',
     'doc-only': 'all touched files are documentation -> documentation',
     'build-only': 'all touched files are build-system / packaging -> packaging',
+    'test-only': 'all touched files are tests (non-shipping) -> test',
     'substantive': 'not settled by deterministic content rules -> unknown (phase-4 residue)',
 }
 
@@ -808,6 +813,65 @@ def _cli_now() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+def _decisions_at_risk(path: str) -> dict[str, int] | None:
+    """Decision counts by kind in an existing ledger, or ``None`` if it isn't one.
+
+    Used by :func:`_guard_overwrite` to tell the operator what a destructive
+    ``build`` would delete -- especially the irreplaceable ``llm`` / ``human``
+    decisions, which are NOT reproducible from the corpus.
+    """
+    try:
+        conn = sqlite3.connect(path)
+        try:
+            rows = conn.execute('SELECT kind, COUNT(*) FROM decision GROUP BY kind').fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return None
+    return {kind: n for kind, n in rows}
+
+
+def _guard_overwrite(out_path: str, *, force: bool) -> bool:
+    """Confirm before ``build`` WIPES an existing populated ledger; True to proceed.
+
+    ``build`` recreates the ledger from scratch (``create_ledger`` unlinks it),
+    which destroys any appended ``llm`` / ``human`` decisions and the review queue
+    -- work that cost real budget and is NOT reproducible from the corpus.  This
+    refuses to do that silently: if ``out_path`` already holds a populated ledger
+    it requires the operator to type ``wipe`` (or pass ``--force``), and refuses
+    outright when stdin is not a TTY and ``--force`` was not given.  An absent or
+    empty/non-ledger path proceeds without prompting (nothing to lose).
+    """
+    counts = _decisions_at_risk(out_path) if os.path.exists(out_path) else None
+    if not counts:
+        return True
+
+    total = sum(counts.values())
+    irreplaceable = counts.get('llm', 0) + counts.get('human', 0)
+    summary = '%d decisions (%d llm, %d human, %d heuristic)' % (
+        total, counts.get('llm', 0), counts.get('human', 0), counts.get('heuristic', 0))
+
+    if force:
+        print('overwriting existing ledger %r with %s (--force).' % (out_path, summary),
+              file=sys.stderr)
+        return True
+
+    detail = (' The %d llm/human decisions are NOT reproducible from the corpus.'
+              % irreplaceable) if irreplaceable else ''
+    print('WARNING: %r already holds %s.\n'
+          '`build` will PERMANENTLY DELETE it and rebuild from scratch.%s\n'
+          'To apply new/changed rules WITHOUT wiping it, use `ledger record` instead, '
+          'or build to a new --out path.' % (out_path, summary, detail), file=sys.stderr)
+
+    if not sys.stdin or not sys.stdin.isatty():
+        print('refusing to overwrite a populated ledger non-interactively; '
+              're-run with --force to wipe it.', file=sys.stderr)
+        return False
+
+    answer = input("type 'wipe' to confirm destroying it: ").strip()
+    return answer == 'wipe'
+
+
 def _cmd_build(args: argparse.Namespace) -> int:
     """``build``: create a ledger from a corpus and print the verdict report."""
     from divergulent.classify import record, verdict
@@ -815,6 +879,10 @@ def _cmd_build(args: argparse.Namespace) -> int:
 
     index_path = args.index or os.path.join(args.corpus_dir, 'fingerprints.sqlite')
     out_path = args.out or os.path.join(args.corpus_dir, 'ledger.sqlite')
+
+    if not _guard_overwrite(out_path, force=args.force):
+        print('aborted; existing ledger left untouched.', file=sys.stderr)
+        return 1
 
     # Count the distinct fingerprints up front so the build shows live progress
     # over the ~3-4 minute deterministic pass instead of going silent.
@@ -838,6 +906,59 @@ def _cmd_build(args: argparse.Namespace) -> int:
                   stats.decisions_appended, stats.decisions_skipped,
                   stats.observations_appended, stats.observations_skipped,
                   stats.fingerprints, rows))
+    finally:
+        conn.close()
+    return 0
+
+
+def _cmd_record(args: argparse.Namespace) -> int:
+    """``record``: apply the current deterministic rules to an EXISTING ledger.
+
+    The NON-DESTRUCTIVE counterpart to ``build``.  ``build`` recreates the ledger
+    and so destroys appended llm/human decisions; ``record`` opens the existing
+    ledger and re-runs every deterministic rule append-only, superseding any
+    heuristic decision whose winning rule has changed (so adding/bumping a rule --
+    e.g. the new ``test-only`` rule -- reclassifies the affected fingerprints in
+    place), then bumps the recorded category-enum version and rebuilds the verdict
+    cache.  llm/human decisions and the review queue are untouched.
+    """
+    from divergulent.classify import record, verdict
+    from divergulent.progress import Progress
+
+    index_path = args.index or os.path.join(args.corpus_dir, 'fingerprints.sqlite')
+    if not os.path.exists(index_path):
+        raise LedgerError(
+            '%r does not exist; pass --index or build the corpus fingerprint index first.'
+            % index_path)
+
+    conn = open_ledger(args.ledger)
+    try:
+        index_conn = sqlite3.connect(index_path)
+        try:
+            (total,) = index_conn.execute(
+                'SELECT COUNT(DISTINCT fingerprint) FROM patch').fetchone()
+        finally:
+            index_conn.close()
+        print('reconciling deterministic decisions for %d fingerprints...' % total,
+              file=sys.stderr)
+        progress = Progress(total)
+
+        stats = record.record_to_ledger(
+            conn, args.corpus_dir, index_path, now=_cli_now(), progress=progress,
+            reconcile=True)
+        # A newly-applied rule may add a category (e.g. ``test`` at enum v2); record
+        # the current enum version so ``meta`` reflects what the ledger now holds.
+        conn.execute("UPDATE meta SET value = ? WHERE key = 'category_enum_version'",
+                     (str(CATEGORY_ENUM_VERSION),))
+        conn.commit()
+        rows = verdict.rebuild_current_verdict(conn)
+        print(verdict.render_report(verdict.summarise_ledger(conn)))
+        print('recorded into ledger: %s' % args.ledger)
+        print('decisions appended=%d skipped=%d superseded=%d; observations appended=%d '
+              'skipped=%d; fingerprints=%d; current verdicts=%d' % (
+                  stats.decisions_appended, stats.decisions_skipped,
+                  stats.decisions_superseded, stats.observations_appended,
+                  stats.observations_skipped, stats.fingerprints, rows))
     finally:
         conn.close()
     return 0
@@ -879,8 +1000,10 @@ def _cmd_supersede(args: argparse.Namespace) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='python -m divergulent.classify.ledger',
-        description='Build, report on, and surgically redo the append-only decision '
-                    'ledger (curation-side; offline). The current verdict is always '
+        description='Build, record into, report on, and surgically redo the append-only '
+                    'decision ledger (curation-side; offline). `build` creates from '
+                    'scratch; `record` applies current rules to an EXISTING ledger '
+                    'without wiping appended llm/human work. The current verdict is always '
                     'derived, never stored; superseding a rule re-queues only its '
                     'fingerprints. No malice is ever pronounced.')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -893,7 +1016,21 @@ def _build_parser() -> argparse.ArgumentParser:
                             '<corpus_dir>/fingerprints.sqlite)')
     build.add_argument('--out', default=None,
                        help='path for the ledger sqlite (default: <corpus_dir>/ledger.sqlite)')
+    build.add_argument('--force', action='store_true',
+                       help='overwrite an existing ledger WITHOUT confirmation (build '
+                            'recreates from scratch, destroying any llm/human decisions)')
     build.set_defaults(func=_cmd_build)
+
+    record_cmd = subparsers.add_parser(
+        'record',
+        help='apply current deterministic rules to an EXISTING ledger (non-destructive; '
+             'preserves llm/human decisions)')
+    record_cmd.add_argument('ledger', help='path to a ledger sqlite built by `build`')
+    record_cmd.add_argument('corpus_dir', help='directory of a corpus built by classify.corpus')
+    record_cmd.add_argument('--index', default=None,
+                            help='path to the phase-1 sqlite fingerprint index (default: '
+                                 '<corpus_dir>/fingerprints.sqlite)')
+    record_cmd.set_defaults(func=_cmd_record)
 
     report = subparsers.add_parser(
         'report', help='print the current-verdict/queue report for a built ledger')
@@ -915,7 +1052,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """``python -m divergulent.classify.ledger``: build / report / supersede.
+    """``python -m divergulent.classify.ledger``: build / record / report / supersede.
 
     The single clock read of the ledger stack lives here (in the subcommand
     handlers via :func:`_cli_now`); it is threaded down as ``decided_at`` /

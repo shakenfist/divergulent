@@ -472,7 +472,7 @@ def summarise(result: ClassifyResult, *, samples: int = DEFAULT_SAMPLES) -> Summ
 
 # The content categories a deterministic verdict can produce, in report order.
 # ``unknown`` is the substantive phase-4 residue.
-_REPORT_CATEGORIES = ('packaging', 'documentation', 'unknown')
+_REPORT_CATEGORIES = ('packaging', 'documentation', 'test', 'unknown')
 
 
 def _pct(part: int, whole: int) -> float:

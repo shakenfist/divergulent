@@ -175,7 +175,10 @@ their disagreement is the signal. Content is typed code-vs-prose, and the
 dangerous-construct scan runs only over added lines in code files — never
 pronouncing malice, only surfacing candidate flags. It measured 29.2% of
 patches as deterministically settled (packaging/documentation), ~43k
-substantive residue for phase 4. The run surfaced (and the same phase then
+substantive residue for phase 4 — of which the `test-only` rule (a patch
+touching only test files → the structural `test` category, CATEGORY_ENUM v2)
+deterministically settles a further ~15%, since test churn cannot change the
+shipped artifact. The run surfaced (and the same phase then
 fixed) a backtick false-positive source by making the dangerous-construct scan
 language-aware (shell-only backtick), and showed 58% of patches carry no usable
 claim. See
@@ -188,8 +191,14 @@ table that is only ever *superseded* (never edited or deleted), and an
 a category). The current verdict is **derived**, never stored — per fingerprint,
 the highest-precedence live decision — so it cannot drift, and retiring a rule
 re-queues exactly its fingerprints (a surgical redo).
-`python -m divergulent.classify.ledger build|report|supersede` operates it; the
-CLI is the only place that reads a clock. The ledger reproduced the phase-2
+`python -m divergulent.classify.ledger build|record|report|supersede` operates
+it; the CLI is the only place that reads a clock. `build` creates from scratch
+(and now confirms before WIPING a populated ledger — destroying appended
+llm/human work — unless `--force`); `record` is the non-destructive counterpart
+that applies current/new rules to an EXISTING ledger, superseding a fingerprint's
+stale heuristic decision when its winning rule changed (how the `test-only` rule
+is rolled out: it reclassified ~6.4k fingerprints to `test` while preserving all
+llm/human decisions). The ledger reproduced the phase-2
 distribution exactly with a 42,907-fingerprint derived queue. See
 `docs/plans/PLAN-patch-classification-phase-03-findings.md`.
 
@@ -213,7 +222,8 @@ divergulent.classify.review` (in `review.py`) is the local, interactive,
 Sigstore-signed human tier. It has three subcommands: `review <ledger>
 <corpus_dir>` drains the queue (showing each diff in its sources.debian.org
 original-source context — fetched per touched file by the file's real path, not
-the patch filename, with epoch-stripped version fallback — and authenticating to
+the patch filename, with epoch-stripped version fallback, alongside the source
+package(s) carrying the fingerprint — and authenticating to
 Sigstore ONCE per session) and records a non-repudiable `kind='human'`
 ManualDecision that tops the precedence; `requeue <ledger> <fingerprint>` sends
 one fingerprint back for re-review (superseding its settled human verdict, kept

@@ -282,6 +282,28 @@ class RecurringTailTestCase(testtools.TestCase):
         self.assertEqual('packaging', verdict.content_category)
         self.assertIn('build-only', verdict.rule_ids)
 
+    def test_test_only_change_is_test(self):
+        diff = _edit('tests/test_foo.py', removed='assert x == 1', added='assert x == 2')
+        verdict = _verdict(diff)
+        self.assertEqual('test', verdict.content_category)
+        self.assertIn('test-only', verdict.rule_ids)
+
+    def test_multiple_test_files_still_test(self):
+        diff = (_edit('t/one.t', removed='ok 1', added='ok 2')
+                + _edit('src/foo_test.go', removed='want := 1', added='want := 2'))
+        verdict = _verdict(diff)
+        self.assertEqual('test', verdict.content_category)
+        self.assertIn('test-only', verdict.rule_ids)
+
+    def test_test_plus_code_is_not_test_only(self):
+        # A change touching tests AND production code is substantive, not test:
+        # the code change can alter the shipped artifact, so it must be triaged.
+        diff = (_edit('tests/test_foo.py', removed='assert x == 1', added='assert x == 2')
+                + _edit('src/foo.c', removed='int x = 1;', added='int x = 2;'))
+        verdict = _verdict(diff)
+        self.assertEqual('unknown', verdict.content_category)
+        self.assertNotIn('test-only', verdict.rule_ids)
+
 
 # ---------------------------------------------------------------------------
 # Substantive residue — the phase-4 hand-off.
