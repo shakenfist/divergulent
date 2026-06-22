@@ -813,6 +813,65 @@ def _cli_now() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+def _decisions_at_risk(path: str) -> dict[str, int] | None:
+    """Decision counts by kind in an existing ledger, or ``None`` if it isn't one.
+
+    Used by :func:`_guard_overwrite` to tell the operator what a destructive
+    ``build`` would delete -- especially the irreplaceable ``llm`` / ``human``
+    decisions, which are NOT reproducible from the corpus.
+    """
+    try:
+        conn = sqlite3.connect(path)
+        try:
+            rows = conn.execute('SELECT kind, COUNT(*) FROM decision GROUP BY kind').fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return None
+    return {kind: n for kind, n in rows}
+
+
+def _guard_overwrite(out_path: str, *, force: bool) -> bool:
+    """Confirm before ``build`` WIPES an existing populated ledger; True to proceed.
+
+    ``build`` recreates the ledger from scratch (``create_ledger`` unlinks it),
+    which destroys any appended ``llm`` / ``human`` decisions and the review queue
+    -- work that cost real budget and is NOT reproducible from the corpus.  This
+    refuses to do that silently: if ``out_path`` already holds a populated ledger
+    it requires the operator to type ``wipe`` (or pass ``--force``), and refuses
+    outright when stdin is not a TTY and ``--force`` was not given.  An absent or
+    empty/non-ledger path proceeds without prompting (nothing to lose).
+    """
+    counts = _decisions_at_risk(out_path) if os.path.exists(out_path) else None
+    if not counts:
+        return True
+
+    total = sum(counts.values())
+    irreplaceable = counts.get('llm', 0) + counts.get('human', 0)
+    summary = '%d decisions (%d llm, %d human, %d heuristic)' % (
+        total, counts.get('llm', 0), counts.get('human', 0), counts.get('heuristic', 0))
+
+    if force:
+        print('overwriting existing ledger %r with %s (--force).' % (out_path, summary),
+              file=sys.stderr)
+        return True
+
+    detail = (' The %d llm/human decisions are NOT reproducible from the corpus.'
+              % irreplaceable) if irreplaceable else ''
+    print('WARNING: %r already holds %s.\n'
+          '`build` will PERMANENTLY DELETE it and rebuild from scratch.%s\n'
+          'To apply new/changed rules WITHOUT wiping it, use `ledger record` instead, '
+          'or build to a new --out path.' % (out_path, summary, detail), file=sys.stderr)
+
+    if not sys.stdin or not sys.stdin.isatty():
+        print('refusing to overwrite a populated ledger non-interactively; '
+              're-run with --force to wipe it.', file=sys.stderr)
+        return False
+
+    answer = input("type 'wipe' to confirm destroying it: ").strip()
+    return answer == 'wipe'
+
+
 def _cmd_build(args: argparse.Namespace) -> int:
     """``build``: create a ledger from a corpus and print the verdict report."""
     from divergulent.classify import record, verdict
@@ -820,6 +879,10 @@ def _cmd_build(args: argparse.Namespace) -> int:
 
     index_path = args.index or os.path.join(args.corpus_dir, 'fingerprints.sqlite')
     out_path = args.out or os.path.join(args.corpus_dir, 'ledger.sqlite')
+
+    if not _guard_overwrite(out_path, force=args.force):
+        print('aborted; existing ledger left untouched.', file=sys.stderr)
+        return 1
 
     # Count the distinct fingerprints up front so the build shows live progress
     # over the ~3-4 minute deterministic pass instead of going silent.
@@ -898,6 +961,9 @@ def _build_parser() -> argparse.ArgumentParser:
                             '<corpus_dir>/fingerprints.sqlite)')
     build.add_argument('--out', default=None,
                        help='path for the ledger sqlite (default: <corpus_dir>/ledger.sqlite)')
+    build.add_argument('--force', action='store_true',
+                       help='overwrite an existing ledger WITHOUT confirmation (build '
+                            'recreates from scratch, destroying any llm/human decisions)')
     build.set_defaults(func=_cmd_build)
 
     report = subparsers.add_parser(
