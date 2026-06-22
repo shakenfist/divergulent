@@ -17,7 +17,17 @@ The suite is fully offline (injected LLM/signer/fetch). **The actual triage +
 review pass is the operator's separate, budgeted step** — run
 `python -m divergulent.classify.triage` over a small `--limit` slice (it spends
 subscription/API budget), then `python -m divergulent.classify.review` to
-sign-off the routed items; that produces the phase-4 findings.
+sign-off the routed items.
+
+**Operating it (in progress)** has produced the
+[phase-4 findings](PLAN-patch-classification-phase-04-findings.md): the residue
+is irreducibly *semantic* (no structural rule separates bugfix/feature/security),
+the one deterministic win was a new `test-only` rule (→ `test` category, ~15% of
+residue), and the operational run forced a round of tooling hardening
+(per-file original-source context, Sigstore once-per-session + token refresh,
+review pager / package-names / `requeue` / `history`, a `build` wipe-guard, and
+the non-destructive `ledger record` for applying new rules in place). The triage
++ review grind continues across sessions.
 
 ## Why this is phase 4
 

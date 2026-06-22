@@ -134,6 +134,34 @@ class OpenLedgerTestCase(LedgerFixture, testtools.TestCase):
         self.assertIn('does not exist', err.getvalue())
 
 
+class ResolveSettledReviewItemsTestCase(LedgerFixture, testtools.TestCase):
+    """A pending review item is dequeued once a rule deterministically settles its
+    fingerprint (non-unknown heuristic verdict), but a still-residue one stays."""
+
+    def test_clears_settled_keeps_residue(self):
+        from divergulent.classify import verdict as verdict_mod
+        conn, _path = self._ledger()
+        settled, residue = 'a' * 64, 'b' * 64
+        ledger.append_decision(
+            conn, fingerprint=settled, category='test', confidence='high',
+            decided_by='test-only', rule_version=1, kind='heuristic',
+            evidence=None, decided_at='2026-06-14T00:00:00Z')
+        ledger.append_decision(
+            conn, fingerprint=residue, category='unknown', confidence='low',
+            decided_by='substantive', rule_version=1, kind='heuristic',
+            evidence=None, decided_at='2026-06-14T00:00:00Z')
+        for fp in (settled, residue):
+            ledger.append_review_item(
+                conn, fingerprint=fp, reason='r', draft_category=None,
+                draft_confidence=None, enqueued_at='2026-06-14T00:00:00Z')
+        verdict_mod.rebuild_current_verdict(conn)
+
+        cleared = ledger.resolve_settled_review_items(conn, now='2026-06-15T00:00:00Z')
+        self.assertEqual(1, cleared)
+        pending = {r['fingerprint'] for r in ledger.pending_review_items(conn)}
+        self.assertEqual({residue}, pending)
+
+
 class KindPrecedenceTestCase(testtools.TestCase):
 
     def test_precedence_human_over_llm_over_heuristic(self):

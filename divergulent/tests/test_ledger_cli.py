@@ -355,6 +355,29 @@ class LedgerCliTestCase(testtools.TestCase):
         meta = dict(conn.execute('SELECT key, value FROM meta').fetchall())
         self.assertEqual(str(ledger_mod.CATEGORY_ENUM_VERSION), meta['category_enum_version'])
 
+    def test_record_dequeues_settled_review_items(self):
+        corpus_dir, _ = self._corpus()
+        ledger_path = os.path.join(corpus_dir, 'ledger.sqlite')
+        self._run_main(['build', corpus_dir])
+
+        # Queue the (deterministically-settled) doc fingerprint for review, as the
+        # LLM tier would have before a rule settled it -- a stale needs-human item.
+        doc_fp = fingerprint(DOC_ONLY)[1]
+        conn = sqlite3.connect(ledger_path)
+        ledger_mod.append_review_item(
+            conn, fingerprint=doc_fp, reason='stale', draft_category=None,
+            draft_confidence=None, enqueued_at=WHEN)
+        conn.close()
+
+        code, out = self._run_main(['record', ledger_path, corpus_dir])
+        self.assertEqual(0, code)
+        self.assertIn('dequeued 1 now-settled review items', out)
+
+        conn = sqlite3.connect(ledger_path)
+        self.addCleanup(conn.close)
+        conn.row_factory = sqlite3.Row
+        self.assertEqual([], ledger_mod.pending_review_items(conn))
+
     def test_record_refuses_unbuilt_ledger(self):
         corpus_dir, _ = self._corpus()
         missing = os.path.join(corpus_dir, 'nope.sqlite')
