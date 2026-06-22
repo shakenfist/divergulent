@@ -439,6 +439,26 @@ class SignWithRefreshTestCase(testtools.TestCase):
             _FakeExpired, review._sign_with_refresh, attempt, lambda: None, (_FakeExpired,))
 
 
+class AssignableCategoriesTestCase(testtools.TestCase):
+    """A human reviewer may assign the full category enum, including `test`."""
+
+    def test_includes_test_and_all_llm_categories(self):
+        from divergulent.classify.triage import TRIAGE_CATEGORIES
+        cats = review._assignable_categories()
+        self.assertIn('test', cats)
+        for c in TRIAGE_CATEGORIES:
+            self.assertIn(c, cats)
+
+    def test_interactive_ask_accepts_test(self):
+        import io
+        import sys
+        original = sys.stdin
+        sys.stdin = io.StringIO('test\n')
+        self.addCleanup(setattr, sys, 'stdin', original)
+        choice = review._interactive_ask(_context(packages=['python3-stdlib-extensions']))
+        self.assertEqual('test', choice)
+
+
 class FormatPackageLinesTestCase(testtools.TestCase):
     """The review UI names the representative package and the full blast radius."""
 

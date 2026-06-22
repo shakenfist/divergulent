@@ -897,16 +897,31 @@ def _format_package_lines(context: ReviewContext, *, limit: int = MAX_PACKAGES_S
     return lines
 
 
+def _assignable_categories() -> tuple[str, ...]:
+    """The categories a human reviewer may assign -- the FULL category enum.
+
+    The LLM drafts only the semantic categories (``triage.TRIAGE_CATEGORIES``); a
+    human can additionally assign the structural ``test`` category
+    (``rules._rule_test_only``).  The LLM never drafts ``test`` (it judges intent,
+    not structure), but a test-only item that reached review -- e.g. queued
+    before the deterministic test-only rule was applied -- must still be
+    classifiable as ``test`` rather than mis-filed under a semantic category.
+    """
+    from divergulent.classify.triage import TRIAGE_CATEGORIES
+    return tuple(TRIAGE_CATEGORIES) + ('test',)
+
+
 def _interactive_ask(context: ReviewContext) -> str:
     """The real interactive ``ask``: page the context + draft + claim, read stdin.
 
     Pages the diff IN CONTEXT, the LLM draft (category + confidence + reasoning),
     the author's claim, and the routing reason through ``$PAGER`` so a large diff
     is navigable, then reads the human's choice from stdin: accept the LLM draft,
-    override to a named category, ``unknown``, or defer.  The reading of stdin is
-    confined here (the CLI entry); every other path takes ``choice`` as data.
+    override to a named category (the full enum, including ``test``), or defer.
+    The reading of stdin is confined here (the CLI entry); every other path takes
+    ``choice`` as data.
     """
-    from divergulent.classify.triage import TRIAGE_CATEGORIES
+    categories = _assignable_categories()
 
     view = ['=' * 78, 'fingerprint: %s' % context.fingerprint]
     view.extend(_format_package_lines(context, limit=MAX_PACKAGES_SHOWN))
@@ -928,11 +943,11 @@ def _interactive_ask(context: ReviewContext) -> str:
     options = []
     if context.draft_category is not None:
         options.append('"accept" (take the LLM draft: %s)' % context.draft_category)
-    options.append('a category to override: %s' % ', '.join(TRIAGE_CATEGORIES))
+    options.append('a category to override: %s' % ', '.join(categories))
     options.append('"defer" (leave it for later)')
     print('Your verdict -- ' + '; '.join(options))
 
-    valid = set(TRIAGE_CATEGORIES) | {CHOICE_ACCEPT, CHOICE_DEFER}
+    valid = set(categories) | {CHOICE_ACCEPT, CHOICE_DEFER}
     while True:
         choice = input('verdict> ').strip()
         if choice in valid:
