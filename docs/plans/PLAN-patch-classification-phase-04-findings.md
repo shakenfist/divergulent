@@ -1,0 +1,81 @@
+# Phase 4 findings: operating the LLM triage + human review tier
+
+Results and decisions from running the phase-4 pipeline over the corpus, for
+[PLAN-patch-classification-phase-04-llm-triage.md](PLAN-patch-classification-phase-04-llm-triage.md).
+Unlike phases 1–3, phase 4 has an **operational** half (spending real
+LLM/review budget) that accrues over many sessions; this note records what that
+operating has taught us so far and the tooling it forced.
+
+## Headline
+
+> **The substantive residue is irreducibly *semantic*. One structural class
+> (`test-only`) was the single deterministic win; everything else genuinely
+> needs the LLM/human tier.**
+
+Profiling all **42,909** substantive fingerprints by structural shape (file
+types touched + shape) showed that **every** bucket's verified verdicts span
+multiple categories — `single-file:code` (35% of residue) is bugfix *and*
+packaging *and* security *and* documentation *and* feature. There is no coarse
+structural rule that cleanly separates `bugfix` / `feature` / `security`,
+because those describe *intent*, not structure. So the LLM/human tier is not a
+stopgap to be rules-engineered away — it is doing the real work, and the
+deterministic tier can only peel off what structure genuinely determines.
+
+## The one deterministic win: `test-only` → `test`
+
+The exception the profiling found: **~15% of the residue touches only test
+files**, and a change that touches only tests cannot alter the shipped
+artifact. That *is* structurally determined, so it became a deterministic rule
+(`rules._rule_test_only`) producing a new `test` category (CATEGORY_ENUM v2).
+Validated against a copy of the live ledger, applying it reclassified:
+
+| | before | after |
+| --- | ---: | ---: |
+| `unknown` (residue) | 42,347 | 35,978 |
+| `test` (new) | 0 | 6,369 |
+
+6,433 `substantive` decisions superseded; **zero** fingerprints left with two
+live heuristic decisions; all `llm`/`human` verdicts preserved. (The 64-row gap
+between 6,433 reclassified and 6,369 `test` *verdicts* is correct precedence:
+those 64 already had a higher-ranked LLM/human verdict and keep it.)
+
+Translation-only (0.4%) and symbols-only (<0.1%) are also structurally clean but
+too small to be worth a rule. We explicitly **rejected** an "occurrence →
+benign" rule: 99.2% of fingerprints occur once, the tail is tiny and dominated
+by single-team boilerplate, and high occurrence means high *blast radius* — the
+wrong thing to de-prioritise.
+
+## Tooling the operational run forced
+
+Operating the pipeline for real surfaced gaps the offline suite could not:
+
+- **Original-source context** fetched per touched file by its real path (not the
+  patch filename), with epoch-stripped version fallback — the review diff is
+  shown against the actual upstream file.
+- **Sigstore** now authenticates **once per session** and **refreshes on token
+  expiry** (a long read no longer loses a verdict at sign time).
+- **Review UX**: a pager for big diffs; the carrying **package name(s)** shown
+  (blast radius); `requeue` (re-open a fingerprint) and `history` (reconsider a
+  past verdict) subcommands.
+- **Ledger safety**: `build` now refuses to silently wipe a populated ledger;
+  **`ledger record`** applies new/changed rules to an existing ledger
+  non-destructively (append-only re-record + supersede-on-change), so a rule
+  added mid-operation never costs the LLM/human work already banked.
+
+## Operational state (accruing)
+
+As of this writing, of the substantive residue the LLM has verified ~454
+decisions and a human has signed ~20; the bulk remains untriaged. This is the
+budgeted grind that continues across sessions — `triage` a bounded slice, then
+`review` the routed items — shrinking the residue while the deterministic tier
+holds it at the structural floor.
+
+## What remains in phase 4
+
+- Apply `test-only` to the production ledger (`ledger record`), dropping the
+  residue ~42k → ~36k.
+- Continue the triage + review loop to whatever coverage the operator wants.
+- The candidate-rule miner should gain a **whole-corpus counterexample gate**
+  (only surface a rule when *no* fingerprint matching the predicate got a
+  different verdict) so it stops proposing unsound semantic "rules"; with that,
+  it will mostly confirm there is little left to deterministically peel.
