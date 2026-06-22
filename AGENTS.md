@@ -213,7 +213,8 @@ divergulent.classify.review` (in `review.py`) is the local, interactive,
 Sigstore-signed human tier. It has three subcommands: `review <ledger>
 <corpus_dir>` drains the queue (showing each diff in its sources.debian.org
 original-source context — fetched per touched file by the file's real path, not
-the patch filename, with epoch-stripped version fallback — and authenticating to
+the patch filename, with epoch-stripped version fallback, alongside the source
+package(s) carrying the fingerprint — and authenticating to
 Sigstore ONCE per session) and records a non-repudiable `kind='human'`
 ManualDecision that tops the precedence; `requeue <ledger> <fingerprint>` sends
 one fingerprint back for re-review (superseding its settled human verdict, kept

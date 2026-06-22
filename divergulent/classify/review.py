@@ -101,6 +101,12 @@ _SIGSTORE_OAUTH_ISSUER = 'https://oauth2.sigstore.dev/auth'
 # is too large to show whole.
 DEFAULT_CONTEXT_WINDOW = 12
 
+# How many carrying package names to list before truncating with "(+N more)".
+# A fingerprint is deduplicated across every package that carries the identical
+# patch; some span dozens, so the review UI caps the list rather than flood the
+# screen.
+MAX_PACKAGES_SHOWN = 8
+
 # Below this many lines, the original file is shown in full rather than windowed.
 FULL_FILE_THRESHOLD = 400
 
@@ -504,8 +510,11 @@ class ReviewContext:
 
     Assembled by :func:`review_one`: the representative diff body, the LLM draft
     (category + confidence + reasoning), the author's claim category, the routing
-    flags/reason that sent the item to review, and the diff rendered in the
-    context of the original upstream file.
+    flags/reason that sent the item to review, the diff rendered in the context
+    of the original upstream file, and the package(s) that carry this fingerprint
+    (``source_package``/``version`` are the representative instance; ``packages``
+    is every source package carrying the identical patch -- a fingerprint is
+    deduplicated, so "which packages does this affect?" is real review context).
     """
 
     fingerprint: str
@@ -516,6 +525,9 @@ class ReviewContext:
     draft_reasoning: str | None
     claim_category: str
     reason: str | None
+    source_package: str
+    version: str
+    packages: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -597,7 +609,10 @@ def review_one(conn: sqlite3.Connection, corpus_dir: str, index_path: str,
         draft_confidence=draft['confidence'] if draft is not None else None,
         draft_reasoning=_draft_reasoning(draft),
         claim_category=claim.claimed_category,
-        reason=item['reason'])
+        reason=item['reason'],
+        source_package=source_package,
+        version=version,
+        packages=_carrying_packages(index_path, fingerprint))
 
     choice = ask(context)
     if choice == CHOICE_DEFER:
@@ -665,6 +680,27 @@ def _representative_patch(index_path: str, fingerprint: str):
     finally:
         connection.close()
     return row
+
+
+def _carrying_packages(index_path: str, fingerprint: str) -> tuple[str, ...]:
+    """Every distinct source package that carries ``fingerprint``, sorted.
+
+    A fingerprint is deduplicated across all carried instances, so the same
+    patch can ride in many packages (488 fingerprints in the corpus span more
+    than one; some dozens). The review UI shows these so a reviewer sees the real
+    blast radius -- a patch in 53 packages is a different risk than one in a
+    single obscure package. Returns a sorted tuple; empty if the fingerprint has
+    no index row.
+    """
+    connection = sqlite3.connect(index_path)
+    try:
+        rows = connection.execute(
+            'SELECT DISTINCT source_package FROM patch WHERE fingerprint = ? '
+            'ORDER BY source_package',
+            (fingerprint,)).fetchall()
+    finally:
+        connection.close()
+    return tuple(row[0] for row in rows)
 
 
 # ---------------------------------------------------------------------------
@@ -811,6 +847,25 @@ def _page(text: str) -> None:
         print(text)
 
 
+def _format_package_lines(context: ReviewContext, *, limit: int = MAX_PACKAGES_SHOWN) -> list[str]:
+    """The package line(s) for the review view: representative + full blast radius.
+
+    Always shows the representative ``package: <name> (<version>)``.  When the
+    fingerprint is carried by more than one source package, adds a second line
+    naming up to ``limit`` of them (truncating the rest as ``(+N more)``), so the
+    reviewer sees how widely the identical patch is carried without flooding the
+    screen for a fingerprint that spans dozens.
+    """
+    lines = ['package: %s (%s)' % (context.source_package, context.version)]
+    others = context.packages
+    if len(others) > 1:
+        shown = ', '.join(others[:limit])
+        extra = len(others) - limit
+        suffix = ' (+%d more)' % extra if extra > 0 else ''
+        lines.append('carried by %d packages: %s%s' % (len(others), shown, suffix))
+    return lines
+
+
 def _interactive_ask(context: ReviewContext) -> str:
     """The real interactive ``ask``: page the context + draft + claim, read stdin.
 
@@ -823,6 +878,7 @@ def _interactive_ask(context: ReviewContext) -> str:
     from divergulent.classify.triage import TRIAGE_CATEGORIES
 
     view = ['=' * 78, 'fingerprint: %s' % context.fingerprint]
+    view.extend(_format_package_lines(context, limit=MAX_PACKAGES_SHOWN))
     if context.reason:
         view.append('routed to review because: %s' % context.reason)
     view.append('author claim category: %s' % context.claim_category)

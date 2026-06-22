@@ -134,7 +134,9 @@ installed-package inventory never leaves the machine.
   high-priority diff **in its original source context** — fetched on-demand from
   sources.debian.org **per touched file by the file's real `+++ b/<path>` path**
   (not the patch filename), with an **epoch-stripped version fallback** — beside
-  the LLM draft, and records a **Sigstore-signed ManualDecision** (`kind='human'`,
+  the LLM draft and the **source package(s) that carry the fingerprint** (a
+  deduplicated fingerprint can span dozens of packages; the list is capped), and
+  records a **Sigstore-signed ManualDecision** (`kind='human'`,
   with `signature` + `signed_by`) that tops the precedence. It authenticates to
   Sigstore **once per session** (the identity token is reused, not re-prompted
   per item). `requeue <fingerprint>` sends one patch back for re-review
