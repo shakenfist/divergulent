@@ -64,10 +64,14 @@ Version 2 (phase 4, step 4c) adds three columns to ``decision`` -- ``verified``
 step 4e) -- and a ``review_queue`` table backing the human-review worklist.
 Every bump is a tracked migration, never a silent reinterpretation."""
 
-CATEGORY_ENUM_VERSION = 1
+CATEGORY_ENUM_VERSION = 2
 """The category-enum version that travels on every rule and decision.  The
-category enum (packaging / documentation / unknown / ...) is still provisional;
-this version pins which enumeration a decision was made under."""
+category enum (packaging / documentation / test / unknown / ...) is still
+provisional; this version pins which enumeration a decision was made under.
+
+Version 2 adds the deterministic ``test`` category (a patch touching only test
+files -- non-shipping, structurally determined; see ``rules._rule_test_only``).
+Every bump is a tracked migration, applied when the ledger is next rebuilt."""
 
 # ---------------------------------------------------------------------------
 # The decision kinds and rule purities, and the precedence that ranks them.
@@ -151,6 +155,7 @@ _CATEGORY_RULE_DESCRIPTIONS: dict[str, str] = {
     'comment-only': 'every changed line is blank or a comment (prose in code) -> documentation',
     'doc-only': 'all touched files are documentation -> documentation',
     'build-only': 'all touched files are build-system / packaging -> packaging',
+    'test-only': 'all touched files are tests (non-shipping) -> test',
     'substantive': 'not settled by deterministic content rules -> unknown (phase-4 residue)',
 }
 

@@ -175,7 +175,10 @@ their disagreement is the signal. Content is typed code-vs-prose, and the
 dangerous-construct scan runs only over added lines in code files — never
 pronouncing malice, only surfacing candidate flags. It measured 29.2% of
 patches as deterministically settled (packaging/documentation), ~43k
-substantive residue for phase 4. The run surfaced (and the same phase then
+substantive residue for phase 4 — of which the `test-only` rule (a patch
+touching only test files → the structural `test` category, CATEGORY_ENUM v2)
+deterministically settles a further ~15%, since test churn cannot change the
+shipped artifact. The run surfaced (and the same phase then
 fixed) a backtick false-positive source by making the dangerous-construct scan
 language-aware (shell-only backtick), and showed 58% of patches carry no usable
 claim. See

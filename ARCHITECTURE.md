@@ -98,8 +98,10 @@ installed-package inventory never leaves the machine.
   (dedup 1.02x — carried patches are overwhelmingly bespoke). Phase 2 adds the
   deterministic extractors: `claim.py` reads the author's (untrusted) claim
   from the DEP-3 header, `content.py` profiles what the diff touches (typing
-  files code-vs-prose), `rules.py` settles the easy categories
-  (packaging/documentation) and runs the code-aware dangerous-construct scan
+  files code-vs-prose), `rules.py` settles the structurally-determined categories
+  (packaging/documentation/test — the last being patches that touch only test
+  files, non-shipping, ~15% of the phase-4 residue) and runs the code-aware
+  dangerous-construct scan
   that surfaces candidates without ever pronouncing malice, and `classify.py`
   drives them over the index, deriving claim/content consistency + a review
   flag and writing a `classification` table. It measured 29.2% of patches as

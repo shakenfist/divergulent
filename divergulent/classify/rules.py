@@ -5,11 +5,13 @@ bearing statement about what the diff DOES, derived from the ``ContentProfile``
 (step 2b) and never from the author's ``Claim`` (step 2a).  Two design promises
 govern everything here:
 
-1. **Deterministic rules settle only the easy categories.**  ``packaging`` and
-   ``documentation`` are confirmable from content alone; everything substantive
-   is left as ``unknown`` with a ``substantive`` signal for phase 4 to triage.
-   We deliberately do **not** split ``bugfix``/``feature``/``security`` from
-   content — claiming otherwise would cry wolf.
+1. **Deterministic rules settle only the structurally-determined categories.**
+   ``packaging``, ``documentation`` and ``test`` are confirmable from content
+   alone (a change touching only build/doc/test files IS that thing); everything
+   substantive is left as ``unknown`` with a ``substantive`` signal for phase 4
+   to triage.  We deliberately do **not** split ``bugfix``/``feature``/
+   ``security`` from content — those are about intent, and claiming them from
+   structure would cry wolf.
 
 2. **``security`` and ``malicious`` are never deterministic verdicts.**  A
    dangerous construct added in code is an evidence-bearing *candidate flag*
@@ -75,7 +77,7 @@ class Flag:
 class ContentVerdict:
     """Deterministic content verdict for a patch.
 
-    ``content_category`` is one of ``packaging`` / ``documentation`` /
+    ``content_category`` is one of ``packaging`` / ``documentation`` / ``test`` /
     ``unknown`` — never ``security``/``bugfix``/``feature``, which are not
     deterministic from content.  ``flags`` carries any dangerous-construct
     candidates found by the code-aware scan; they are orthogonal to the
@@ -84,7 +86,7 @@ class ContentVerdict:
     """
 
     content_category: str
-    """One of ``packaging`` / ``documentation`` / ``unknown``."""
+    """One of ``packaging`` / ``documentation`` / ``test`` / ``unknown``."""
 
     confidence: str
     """``'high'`` / ``'medium'`` / ``'low'``.  High for confirmable easy
@@ -120,15 +122,17 @@ class ContentVerdict:
 #   4. comment_only     (prose-in-code only)                   -> documentation high
 #   5. doc_only         (all touched files typed doc)          -> documentation high
 #   6. build_only       (build, or build+data, no code/doc)    -> packaging  high
-#   7. substantive      (the residue — anything else)          -> unknown    low
+#   7. test_only        (all touched files typed test)         -> test       high
+#   8. substantive      (the residue — anything else)          -> unknown    low
 #
 # Order rationale: the trivial-only flags (1-4) describe a change with no real
 # semantic content and so are the most confidently-settled; they precede the
 # file-type rules so a whitespace-only edit to a ``.c`` file is packaging, not
 # substantive code.  ``comment_only`` is documentation (prose), distinct from
-# whitespace.  ``doc_only`` precedes ``build_only`` only by convention; they are
-# mutually exclusive (a diff cannot be all-doc and all-build at once).  The
-# final ``substantive`` rule always matches, producing the phase-4 residue.
+# whitespace.  ``doc_only`` / ``build_only`` / ``test_only`` are mutually
+# exclusive file-type rules (a diff cannot be all-doc and all-build, etc.), so
+# their relative order is immaterial.  The final ``substantive`` rule always
+# matches, producing the phase-4 residue.
 # ---------------------------------------------------------------------------
 
 
@@ -197,6 +201,24 @@ def _rule_build_only(profile: ContentProfile) -> _RuleHit | None:
     return None
 
 
+def _rule_test_only(profile: ContentProfile) -> _RuleHit | None:
+    """All touched files typed ``test`` → test (high).
+
+    A patch whose every touched file is a test file changes only the upstream
+    test suite -- it cannot alter the shipped artifact -- so it is structurally
+    determined and low-risk for divergence.  This is its OWN category (``test``),
+    not ``packaging``: an upstream test suite is upstream source, not Debian
+    packaging.  Structural, like ``doc-only``/``build-only``, so it is settled
+    deterministically rather than handed to the LLM to guess an intent.
+    """
+    types = profile.file_types
+    if types and set(types) == {'test'}:
+        return _RuleHit(
+            'test', 'high',
+            'all touched files are tests (non-shipping)')
+    return None
+
+
 def _rule_substantive(profile: ContentProfile) -> _RuleHit | None:
     """The residue: anything not settled above → unknown / substantive (low).
 
@@ -216,6 +238,7 @@ _CATEGORY_RULES: tuple[tuple[str, int, object], ...] = (
     ('comment-only', 1, _rule_comment_only),
     ('doc-only', 1, _rule_doc_only),
     ('build-only', 1, _rule_build_only),
+    ('test-only', 1, _rule_test_only),
     ('substantive', 1, _rule_substantive),
 )
 
