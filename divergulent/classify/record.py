@@ -50,12 +50,15 @@ class RecordStats:
     """What a :func:`record_to_ledger` run did.
 
     ``*_appended`` rows were newly written; ``*_skipped`` rows already existed
-    live and were left untouched (idempotency).  ``fingerprints`` is the number
-    of distinct fingerprints classified.
+    live and were left untouched (idempotency).  ``decisions_superseded`` counts
+    heuristic decisions a ``reconcile`` run retired because the winning rule for
+    that fingerprint changed.  ``fingerprints`` is the number of distinct
+    fingerprints classified.
     """
 
     decisions_appended: int = 0
     decisions_skipped: int = 0
+    decisions_superseded: int = 0
     observations_appended: int = 0
     observations_skipped: int = 0
     fingerprints: int = 0
@@ -72,7 +75,8 @@ def _category_rule_versions(registry: list[ledger_mod.RegisteredRule]) -> dict[s
     return {rule.rule_id: rule.version for rule in registry}
 
 
-def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progress=None):
+def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progress=None,
+                     reconcile=False):
     """Record the deterministic verdicts for a corpus into ``conn``; idempotent.
 
     Registers ``registry`` (or :func:`ledger.default_registry`) into the
@@ -92,6 +96,18 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
     ``(fingerprint, decided_by, rule_version)``; an observation is skipped when a
     LIVE observation already exists for ``(fingerprint, observed_by,
     rule_version, detail, evidence)``.  A second run therefore appends nothing.
+
+    ``reconcile`` (the ``ledger record`` path, default off so ``build``'s
+    behaviour is unchanged): when the WINNING rule for a fingerprint has changed
+    -- e.g. a newly-added ``test-only`` rule now outranks ``substantive``, or a
+    rule's version bumped -- the fingerprint's existing live ``heuristic``
+    decision is from a DIFFERENT ``(rule, version)``, so a plain append would
+    leave two live heuristic decisions.  With ``reconcile`` on, that stale
+    heuristic decision is SUPERSEDED before the new one is appended, keeping
+    exactly one live deterministic decision per fingerprint.  ``llm`` / ``human``
+    decisions are never touched (different ``kind``), so review work is
+    preserved.  On a fresh ledger (``build``) there is no prior decision, so
+    ``reconcile`` is a no-op.
 
     Returns a :class:`RecordStats`.  ``now`` is a caller-supplied ISO-8601
     string; this module never reads a clock.
@@ -117,6 +133,13 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
                 rule_version=rule_version):
             stats.decisions_skipped += 1
         else:
+            if reconcile:
+                # The winning rule changed: retire the fingerprint's stale
+                # heuristic decision(s) so exactly one stays live. Only heuristic
+                # rows -- llm/human verdicts are a different tier and outrank.
+                stats.decisions_superseded += ledger_mod.supersede_decisions_for_fingerprint(
+                    conn, fingerprint=record.fingerprint, kind='heuristic',
+                    superseded_at=now, commit=False)
             ledger_mod.append_decision(
                 conn, fingerprint=record.fingerprint,
                 category=verdict.content_category, confidence=verdict.confidence,

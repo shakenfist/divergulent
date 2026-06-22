@@ -191,8 +191,14 @@ table that is only ever *superseded* (never edited or deleted), and an
 a category). The current verdict is **derived**, never stored — per fingerprint,
 the highest-precedence live decision — so it cannot drift, and retiring a rule
 re-queues exactly its fingerprints (a surgical redo).
-`python -m divergulent.classify.ledger build|report|supersede` operates it; the
-CLI is the only place that reads a clock. The ledger reproduced the phase-2
+`python -m divergulent.classify.ledger build|record|report|supersede` operates
+it; the CLI is the only place that reads a clock. `build` creates from scratch
+(and now confirms before WIPING a populated ledger — destroying appended
+llm/human work — unless `--force`); `record` is the non-destructive counterpart
+that applies current/new rules to an EXISTING ledger, superseding a fingerprint's
+stale heuristic decision when its winning rule changed (how the `test-only` rule
+is rolled out: it reclassified ~6.4k fingerprints to `test` while preserving all
+llm/human decisions). The ledger reproduced the phase-2
 distribution exactly with a 42,907-fingerprint derived queue. See
 `docs/plans/PLAN-patch-classification-phase-03-findings.md`.
 

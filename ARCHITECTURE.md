@@ -109,8 +109,14 @@ installed-package inventory never leaves the machine.
   Phase 3 adds the provenance ledger: `ledger.py` (the append-only sqlite
   schema — a `rule` registry, an immutable `decision` table only ever
   superseded, and an `observation` table for flags — plus the supersession ops
-  and a `python -m divergulent.classify.ledger` CLI), `record.py` (drives the
-  rules into the ledger as decisions/observations, idempotently), and
+  and a `python -m divergulent.classify.ledger` CLI: `build` (create from
+  scratch — now guarded so it won't silently wipe a populated ledger's
+  appended llm/human work without `--force`), `record` (the non-destructive
+  counterpart — apply current/new rules to an EXISTING ledger, superseding a
+  fingerprint's stale heuristic decision when its winning rule changed, e.g.
+  rolling out `test-only`), `report`, `supersede`), `record.py` (drives the
+  rules into the ledger as decisions/observations, idempotently, with an
+  opt-in `reconcile` mode for the in-place re-record), and
   `verdict.py` (the **derived** current verdict — the highest-precedence live
   decision per fingerprint — plus the phase-4 residue queue and a report). The
   current verdict is never stored, so it cannot drift, and retiring a rule
