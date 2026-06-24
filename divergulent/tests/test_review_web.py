@@ -55,6 +55,22 @@ def _failing_signer(message='sigstore exploded'):
     return signer
 
 
+def _settle(conn, *, fingerprint, category, kind='heuristic', decided_by='some-rule',
+            verified=False):
+    """Append a single live decision so the fingerprint has a settled verdict."""
+    ledger_mod.append_decision(
+        conn, fingerprint=fingerprint, category=category, confidence='high',
+        decided_by=decided_by, rule_version=1, kind=kind, verified=verified,
+        evidence=None, decided_at=WHEN, commit=True)
+
+
+def _mark_reviewed(conn, fingerprint):
+    """Clear the pending queue item for ``fingerprint`` (settle it, un-queued)."""
+    for item in ledger_mod.pending_review_items(conn):
+        if item['fingerprint'] == fingerprint:
+            ledger_mod.mark_reviewed(conn, item_id=item['id'], reviewed_at=WHEN)
+
+
 class ReviewWebFixture:
     """A synthetic corpus + ledger + a Flask test client over them."""
 
@@ -256,6 +272,94 @@ class VerdictPostTestCase(ReviewWebFixture, testtools.TestCase):
             'name="choice"', client.get('/review/' + fp_hex).get_data(as_text=True))
         resp = client.post('/review/' + fp_hex, data={'choice': 'accept'})
         self.assertEqual(405, resp.status_code)
+
+
+class AuditTestCase(ReviewWebFixture, testtools.TestCase):
+
+    def _audited_client(self, **kwargs):
+        client, conn, fp_hex = self._client(**kwargs)
+        # Two settled (un-queued) verdicts to audit: a rule-classified packaging
+        # patch and a verified-LLM documentation patch.
+        _settle(conn, fingerprint='e' * 64, category='packaging',
+                kind='heuristic', decided_by='autotools-regen')
+        _settle(conn, fingerprint='f' * 64, category='documentation',
+                kind='llm', decided_by='llm-triage:claude', verified=True)
+        return client, conn, fp_hex
+
+    def test_lists_settled_verdicts_and_excludes_queued(self):
+        client, _conn, fp_hex = self._audited_client()
+        body = client.get('/audit').get_data(as_text=True)
+        self.assertIn('packaging', body)
+        self.assertIn('documentation', body)
+        self.assertIn('autotools-regen', body)
+        # The seed fingerprint is still pending in the queue -> not in the audit.
+        self.assertNotIn(fp_hex[:16], body)
+
+    def test_category_filter(self):
+        client, _conn, _fp = self._audited_client()
+        body = client.get('/audit?category=packaging').get_data(as_text=True)
+        self.assertIn('e' * 16, body)                  # the packaging row
+        self.assertNotIn('f' * 16, body)               # the documentation row, filtered
+
+    def test_source_filter_by_kind(self):
+        client, _conn, _fp = self._audited_client()
+        body = client.get('/audit?source=heuristic').get_data(as_text=True)
+        self.assertIn('autotools-regen', body)         # heuristic row
+        self.assertNotIn('f' * 16, body)               # the llm row is filtered
+
+    def test_source_filter_by_decided_by_rule(self):
+        client, _conn, _fp = self._audited_client()
+        body = client.get('/audit?source=autotools-regen').get_data(as_text=True)
+        self.assertIn('e' * 16, body)                  # only the autotools-regen row
+        self.assertNotIn('f' * 16, body)
+
+    def test_hostile_decided_by_is_escaped(self):
+        client, conn, _fp = self._client()
+        _settle(conn, fingerprint='e' * 64, category='packaging',
+                decided_by='<script>alert(1)</script>')
+        body = client.get('/audit').get_data(as_text=True)
+        self.assertNotIn('<script>alert(1)</script>', body)
+        self.assertIn('&lt;script&gt;', body)
+
+    def test_settled_review_page_shows_verdict_and_requeue(self):
+        signer, _seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        _mark_reviewed(conn, fp_hex)  # settle the seed: no longer queued
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn('current verdict', body)
+        self.assertIn('Re-queue for human review', body)
+        self.assertNotIn('name="choice"', body)        # no verdict form when settled
+
+
+class RequeueTestCase(ReviewWebFixture, testtools.TestCase):
+
+    def test_requeue_reopens_item_and_records_no_decision(self):
+        signer, _seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        _mark_reviewed(conn, fp_hex)
+        self.assertEqual([], ledger_mod.pending_review_items(conn))  # settled
+
+        resp = client.post('/requeue/' + fp_hex)
+        self.assertEqual(302, resp.status_code)
+        self.assertIn('/audit', resp.headers['Location'])
+        # Back in the queue, and NO decision was recorded by the re-queue.
+        pending = [i['fingerprint'] for i in ledger_mod.pending_review_items(conn)]
+        self.assertIn(fp_hex, pending)
+        self.assertEqual(
+            [], [r for r in ledger_mod.decisions_for(conn, fp_hex) if r['kind'] == 'human'])
+
+    def test_requeue_supersedes_a_human_verdict(self):
+        signer, _seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        # Record then re-queue: the human verdict is superseded (no longer live).
+        client.post('/review/' + fp_hex, data={'choice': 'accept'})
+        self.assertEqual('human', verdict_mod.current_verdict(conn)[fp_hex].kind)
+        client.post('/requeue/' + fp_hex)
+        self.assertNotEqual('human', verdict_mod.current_verdict(conn)[fp_hex].kind)
+
+    def test_requeue_refused_on_readonly_instance(self):
+        client, _conn, fp_hex = self._client(signer=None)
+        self.assertEqual(405, client.post('/requeue/' + fp_hex).status_code)
 
 
 class LoopbackGuardTestCase(testtools.TestCase):

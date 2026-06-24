@@ -31,6 +31,9 @@ from divergulent.classify import verdict as verdict_mod
 # here exactly as the CLI uses them.
 DEFAULT_PORT = 8765
 LOOPBACK_HOSTS = ('127.0.0.1', 'localhost', '::1')
+# The audit view can span the whole settled archive; cap the rendered rows and
+# tell the operator how many were dropped rather than building a vast page.
+AUDIT_LIMIT = 500
 
 
 def require_loopback(host: str) -> str:
@@ -146,9 +149,14 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             conn, corpus_dir, index_path, fingerprint=resolved, item=item, fetch=fetch)
         if context is None:
             return render_template_string(NO_PATCH_TEMPLATE, fingerprint=resolved), 404
+        queued = item is not None
+        # A settled, non-queued item (reached from /audit) shows its current
+        # derived verdict and a re-queue action instead of the verdict form.
+        verdict = None if queued else verdict_mod.current_verdict(conn).get(resolved)
         return render_template_string(
-            REVIEW_TEMPLATE, ctx=context, queued=item is not None,
+            REVIEW_TEMPLATE, ctx=context, queued=queued,
             can_verdict=signer is not None, categories=categories,
+            verdict=verdict, can_requeue=signer is not None and not queued,
             package_lines=review_mod._format_package_lines(context),
             diff=diff_lines(context.context_view))
 
@@ -198,6 +206,52 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             verdict_mod.rebuild_current_verdict(conn)
             ledger_mod.resolve_settled_review_items(conn, now=now)
         return redirect(url_for('index'))
+
+    @app.route('/audit')
+    def audit():
+        # Spot-check settled patches that are NOT in the review queue: the derived
+        # current verdict, filterable by category and by provenance (a decision
+        # kind, or a specific decided_by rule).  Category here is the DERIVED
+        # verdict -- which for a rule-classified fingerprint is the rule's
+        # category -- the deliberate counterpart to the queue's LLM-draft category.
+        # "Not in the queue": exclude fingerprints with a pending review item, so
+        # the audit view is the settled residue, distinct from the review worklist.
+        pending = {item['fingerprint'] for item in ledger_mod.pending_review_items(conn)}
+        all_verdicts = [
+            v for v in verdict_mod.current_verdict(conn).values() if v.fingerprint not in pending]
+        verdicts = sorted(
+            all_verdicts, key=lambda v: (v.kind, v.decided_by, v.category, v.fingerprint))
+        category = request.args.get('category', '').strip() or None
+        source = request.args.get('source', '').strip() or None
+        if category:
+            verdicts = [v for v in verdicts if v.category == category]
+        if source:
+            verdicts = [v for v in verdicts if source in (v.kind, v.decided_by)]
+
+        total = len(verdicts)
+        shown = verdicts[:AUDIT_LIMIT]
+        return render_template_string(
+            AUDIT_TEMPLATE, rows=shown, total=total, shown=len(shown),
+            limit=AUDIT_LIMIT, category=category, source_sel=source,
+            categories=sorted({v.category for v in all_verdicts}),
+            kinds=sorted({v.kind for v in all_verdicts}))
+
+    @app.route('/requeue/<fingerprint>', methods=['POST'])
+    def requeue(fingerprint):
+        if signer is None:
+            abort(405)  # read-only instance: no mutations
+        resolved, matches = review_mod.resolve_fingerprint(conn, fingerprint)
+        if resolved is None:
+            return render_template_string(
+                SEARCH_TEMPLATE, query=fingerprint, matches=matches), 404
+        # Re-queue records NO decision -- it supersedes the live human verdict (if
+        # any) and re-opens the item for review.  Mirror the CLI: commit, then
+        # rebuild so the superseded fingerprint drops back to pending immediately.
+        now = clock()
+        review_mod.requeue_one(conn, resolved, now=now)
+        conn.commit()
+        verdict_mod.rebuild_current_verdict(conn)
+        return redirect(url_for('audit'))
 
     return app
 
@@ -297,6 +351,7 @@ _FOOT = '''
 
 WORKLIST_TEMPLATE = _HEAD.replace('{{ title }}', 'worklist') + '''
 <h1>Review worklist</h1>
+<p><a href="/audit">audit settled patches &rarr;</a></p>
 <form method="get" action="/">
   <input type="text" name="fingerprint" placeholder="jump to fingerprint / prefix"
          class="mono" size="40">
@@ -340,8 +395,21 @@ REVIEW_TEMPLATE = _HEAD.replace('{{ title }}', 'review') + '''
   {% else %}
     <div>LLM draft: <span class="muted">(none)</span></div>
   {% endif %}
-  {% if not queued %}<div class="muted">(not in the review queue)</div>{% endif %}
+  {% if not queued %}
+    <div class="muted">(not in the review queue -- spot-checking a settled patch)</div>
+    {% if verdict %}
+      <div>current verdict: <b>{{ verdict.category }}</b>
+        ({{ verdict.kind }}{% if verdict.verified %}, verified{% endif %},
+        by {{ verdict.decided_by }} v{{ verdict.rule_version }})</div>
+    {% endif %}
+  {% endif %}
 </div>
+{% if can_requeue %}
+<form method="post" action="/requeue/{{ ctx.fingerprint }}">
+  <button type="submit">Re-queue for human review</button>
+  <span class="muted">supersedes the current verdict; records no decision</span>
+</form>
+{% endif %}
 {% if queued and can_verdict %}
 <h2>Your verdict</h2>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
@@ -372,6 +440,47 @@ ERROR_TEMPLATE = _HEAD.replace('{{ title }}', 'error') + '''
 <pre class="diff error">{{ error }}</pre>
 <p class="muted">Fix the issue and try again. Signing needs the verify extra:
 <span class="mono">pip install divergulent[review,verify]</span>.</p>
+''' + _FOOT
+
+AUDIT_TEMPLATE = _HEAD.replace('{{ title }}', 'audit') + '''
+<p><a href="/">&larr; worklist</a></p>
+<h1>Audit settled patches</h1>
+<p class="muted">Spot-check patches that are <b>not</b> in the review queue -- the
+derived current verdict, including rule-classified patches. Confirm a rule is
+right, or re-queue a misfire for human review.</p>
+<p>category:
+  <a class="chip {{ 'on' if not category }}"
+     href="/audit{{ '?source=' + source_sel if source_sel }}">all</a>
+  {% for cat in categories %}
+    <a class="chip {{ 'on' if category == cat }}"
+       href="/audit?category={{ cat | urlencode }}{{ '&source=' + source_sel if source_sel }}">{{ cat }}</a>
+  {% endfor %}
+</p>
+<p>source:
+  <a class="chip {{ 'on' if not source_sel }}"
+     href="/audit{{ '?category=' + category if category }}">all</a>
+  {% for k in kinds %}
+    <a class="chip {{ 'on' if source_sel == k }}"
+       href="/audit?source={{ k | urlencode }}{{ '&category=' + category if category }}">{{ k }}</a>
+  {% endfor %}
+</p>
+<p class="muted">
+  showing {{ shown }} of {{ total }}{% if category %} in <b>{{ category }}</b>{% endif %}{%
+  if source_sel %} from <b>{{ source_sel }}</b>{% endif %}{% if total > limit %}
+  (capped at {{ limit }} -- filter to narrow){% endif %}.
+</p>
+<table>
+  <tr><th>category</th><th>kind</th><th>decided by</th><th>fingerprint</th></tr>
+  {% for v in rows %}
+  <tr>
+    <td>{{ v.category }}</td>
+    <td>{{ v.kind }}{% if v.verified %} <span class="muted">(verified)</span>{% endif %}</td>
+    <td><a href="/audit?source={{ v.decided_by | urlencode }}">{{ v.decided_by }}</a>
+        <span class="muted">v{{ v.rule_version }}</span></td>
+    <td class="mono"><a href="/review/{{ v.fingerprint }}">{{ v.fingerprint[:16] }}</a></td>
+  </tr>
+  {% endfor %}
+</table>
 ''' + _FOOT
 
 SEARCH_TEMPLATE = _HEAD.replace('{{ title }}', 'no match') + '''
