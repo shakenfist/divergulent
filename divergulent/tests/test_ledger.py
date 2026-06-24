@@ -388,6 +388,34 @@ class ReviewQueueTestCase(LedgerFixture, testtools.TestCase):
         pending = ledger.pending_review_items(conn)
         self.assertEqual(['high', 'low'], [r['fingerprint'] for r in pending])
 
+    def test_pending_items_in_category_filters_and_keeps_priority_order(self):
+        conn, _path = self._ledger()
+        # Two security items at different priorities, plus a documentation item.
+        ledger.append_review_item(
+            conn, fingerprint='sec-low', reason=None, draft_category='security',
+            draft_confidence=None, enqueued_at=WHEN, priority=1)
+        ledger.append_review_item(
+            conn, fingerprint='sec-high', reason=None, draft_category='security',
+            draft_confidence=None, enqueued_at=WHEN, priority=9)
+        ledger.append_review_item(
+            conn, fingerprint='doc', reason=None, draft_category='documentation',
+            draft_confidence=None, enqueued_at=WHEN, priority=5)
+        # The slice is scoped to the category but still highest-priority-first.
+        security = ledger.pending_review_items_in_category(conn, 'security')
+        self.assertEqual(['sec-high', 'sec-low'], [r['fingerprint'] for r in security])
+        self.assertEqual(
+            ['doc'],
+            [r['fingerprint'] for r in ledger.pending_review_items_in_category(conn, 'documentation')])
+        self.assertEqual([], ledger.pending_review_items_in_category(conn, 'feature'))
+
+    def test_pending_items_in_category_excludes_reviewed(self):
+        conn, _path = self._ledger()
+        item_id = ledger.append_review_item(
+            conn, fingerprint='sec', reason=None, draft_category='security',
+            draft_confidence=None, enqueued_at=WHEN, priority=1)
+        ledger.mark_reviewed(conn, item_id=item_id, reviewed_at=LATER)
+        self.assertEqual([], ledger.pending_review_items_in_category(conn, 'security'))
+
     def test_pending_exists_is_per_fingerprint(self):
         conn, _path = self._ledger()
         self.assertFalse(ledger.pending_review_item_exists(conn, fingerprint='fp1'))

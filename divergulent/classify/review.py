@@ -539,13 +539,17 @@ def sigstore_signer(record_bytes: bytes) -> tuple[str, str]:
 class ReviewContext:
     """Everything a human needs to judge one item -- the input to ``ask``.
 
-    Assembled by :func:`review_one`: the representative diff body, the LLM draft
-    (category + confidence + reasoning), the author's claim category, the routing
-    flags/reason that sent the item to review, the diff rendered in the context
-    of the original upstream file, and the package(s) that carry this fingerprint
-    (``source_package``/``version`` are the representative instance; ``packages``
-    is every source package carrying the identical patch -- a fingerprint is
-    deduplicated, so "which packages does this affect?" is real review context).
+    Assembled by :func:`build_review_context`: the representative diff body, the
+    LLM draft (category + confidence + reasoning), the author's claim category, the
+    routing flags/reason that sent the item to review, the diff rendered in the
+    context of the original upstream file, and the package(s) that carry this
+    fingerprint (``source_package``/``version``/``patch_name`` are the
+    representative instance; ``patch_name`` travels here because the evidence blob
+    records it; ``packages`` is every source package carrying the identical patch --
+    a fingerprint is deduplicated, so "which packages does this affect?" is real
+    review context).  ``reason`` is the queue routing reason when this context was
+    built from a queue item, and ``None`` when built straight from a fingerprint
+    (the audit/spot-check path).
     """
 
     fingerprint: str
@@ -558,6 +562,7 @@ class ReviewContext:
     reason: str | None
     source_package: str
     version: str
+    patch_name: str
     packages: tuple[str, ...]
 
 
@@ -591,33 +596,28 @@ def _llm_draft(conn: sqlite3.Connection, fingerprint: str) -> sqlite3.Row | None
     return llm_rows[-1] if llm_rows else None
 
 
-def review_one(conn: sqlite3.Connection, corpus_dir: str, index_path: str,
-               item: sqlite3.Row, *, fetch, signer, ask, now) -> ReviewOutcome:
-    """Review ONE pending item: gather context, ask the human, record the verdict.
+def build_review_context(conn: sqlite3.Connection, corpus_dir: str, index_path: str,
+                         *, fingerprint: str, fetch, item: sqlite3.Row | None = None
+                         ) -> ReviewContext | None:
+    """Assemble the human-review context for ONE fingerprint, or ``None``.
 
-    Loads the representative body (``measure.read_body`` via the phase-1 index),
-    the author's claim (``extract_claim``), and the live LLM draft
-    (``decisions_for``); fetches the original upstream file and renders the diff
-    in context; then calls ``ask(context) -> choice``.  ``choice`` is the LLM
-    draft's category (accept), an override category, ``'unknown'``, or ``'defer'``.
+    Keyed by ``fingerprint`` (not by a queue item) so the same render path serves
+    both the queue review page and the audit/spot-check view: loads the
+    representative body (``measure.read_body`` via the phase-1 index), the author's
+    claim (``extract_claim``), and the live LLM draft (``decisions_for``); fetches
+    the original upstream file and renders the diff in context.  ``item`` is the
+    optional queue row -- supplied when reviewing from the queue (its ``reason``
+    rides along), and ``None`` when auditing a settled fingerprint.
 
-    On a real verdict (anything but ``'defer'``): builds the canonical record,
-    signs it (``sign_decision``), appends a ``kind='human'`` decision with
-    ``verified=True``, the ``signature`` + ``signed_by``, and an ``evidence`` JSON
-    recording what was reviewed, then marks the queue item reviewed.  On
-    ``'defer'`` the item is left pending and NOTHING is recorded.
-
-    ``fetch``/``signer``/``ask``/``now`` are all injected so this is pure given
-    fakes; ``now`` is the caller-supplied ISO-8601 timestamp (this module never
-    reads a clock).
+    Returns ``None`` when the fingerprint has no representative index row (nothing
+    to show); the caller treats that as a defer/skip.  ``fetch`` is injected so
+    this is pure given a fake; this module never reads a clock or a socket.
     """
-    fingerprint = item['fingerprint']
     patch_info = _representative_patch(index_path, fingerprint)
     if patch_info is None:
-        # No provenance row -> no body to review.  Leave it pending; a queued
-        # fingerprint with no index row cannot be shown, and silently dropping it
-        # would hide it, so we defer rather than record.
-        return ReviewOutcome(fingerprint, False, True, None, None)
+        # No provenance row -> no body to review.  A queued fingerprint with no
+        # index row cannot be shown, and silently dropping it would hide it.
+        return None
 
     source_package, version, patch_name, raw_sha = patch_info
     body = measure.read_body(corpus_dir, raw_sha)
@@ -632,7 +632,7 @@ def review_one(conn: sqlite3.Connection, corpus_dir: str, index_path: str,
     context_view = build_context_view(source_package, version, body_diff, fetch=fetch)
 
     draft = _llm_draft(conn, fingerprint)
-    context = ReviewContext(
+    return ReviewContext(
         fingerprint=fingerprint,
         diff_body=body_diff,
         context_view=context_view,
@@ -640,12 +640,30 @@ def review_one(conn: sqlite3.Connection, corpus_dir: str, index_path: str,
         draft_confidence=draft['confidence'] if draft is not None else None,
         draft_reasoning=_draft_reasoning(draft),
         claim_category=claim.claimed_category,
-        reason=item['reason'],
+        reason=item['reason'] if item is not None else None,
         source_package=source_package,
         version=version,
+        patch_name=patch_name,
         packages=_carrying_packages(index_path, fingerprint))
 
-    choice = ask(context)
+
+def record_review_verdict(conn: sqlite3.Connection, item: sqlite3.Row,
+                          context: ReviewContext, choice: str, *, signer, now
+                          ) -> ReviewOutcome:
+    """Record the human ``choice`` for a queued item against its ``context``.
+
+    ``choice`` is the LLM draft's category (accept), an override category,
+    ``'unknown'``, or ``'defer'``.  On a real verdict (anything but ``'defer'``):
+    builds the canonical record, signs it (``sign_decision``), appends a
+    ``kind='human'`` decision with ``verified=True``, the ``signature`` +
+    ``signed_by``, and an ``evidence`` JSON recording what was reviewed, then marks
+    the queue ``item`` reviewed.  On ``'defer'`` the item is left pending and
+    NOTHING is recorded.
+
+    ``signer``/``now`` are injected so this is pure given a fake signer; ``now`` is
+    the caller-supplied ISO-8601 timestamp (this module never reads a clock).
+    """
+    fingerprint = context.fingerprint
     if choice == CHOICE_DEFER:
         return ReviewOutcome(fingerprint, False, True, None, None)
 
@@ -656,9 +674,9 @@ def review_one(conn: sqlite3.Connection, corpus_dir: str, index_path: str,
 
     evidence = json.dumps({
         'reviewed': {
-            'source_package': source_package,
-            'version': version,
-            'patch_name': patch_name,
+            'source_package': context.source_package,
+            'version': context.version,
+            'patch_name': context.patch_name,
             'fingerprint': fingerprint,
         },
         'draft_category': context.draft_category,
@@ -675,6 +693,25 @@ def review_one(conn: sqlite3.Connection, corpus_dir: str, index_path: str,
     ledger_mod.mark_reviewed(conn, item_id=item['id'], reviewed_at=now)
 
     return ReviewOutcome(fingerprint, True, False, category, decision_id)
+
+
+def review_one(conn: sqlite3.Connection, corpus_dir: str, index_path: str,
+               item: sqlite3.Row, *, fetch, signer, ask, now) -> ReviewOutcome:
+    """Review ONE pending item: gather context, ask the human, record the verdict.
+
+    A thin composition of :func:`build_review_context` (gather), ``ask`` (decide),
+    and :func:`record_review_verdict` (record).  A missing representative row
+    leaves the item pending without recording (the audit-able defer case).
+
+    ``fetch``/``signer``/``ask``/``now`` are all injected so this is pure given
+    fakes; ``now`` is the caller-supplied ISO-8601 timestamp.
+    """
+    context = build_review_context(
+        conn, corpus_dir, index_path, fingerprint=item['fingerprint'], item=item, fetch=fetch)
+    if context is None:
+        return ReviewOutcome(item['fingerprint'], False, True, None, None)
+    choice = ask(context)
+    return record_review_verdict(conn, item, context, choice, signer=signer, now=now)
 
 
 def _draft_reasoning(draft: sqlite3.Row | None) -> str | None:

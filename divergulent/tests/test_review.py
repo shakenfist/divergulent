@@ -319,6 +319,76 @@ class ReviewOneTestCase(ReviewFixture, testtools.TestCase):
         self.assertEqual((SOURCE_PACKAGE,), context.packages)
 
 
+class BuildReviewContextTestCase(ReviewFixture, testtools.TestCase):
+    """The fingerprint-keyed context builder review_one and the web UI share."""
+
+    def test_returns_none_for_missing_representative_row(self):
+        # A fingerprint with no row in the phase-1 index has no body to show.
+        conn, corpus_dir, index_path, _fp = self._setup()
+        context = review.build_review_context(
+            conn, corpus_dir, index_path, fingerprint='a' * 64,
+            fetch=_recording_fetch()[0])
+        self.assertIsNone(context)
+
+    def test_carries_patch_name_and_no_reason_without_an_item(self):
+        # Built straight from a fingerprint (the audit/spot-check path): patch_name
+        # rides along for the evidence blob; reason is None (no queue item).
+        conn, corpus_dir, index_path, fp_hex = self._setup()
+        context = review.build_review_context(
+            conn, corpus_dir, index_path, fingerprint=fp_hex,
+            fetch=_recording_fetch()[0])
+        self.assertEqual(PATCH_NAME, context.patch_name)
+        self.assertIsNone(context.reason)
+
+    def test_takes_the_reason_from_the_queue_item_when_given(self):
+        conn, corpus_dir, index_path, fp_hex = self._setup()
+        item = self._item(conn)
+        context = review.build_review_context(
+            conn, corpus_dir, index_path, fingerprint=fp_hex, item=item,
+            fetch=_recording_fetch()[0])
+        self.assertEqual(item['reason'], context.reason)
+
+
+class RecordReviewVerdictTestCase(ReviewFixture, testtools.TestCase):
+    """The record half of the split records the same signed decision as before."""
+
+    def test_records_the_byte_identical_canonical_record_and_clears_item(self):
+        conn, corpus_dir, index_path, fp_hex = self._setup(draft_category='bugfix')
+        item = self._item(conn)
+        signer, signer_seen = _fake_signer()
+        context = review.build_review_context(
+            conn, corpus_dir, index_path, fingerprint=fp_hex, item=item,
+            fetch=_recording_fetch()[0])
+
+        outcome = review.record_review_verdict(
+            conn, item, context, review.CHOICE_ACCEPT, signer=signer, now=WHEN)
+
+        self.assertTrue(outcome.recorded)
+        self.assertEqual('bugfix', outcome.category)
+        # The bytes handed to the signer are exactly the canonical record.
+        self.assertEqual(
+            review.canonical_record(fp_hex, 'bugfix', WHEN), signer_seen['record_bytes'])
+        human = [r for r in ledger_mod.decisions_for(conn, fp_hex) if r['kind'] == 'human'][0]
+        self.assertEqual('bugfix', human['category'])
+        self.assertEqual('FAKE-SIG', human['signature'])
+        self.assertEqual([], ledger_mod.pending_review_items(conn))
+
+    def test_defer_records_nothing_and_leaves_the_item_pending(self):
+        conn, corpus_dir, index_path, fp_hex = self._setup()
+        item = self._item(conn)
+        signer, signer_seen = _fake_signer()
+        context = review.build_review_context(
+            conn, corpus_dir, index_path, fingerprint=fp_hex, item=item,
+            fetch=_recording_fetch()[0])
+
+        outcome = review.record_review_verdict(
+            conn, item, context, review.CHOICE_DEFER, signer=signer, now=WHEN)
+
+        self.assertFalse(outcome.recorded)
+        self.assertNotIn('record_bytes', signer_seen)
+        self.assertEqual(1, len(ledger_mod.pending_review_items(conn)))
+
+
 class FetchSourceFileTestCase(testtools.TestCase):
 
     def test_builds_sources_debian_org_url(self):
@@ -388,7 +458,8 @@ def _context(*, packages, source_package='reader', version='1.2-3'):
         fingerprint='f' * 64, diff_body='', context_view='',
         draft_category=None, draft_confidence=None, draft_reasoning=None,
         claim_category='unknown', reason=None,
-        source_package=source_package, version=version, packages=tuple(packages))
+        source_package=source_package, version=version, patch_name='fix.patch',
+        packages=tuple(packages))
 
 
 class _FakeExpired(Exception):
