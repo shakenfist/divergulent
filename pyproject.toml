@@ -51,6 +51,13 @@ verify = [
 triage = [
     "anthropic>=0.40",  # mit — Anthropic API client for LLM triage
 ]
+# Optional, opt-in local web UI for human review of the patch residue.
+# Curation-side only and localhost-bound; Flask + Jinja2 (autoescaping HTML)
+# live behind this extra so the default scan/report install stays stdlib +
+# python-debian. Pair with verify to sign verdicts: divergulent[review,verify].
+review = [
+    "flask>=3,<4",  # bsd — local human-review web UI (pulls Jinja2 + Werkzeug)
+]
 test = [
     "coverage",         # apache2
     "testtools<2.9.2",  # mit; stestr uses _b removed in 2.8
