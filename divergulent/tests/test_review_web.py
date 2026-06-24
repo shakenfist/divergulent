@@ -13,7 +13,9 @@ import tempfile
 import testtools
 
 from divergulent.classify import ledger as ledger_mod
+from divergulent.classify import review as review_mod
 from divergulent.classify import review_web
+from divergulent.classify import verdict as verdict_mod
 from divergulent.tests.test_review import ORIGINAL, SOURCE_PACKAGE, WHEN, _build_corpus
 
 
@@ -35,10 +37,28 @@ def _seed_item(conn, *, fingerprint, draft_category, priority, reason=None):
     conn.commit()
 
 
+def _recording_signer(signature='FAKE-SIG', signed_by='reviewer@example.org'):
+    """A fake signer recording the bytes it signed; returns a fixed pair."""
+    seen = {}
+
+    def signer(record_bytes):
+        seen['record_bytes'] = record_bytes
+        return signature, signed_by
+
+    return signer, seen
+
+
+def _failing_signer(message='sigstore exploded'):
+    """A fake signer that always raises -- the signing-failure path."""
+    def signer(record_bytes):
+        raise RuntimeError(message)
+    return signer
+
+
 class ReviewWebFixture:
     """A synthetic corpus + ledger + a Flask test client over them."""
 
-    def _client(self, *, extra_items=()):
+    def _client(self, *, extra_items=(), signer=None, clock=None):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         corpus_dir = tmp.name
@@ -49,13 +69,20 @@ class ReviewWebFixture:
         self.addCleanup(conn.close)
         ledger_mod.register_rules(conn, ledger_mod.default_registry())
 
+        # A heuristic 'unknown' baseline so the fingerprint is genuine residue.
+        ledger_mod.append_decision(
+            conn, fingerprint=fp_hex, category='unknown', confidence='low',
+            decided_by='substantive', rule_version=1, kind='heuristic',
+            evidence=None, decided_at=WHEN, commit=False)
         # The representative (indexed) item, plus any extras the test asked for.
         _seed_item(conn, fingerprint=fp_hex, draft_category='bugfix', priority=5,
                    reason='verifier refuted the drafted category')
         for spec in extra_items:
             _seed_item(conn, **spec)
 
-        app = review_web.create_app(conn, corpus_dir, index_path, fetch=_fetch)
+        app = review_web.create_app(
+            conn, corpus_dir, index_path, fetch=_fetch, signer=signer,
+            clock=(clock or (lambda: WHEN)))
         app.testing = True
         return app.test_client(), conn, fp_hex
 
@@ -142,6 +169,93 @@ class ReviewPageTestCase(ReviewWebFixture, testtools.TestCase):
         resp = client.get('/review/' + 'd' * 64)
         self.assertEqual(404, resp.status_code)
         self.assertIn('no representative patch', resp.get_data(as_text=True))
+
+
+class VerdictPostTestCase(ReviewWebFixture, testtools.TestCase):
+
+    def _human(self, conn, fp_hex):
+        return [r for r in ledger_mod.decisions_for(conn, fp_hex) if r['kind'] == 'human']
+
+    def test_accept_records_signed_decision_and_dequeues(self):
+        signer, seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        resp = client.post('/review/' + fp_hex, data={'choice': 'accept'})
+        self.assertEqual(302, resp.status_code)
+        # The signed bytes are exactly the canonical record for the draft category.
+        self.assertEqual(
+            review_mod.canonical_record(fp_hex, 'bugfix', WHEN), seen['record_bytes'])
+        human = self._human(conn, fp_hex)[0]
+        self.assertEqual('bugfix', human['category'])
+        self.assertEqual('FAKE-SIG', human['signature'])
+        self.assertEqual('reviewer@example.org', human['signed_by'])
+        self.assertEqual(WHEN, human['decided_at'])
+        # The item is dequeued and the human verdict tops the rebuilt cache.
+        self.assertEqual([], ledger_mod.pending_review_items(conn))
+        self.assertEqual('human', verdict_mod.current_verdict(conn)[fp_hex].kind)
+
+    def test_override_records_the_override_category(self):
+        signer, _seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        client.post('/review/' + fp_hex, data={'choice': 'security'})
+        self.assertEqual('security', self._human(conn, fp_hex)[0]['category'])
+
+    def test_test_category_is_assignable(self):
+        signer, _seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        client.post('/review/' + fp_hex, data={'choice': 'test'})
+        self.assertEqual('test', self._human(conn, fp_hex)[0]['category'])
+
+    def test_defer_records_nothing_and_leaves_pending(self):
+        signer, seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        resp = client.post('/review/' + fp_hex, data={'choice': 'defer'})
+        self.assertEqual(302, resp.status_code)
+        self.assertNotIn('record_bytes', seen)
+        self.assertEqual([], self._human(conn, fp_hex))
+        self.assertEqual(1, len(ledger_mod.pending_review_items(conn)))
+
+    def test_invalid_choice_is_rejected_without_recording(self):
+        signer, seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        resp = client.post('/review/' + fp_hex, data={'choice': 'banana'})
+        self.assertEqual(400, resp.status_code)
+        self.assertNotIn('record_bytes', seen)
+        self.assertEqual(1, len(ledger_mod.pending_review_items(conn)))
+
+    def test_signer_failure_renders_error_and_records_nothing(self):
+        client, conn, fp_hex = self._client(signer=_failing_signer('boom'))
+        resp = client.post('/review/' + fp_hex, data={'choice': 'accept'})
+        self.assertEqual(502, resp.status_code)
+        body = resp.get_data(as_text=True)
+        self.assertIn('Could not record the verdict', body)
+        self.assertIn('boom', body)
+        # The ledger is untouched -- record_review_verdict signs before it writes.
+        self.assertEqual([], self._human(conn, fp_hex))
+        self.assertEqual(1, len(ledger_mod.pending_review_items(conn)))
+
+    def test_double_submit_is_idempotent(self):
+        signer, _seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        client.post('/review/' + fp_hex, data={'choice': 'accept'})
+        resp = client.post('/review/' + fp_hex, data={'choice': 'accept'})
+        self.assertEqual(302, resp.status_code)
+        self.assertEqual(1, len(self._human(conn, fp_hex)))  # not double-recorded
+
+    def test_review_page_shows_the_verdict_form_when_signing_enabled(self):
+        signer, _seen = _recording_signer()
+        client, _conn, fp_hex = self._client(signer=signer)
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn('name="choice"', body)
+        self.assertIn('value="accept"', body)
+        self.assertIn('value="test"', body)      # the test category is offered
+        self.assertIn('value="defer"', body)
+
+    def test_read_only_instance_hides_form_and_refuses_post(self):
+        client, _conn, fp_hex = self._client(signer=None)  # read-only
+        self.assertNotIn(
+            'name="choice"', client.get('/review/' + fp_hex).get_data(as_text=True))
+        resp = client.post('/review/' + fp_hex, data={'choice': 'accept'})
+        self.assertEqual(405, resp.status_code)
 
 
 class LoopbackGuardTestCase(testtools.TestCase):

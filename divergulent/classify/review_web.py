@@ -24,6 +24,7 @@ import sqlite3
 
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import review as review_mod
+from divergulent.classify import verdict as verdict_mod
 
 # The handlers reuse review.py's fingerprint-keyed read helpers directly rather
 # than duplicating context-building; they are package-internal shared API, used
@@ -70,17 +71,23 @@ def diff_lines(text: str) -> list[dict]:
 
 
 def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fetch,
-               signer=None):
+               signer=None, clock=None):
     """Build the Flask app over an open ledger ``conn`` and the corpus/index.
 
-    ``fetch`` and ``signer`` are injected exactly as the CLI injects them, so the
-    handlers are pure given fakes and test offline through ``app.test_client()``.
-    ``signer`` is unused while the UI is read-only; it is threaded through now so
-    the verdict POST can pick it up without changing this signature.
+    ``fetch``, ``signer`` and ``clock`` are injected exactly as the CLI injects
+    them, so the handlers are pure given fakes and test offline through
+    ``app.test_client()``.  ``signer`` is the ``record_bytes -> (signature,
+    signed_by)`` callable used to sign a human verdict; when ``None`` the UI is
+    read-only (no verdict form, no POST).  ``clock`` is the single clock read --
+    a ``() -> ISO-8601 str`` -- captured once per POST and threaded into the
+    signed record; it defaults to the CLI's UTC clock.
     """
-    from flask import Flask, redirect, render_template_string, request, url_for
+    from flask import Flask, abort, redirect, render_template_string, request, url_for
 
     app = Flask('divergulent.review_web')
+    clock = clock or review_mod._cli_now
+    categories = review_mod._assignable_categories()
+    valid_choices = set(categories) | {review_mod.CHOICE_ACCEPT, review_mod.CHOICE_DEFER}
 
     def _pending_item(fingerprint: str):
         """The pending queue row for ``fingerprint``, or ``None`` if not queued."""
@@ -141,17 +148,85 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             return render_template_string(NO_PATCH_TEMPLATE, fingerprint=resolved), 404
         return render_template_string(
             REVIEW_TEMPLATE, ctx=context, queued=item is not None,
+            can_verdict=signer is not None, categories=categories,
             package_lines=review_mod._format_package_lines(context),
             diff=diff_lines(context.context_view))
 
+    @app.route('/review/<fingerprint>', methods=['POST'])
+    def submit_review(fingerprint):
+        if signer is None:
+            abort(405)  # read-only instance: no verdicts
+        resolved, matches = review_mod.resolve_fingerprint(conn, fingerprint)
+        if resolved is None:
+            return render_template_string(
+                SEARCH_TEMPLATE, query=fingerprint, matches=matches), 404
+        item = _pending_item(resolved)
+        if item is None:
+            # Already reviewed (e.g. a second tab, or a re-submit): nothing left to
+            # record.  Idempotent -- navigate back rather than erroring.
+            return redirect(url_for('index'))
+        context = review_mod.build_review_context(
+            conn, corpus_dir, index_path, fingerprint=resolved, item=item, fetch=fetch)
+        if context is None:
+            return render_template_string(NO_PATCH_TEMPLATE, fingerprint=resolved), 404
+
+        choice = request.form.get('choice', '').strip()
+        if choice not in valid_choices:
+            return render_template_string(
+                REVIEW_TEMPLATE, ctx=context, queued=True, can_verdict=True,
+                categories=categories,
+                package_lines=review_mod._format_package_lines(context),
+                diff=diff_lines(context.context_view),
+                error='pick a verdict: accept the draft, a category, or defer'), 400
+
+        # Capture the clock ONCE, server-side, so the signed record and the
+        # decision share the timestamp -- exactly as the CLI threads _cli_now().
+        now = clock()
+        try:
+            outcome = review_mod.record_review_verdict(
+                conn, item, context, choice, signer=signer, now=now)
+        except Exception as exc:  # noqa: BLE001 -- a signing/auth failure is a page, not a 500
+            # record_review_verdict signs BEFORE it writes, so a signer failure
+            # leaves the ledger untouched; surface it as an actionable page.
+            return render_template_string(
+                ERROR_TEMPLATE, fingerprint=resolved, error=str(exc)), 502
+
+        if outcome.recorded:
+            # A fresh human verdict tops precedence immediately, and any items the
+            # ledger can now settle deterministically are dequeued -- mirroring the
+            # CLI's post-review rebuild.
+            verdict_mod.rebuild_current_verdict(conn)
+            ledger_mod.resolve_settled_review_items(conn, now=now)
+        return redirect(url_for('index'))
+
     return app
+
+
+def _lazy_sigstore_signer():
+    """A signer that builds the real Sigstore signer on first use, then reuses it.
+
+    Deferring ``build_sigstore_signer()`` until the first verdict means the UI
+    starts (and browses) without the ``verify`` extra installed and without
+    triggering the OIDC browser flow; a browse-only operator never pays for
+    signing, and a missing ``sigstore`` surfaces as the actionable error page on
+    the first POST rather than at startup.
+    """
+    holder: dict = {}
+
+    def signer(record_bytes):
+        if 'signer' not in holder:
+            holder['signer'] = review_mod.build_sigstore_signer()
+        return holder['signer'](record_bytes)
+
+    return signer
 
 
 def main(argv=None) -> int:
     """``python -m divergulent.classify.review_web``: serve the review UI locally.
 
-    Read-only for now (no signer wired); binds loopback only and refuses any
-    routable host.  The signed verdict path is added in a later step.
+    Binds loopback only and refuses any routable host.  Verdicts are signed with
+    a lazily-built Sigstore signer (the browser OIDC flow runs on the first
+    verdict, not at startup), so browsing works without the verify extra.
     """
     parser = argparse.ArgumentParser(
         prog='python -m divergulent.classify.review_web',
@@ -175,9 +250,10 @@ def main(argv=None) -> int:
     index_path = args.index or os.path.join(args.corpus_dir, 'fingerprints.sqlite')
     conn = ledger_mod.open_ledger(args.ledger)
     fetch = review_mod._real_fetch()
-    app = create_app(conn, args.corpus_dir, index_path, fetch=fetch, signer=None)
+    app = create_app(conn, args.corpus_dir, index_path, fetch=fetch,
+                     signer=_lazy_sigstore_signer())
 
-    print('divergulent review UI (read-only) on http://%s:%d/' % (host, args.port))
+    print('divergulent review UI on http://%s:%d/' % (host, args.port))
     # Single connection, single user: serve requests serially so the injected
     # sqlite connection is only ever touched from one thread.
     app.run(host=host, port=args.port, threaded=False)
@@ -209,7 +285,10 @@ _HEAD = '''<!doctype html>
  pre.diff .add { color: #08660d; } pre.diff .del { color: #a31515; }
  pre.diff .hunk { color: #555; background: #eee; } pre.diff .meta { color: #888; }
  .mono { font-family: ui-monospace, monospace; }
- .muted { color: #777; }
+ .muted { color: #777; } .error { color: #a31515; font-weight: bold; }
+ fieldset.verdict { border: 1px solid #ddd; border-radius: 0.3rem; }
+ fieldset.verdict label { display: block; padding: 0.15rem 0; }
+ button { font-size: 1rem; padding: 0.4rem 0.8rem; cursor: pointer; }
 </style></head><body>
 '''
 
@@ -263,9 +342,36 @@ REVIEW_TEMPLATE = _HEAD.replace('{{ title }}', 'review') + '''
   {% endif %}
   {% if not queued %}<div class="muted">(not in the review queue)</div>{% endif %}
 </div>
+{% if queued and can_verdict %}
+<h2>Your verdict</h2>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form method="post" action="/review/{{ ctx.fingerprint }}">
+  <fieldset class="verdict">
+    {% if ctx.draft_category %}
+      <label><input type="radio" name="choice" value="accept" checked>
+        accept the draft (<b>{{ ctx.draft_category }}</b>)</label>
+    {% endif %}
+    {% for cat in categories %}
+      <label><input type="radio" name="choice" value="{{ cat }}"> {{ cat }}</label>
+    {% endfor %}
+    <label><input type="radio" name="choice" value="defer"> defer (record nothing)</label>
+  </fieldset>
+  <button type="submit">Record verdict &amp; sign</button>
+</form>
+{% endif %}
 <h2>Diff in upstream context</h2>
 <pre class="diff">{% for line in diff %}<span class="{{ line.cls }}">{{ line.text }}</span>
 {% endfor %}</pre>
+''' + _FOOT
+
+ERROR_TEMPLATE = _HEAD.replace('{{ title }}', 'error') + '''
+<p><a href="/">&larr; worklist</a></p>
+<h1>Could not record the verdict</h1>
+<p>The verdict for <span class="mono">{{ fingerprint[:16] }}</span> was NOT recorded
+-- the ledger is unchanged (the record is signed before it is written).</p>
+<pre class="diff error">{{ error }}</pre>
+<p class="muted">Fix the issue and try again. Signing needs the verify extra:
+<span class="mono">pip install divergulent[review,verify]</span>.</p>
 ''' + _FOOT
 
 SEARCH_TEMPLATE = _HEAD.replace('{{ title }}', 'no match') + '''
