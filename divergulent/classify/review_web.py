@@ -324,28 +324,38 @@ _HEAD = '''<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <title>{{ title }} -- divergulent review</title>
 <style>
- body { font: 14px/1.5 system-ui, sans-serif; margin: 1.5rem; color: #1a1a1a; }
- a { color: #0645ad; } h1 { font-size: 1.3rem; }
+ :root { color-scheme: dark; }
+ body { font: 14px/1.5 system-ui, sans-serif; margin: 1.5rem;
+        background: #16181c; color: #ccd0d6; }
+ a { color: #6cb6ff; } h1 { font-size: 1.3rem; } h2 { font-size: 1.05rem; }
  table { border-collapse: collapse; width: 100%; }
- th, td { text-align: left; padding: 0.3rem 0.6rem; border-bottom: 1px solid #ddd; }
+ th, td { text-align: left; padding: 0.3rem 0.6rem; border-bottom: 1px solid #2a2f38; }
+ th { background: #232730; color: #e0e3e8; }
+ tr:nth-child(even) td { background: #1d2026; }
+ tr:hover td { background: #262b34; }
  .chip { display: inline-block; padding: 0.1rem 0.5rem; margin: 0.1rem;
-         border: 1px solid #bbb; border-radius: 1rem; text-decoration: none; }
- .chip.on { background: #0645ad; color: #fff; border-color: #0645ad; }
+         border: 1px solid #3a4150; border-radius: 1rem; text-decoration: none; }
+ .chip.on { background: #2563eb; color: #fff; border-color: #2563eb; }
  .next { display: inline-block; margin: 0.5rem 0; padding: 0.4rem 0.8rem;
-         background: #0645ad; color: #fff; border-radius: 0.3rem; text-decoration: none; }
- .meta-block { background: #f6f6f6; padding: 0.6rem 0.8rem; border-radius: 0.3rem; }
- pre.diff { background: #fafafa; border: 1px solid #e0e0e0; padding: 0.6rem;
+         background: #2563eb; color: #fff; border-radius: 0.3rem; text-decoration: none; }
+ .meta-block { background: #232730; padding: 0.6rem 0.8rem; border-radius: 0.3rem; }
+ pre.diff { background: #0f1115; border: 1px solid #2a2f38; padding: 0.6rem;
             overflow-x: auto; font: 12px/1.4 ui-monospace, monospace; }
- pre.diff .add { color: #08660d; } pre.diff .del { color: #a31515; }
- pre.diff .hunk { color: #555; background: #eee; } pre.diff .meta { color: #888; }
+ pre.diff .add { color: #5fd17a; } pre.diff .del { color: #ff7b72; }
+ pre.diff .hunk { color: #9aa0aa; background: #232730; } pre.diff .meta { color: #6b7280; }
  .mono { font-family: ui-monospace, monospace; }
- .muted { color: #777; } .error { color: #a31515; font-weight: bold; }
- fieldset.verdict { border: 1px solid #ddd; border-radius: 0.3rem; }
+ .muted { color: #8a909a; } .error { color: #ff7b72; font-weight: bold; }
+ fieldset.verdict { border: 1px solid #2a2f38; border-radius: 0.3rem; }
  fieldset.verdict label { display: block; padding: 0.15rem 0; }
- button { font-size: 1rem; padding: 0.4rem 0.8rem; cursor: pointer; }
+ input[type=text] { background: #232730; color: #ccd0d6; border: 1px solid #3a4150;
+                    border-radius: 0.2rem; padding: 0.2rem 0.4rem; }
+ button { font-size: 1rem; padding: 0.4rem 0.8rem; cursor: pointer;
+          background: #2a2f38; color: #e0e3e8; border: 1px solid #3a4150;
+          border-radius: 0.2rem; }
+ button:hover { background: #333944; }
  .key { display: inline-block; min-width: 1.1em; padding: 0 0.25em; text-align: center;
-        background: #eee; border: 1px solid #ccc; border-radius: 0.2rem;
-        font: 11px/1.4 ui-monospace, monospace; color: #555; }
+        background: #2a2f38; border: 1px solid #3a4150; border-radius: 0.2rem;
+        font: 11px/1.4 ui-monospace, monospace; color: #b0b6c0; }
 </style></head><body>
 '''
 
