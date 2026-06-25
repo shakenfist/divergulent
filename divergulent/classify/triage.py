@@ -690,9 +690,10 @@ def main(argv: list[str] | None = None) -> int:
             conn, args.corpus_dir, index_path, call=call, now=_cli_now(),
             limit=args.limit, model=args.model,
             progress=lambda msg: print(msg, file=sys.stderr, flush=True))
-        # Cluster across the WHOLE ledger (every verified decision from every
-        # batch), not just this run -- a pattern accumulates over batches.
-        candidates = triage_driver.candidate_rules_from_ledger(conn, args.corpus_dir, index_path)
+        # Cluster across the WHOLE ledger (every settled verdict from every batch),
+        # not just this run -- a pattern accumulates over batches -- gated so an
+        # ambiguous structure is refused, not proposed.
+        scan = triage_driver.candidate_rules_from_ledger(conn, args.corpus_dir, index_path)
         verdict_mod.rebuild_current_verdict(conn)
     finally:
         conn.close()
@@ -701,9 +702,9 @@ def main(argv: list[str] | None = None) -> int:
     if directory:
         os.makedirs(directory, exist_ok=True)
     with open(findings_path, 'w', encoding='utf-8') as handle:
-        handle.write(triage_driver.render_run_report(stats, candidates))
+        handle.write(triage_driver.render_run_report(stats, scan))
 
-    triage_driver.print_run_summary(stats, candidates)
+    triage_driver.print_run_summary(stats, scan)
     print('wrote findings note: %s' % findings_path)
     return 0
 

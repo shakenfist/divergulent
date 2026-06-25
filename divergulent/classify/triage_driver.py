@@ -37,7 +37,7 @@ avoid an import cycle.
 from __future__ import annotations
 
 import sqlite3
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
 from divergulent.classify import content as content_mod
@@ -374,42 +374,107 @@ class CandidateRule:
                 self.member_count, self.category, self.structural_key, self.occurrences))
 
 
+@dataclass(frozen=True)
+class RejectedCluster:
+    """A cluster big enough to tempt a rule, REFUSED by the counterexample gate.
+
+    Its structural ``key`` reached ``min_members`` for ``category``, but the SAME
+    key also carries other categories across the settled population
+    (``category_counts``): the structure does not determine the category, so it is
+    not a sound deterministic rule.  Surfaced -- with the conflicting spread -- so
+    the operator sees WHY a large-looking cluster is not a rule, rather than being
+    tempted to approve it.
+    """
+
+    structural_key: str
+    category_counts: dict[str, int]
+
+    @property
+    def total(self) -> int:
+        return sum(self.category_counts.values())
+
+    def describe(self) -> str:
+        """A one-line explanation of why this tempting cluster is not a rule."""
+        spread = ', '.join(
+            '%s %d' % (category, count) for category, count in
+            sorted(self.category_counts.items(), key=lambda kv: (-kv[1], kv[0])))
+        return (
+            '%s spans %d categories (%s): NOT a rule -- structure does not '
+            'determine category.' % (self.structural_key, len(self.category_counts), spread))
+
+
+@dataclass(frozen=True)
+class RuleScan:
+    """The outcome of scanning for candidate deterministic rules.
+
+    ``candidates`` are SOUND proposals -- their structural key carries exactly one
+    category across the settled population (the counterexample gate passed).
+    ``rejected`` are clusters that met the size threshold but whose key also
+    carries other categories, kept (with the spread) so the report can explain the
+    refusal instead of silently dropping a large cluster.
+    """
+
+    candidates: list[CandidateRule]
+    rejected: list[RejectedCluster]
+
+
+def _gate_clusters(clusters: dict, key_categories: dict, min_members: int) -> RuleScan:
+    """Apply the counterexample gate to ``(category, key) -> [(fingerprint, occ)]``.
+
+    A ``(category, key)`` cluster of at least ``min_members`` becomes a candidate
+    ONLY when ``key`` maps to a single category in ``key_categories`` (a
+    ``key -> Counter(category)`` over the whole settled population).  A key that
+    spans more than one category yields a :class:`RejectedCluster` instead (one per
+    key, recorded once), so the same structure can never be proposed as a rule for
+    one category while it demonstrably carries others.
+    """
+    candidates: list[CandidateRule] = []
+    rejected: dict[str, RejectedCluster] = {}
+    for (category, key), members in clusters.items():
+        if len(members) < min_members:
+            continue
+        if len(key_categories[key]) == 1:
+            candidates.append(CandidateRule(
+                category=category, structural_key=key, member_count=len(members),
+                fingerprints=sorted(fingerprint for fingerprint, _ in members),
+                occurrences=sum(occurrences for _, occurrences in members)))
+        elif key not in rejected:
+            rejected[key] = RejectedCluster(
+                structural_key=key, category_counts=dict(key_categories[key]))
+
+    candidates.sort(key=lambda c: (c.member_count, c.occurrences), reverse=True)
+    ordered_rejected = sorted(rejected.values(), key=lambda r: r.total, reverse=True)
+    return RuleScan(candidates=candidates, rejected=ordered_rejected)
+
+
 def candidate_rules(corpus_dir, triaged, *, min_members=DEFAULT_RULE_MIN_MEMBERS):
     """Cluster VERIFIED triaged items into candidate deterministic rules.
 
     Considers only items that routed to ``verified`` (an unverified draft is not a
     settled signal worth a rule), groups them by ``(verified category, structural
-    key)``, and returns one :class:`CandidateRule` per cluster with at least
-    ``min_members`` members.  Sorted by member count then occurrences (most
-    impactful first).  Pure apart from reading the representative bodies; it
-    NEVER writes a rule -- the proposal goes to a human.
+    key)``, and applies the counterexample gate: a cluster of at least
+    ``min_members`` is a candidate only when its structural key carries ONE
+    category across this run's verified items.  Returns a :class:`RuleScan`
+    (sound candidates plus the gate's rejections, each with its category spread).
+    Pure apart from reading the representative bodies; NEVER writes a rule.
     """
-    clusters: dict[tuple[str, str], list[TriagedItem]] = defaultdict(list)
+    clusters: dict[tuple[str, str], list[tuple[str, int]]] = defaultdict(list)
+    key_categories: dict[str, Counter] = defaultdict(Counter)
     for triaged_item in triaged:
         if triaged_item.result.routing != 'verified':
             continue
         category = triaged_item.result.draft.category
         key = _structural_key(corpus_dir, triaged_item.item.representative_sha)
-        clusters[(category, key)].append(triaged_item)
+        clusters[(category, key)].append(
+            (triaged_item.item.fingerprint, triaged_item.item.n_occurrences))
+        key_categories[key][category] += 1
 
-    candidates: list[CandidateRule] = []
-    for (category, key), members in clusters.items():
-        if len(members) < min_members:
-            continue
-        candidates.append(CandidateRule(
-            category=category,
-            structural_key=key,
-            member_count=len(members),
-            fingerprints=sorted(m.item.fingerprint for m in members),
-            occurrences=sum(m.item.n_occurrences for m in members)))
-
-    candidates.sort(key=lambda c: (c.member_count, c.occurrences), reverse=True)
-    return candidates
+    return _gate_clusters(clusters, key_categories, min_members)
 
 
 def candidate_rules_from_ledger(conn, corpus_dir, index_path, *,
                                 min_members=DEFAULT_RULE_MIN_MEMBERS):
-    """Cluster EVERY verified LLM decision in the ledger into candidate rules.
+    """Cluster the settled ledger verdicts into candidate rules, gated.
 
     The cross-batch view: rule discovery is a property of the accumulated ledger,
     not one run.  A pattern that builds up over several triage batches (two
@@ -417,36 +482,30 @@ def candidate_rules_from_ledger(conn, corpus_dir, index_path, *,
     when clustered over the whole ledger -- clustering a single run's ``triaged``
     list (:func:`candidate_rules`) would miss it.
 
-    Pulls all live, ``verified`` ``llm`` decisions, groups them by
-    ``(category, structural key)`` (the key from each fingerprint's representative
-    body), and returns clusters of at least ``min_members``.  Only verified
-    decisions count: an unverified draft is not a settled signal worth a rule.
-    NEVER writes a rule -- the proposal goes to a human.
+    Uses each fingerprint's CURRENT verdict (so a human override counts as the
+    fingerprint's category, and supersedes the LLM draft), keeping only confident
+    settled signals -- ``human`` or verified ``llm`` (an unverified draft or a
+    bare heuristic baseline is not a signal worth a rule).  Groups by
+    ``(category, structural key)`` and applies the counterexample gate: a key that
+    also carries a different category is refused, not proposed.  Returns a
+    :class:`RuleScan`.  NEVER writes a rule -- the proposal goes to a human.
     """
     groups = _index_groups(index_path)
-    rows = conn.execute(
-        "SELECT fingerprint, category FROM decision "
-        "WHERE kind = 'llm' AND verified = 1 AND superseded_at IS NULL").fetchall()
+    verdicts = verdict_mod.current_verdict(conn)
 
     clusters: dict[tuple[str, str], list[tuple[str, int]]] = defaultdict(list)
-    for fingerprint, category in rows:
+    key_categories: dict[str, Counter] = defaultdict(Counter)
+    for fingerprint, verdict in verdicts.items():
+        if not (verdict.kind == 'human' or (verdict.kind == 'llm' and verdict.verified)):
+            continue
         group = groups.get(fingerprint)
         if group is None:  # queued fingerprint with no provenance row -- skip
             continue
         key = _structural_key(corpus_dir, group['rep_sha'])
-        clusters[(category, key)].append((fingerprint, group['n_occurrences']))
+        clusters[(verdict.category, key)].append((fingerprint, group['n_occurrences']))
+        key_categories[key][verdict.category] += 1
 
-    candidates: list[CandidateRule] = []
-    for (category, key), members in clusters.items():
-        if len(members) < min_members:
-            continue
-        candidates.append(CandidateRule(
-            category=category, structural_key=key, member_count=len(members),
-            fingerprints=sorted(fp for fp, _ in members),
-            occurrences=sum(occ for _, occ in members)))
-
-    candidates.sort(key=lambda c: (c.member_count, c.occurrences), reverse=True)
-    return candidates
+    return _gate_clusters(clusters, key_categories, min_members)
 
 
 # ---------------------------------------------------------------------------
@@ -465,14 +524,16 @@ def _render_counts(title: str, counts: dict[str, int]) -> list[str]:
     return lines
 
 
-def render_run_report(stats: TriageRunStats, candidates: list[CandidateRule]) -> str:
+def render_run_report(stats: TriageRunStats, scan: RuleScan) -> str:
     """Render the markdown findings note for one bounded triage run.
 
     Reports, honestly and in one place: how big the queue was, how many this run
     triaged, the verified-vs-human split, the claim/content mismatches, the
     drafted-category counts, the candidate deterministic rules (for human
-    approval), and -- explicitly -- ``untriaged_remaining``, the residue the
-    budget did NOT cover.  The cap is a headline, never a footnote.
+    approval) and the clusters the counterexample gate REFUSED (with the
+    conflicting spread, so a tempting-but-unsound cluster is explained not hidden),
+    and -- explicitly -- ``untriaged_remaining``, the residue the budget did NOT
+    cover.  The cap is a headline, never a footnote.
     """
     lines: list[str] = ['# Phase 4 triage run findings', '']
     lines.append('- Queue size (phase-4 residue): %d' % stats.queue_size)
@@ -490,20 +551,29 @@ def render_run_report(stats: TriageRunStats, candidates: list[CandidateRule]) ->
 
     lines.append('### Candidate deterministic rules (for human approval, never auto-applied)')
     lines.append('')
-    if not candidates:
-        lines.append('_No cluster reached the threshold._')
+    if not scan.candidates:
+        lines.append('_No sound cluster: none reached the threshold with a structural '
+                     'key unique to one category._')
         lines.append('')
     else:
-        for candidate in candidates:
+        for candidate in scan.candidates:
             lines.append('- %s' % candidate.describe())
             lines.append('  - fingerprints: %s'
                          % ', '.join(fp[:16] for fp in candidate.fingerprints))
         lines.append('')
 
+    if scan.rejected:
+        lines.append('### Refused by the counterexample gate (structure does not '
+                     'determine category)')
+        lines.append('')
+        for rejected in scan.rejected:
+            lines.append('- %s' % rejected.describe())
+        lines.append('')
+
     return '\n'.join(lines).rstrip() + '\n'
 
 
-def print_run_summary(stats: TriageRunStats, candidates: list[CandidateRule]) -> None:
+def print_run_summary(stats: TriageRunStats, scan: RuleScan) -> None:
     """Print a lean summary of the run -- the same honest counts as the report.
 
     The cap is surfaced loudly: ``untriaged_remaining`` is the last headline line
@@ -519,10 +589,14 @@ def print_run_summary(stats: TriageRunStats, candidates: list[CandidateRule]) ->
         print('drafted categories:')
         for category in sorted(stats.by_category, key=lambda k: (-stats.by_category[k], k)):
             print('  %-16s %d' % (category, stats.by_category[category]))
-    if candidates:
+    if scan.candidates:
         print('candidate deterministic rules (for human approval):')
-        for candidate in candidates:
+        for candidate in scan.candidates:
             print('  %s' % candidate.describe())
     else:
-        print('candidate deterministic rules: none reached the threshold')
+        print('candidate deterministic rules: none sound (no key unique to one category)')
+    if scan.rejected:
+        print('refused by the counterexample gate (structure != category):')
+        for rejected in scan.rejected:
+            print('  %s' % rejected.describe())
     print('untriaged remaining (budget did not cover): %d' % stats.untriaged_remaining)

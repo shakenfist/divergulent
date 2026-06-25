@@ -308,12 +308,13 @@ class CandidateRulesTestCase(DriverFixture, testtools.TestCase):
             verify_response=_verify_json(agrees=True, confidence='high'))
         _, triaged = triage_driver.run_triage(
             conn, corpus_dir, index_path, call=call, now=WHEN, limit=5)
-        candidates = triage_driver.candidate_rules(corpus_dir, triaged, min_members=3)
-        self.assertEqual(1, len(candidates))
-        candidate = candidates[0]
+        scan = triage_driver.candidate_rules(corpus_dir, triaged, min_members=3)
+        self.assertEqual(1, len(scan.candidates))
+        candidate = scan.candidates[0]
         self.assertEqual('bugfix', candidate.category)
         self.assertEqual(3, candidate.member_count)
         self.assertIn('code-only', candidate.structural_key)
+        self.assertEqual([], scan.rejected)  # one clean category -> nothing refused
 
     def test_below_threshold_surfaces_no_rule(self):
         corpus_dir, index_path, _, conn, _ = self._setup()
@@ -323,7 +324,8 @@ class CandidateRulesTestCase(DriverFixture, testtools.TestCase):
         _, triaged = triage_driver.run_triage(
             conn, corpus_dir, index_path, call=call, now=WHEN, limit=5)
         # Threshold of 4 is above the 3-member code-only cluster.
-        self.assertEqual([], triage_driver.candidate_rules(corpus_dir, triaged, min_members=4))
+        scan = triage_driver.candidate_rules(corpus_dir, triaged, min_members=4)
+        self.assertEqual([], scan.candidates)
 
     def test_unverified_items_do_not_cluster(self):
         corpus_dir, index_path, _, conn, _ = self._setup()
@@ -333,7 +335,7 @@ class CandidateRulesTestCase(DriverFixture, testtools.TestCase):
             verify_response=_verify_json(agrees=False))
         _, triaged = triage_driver.run_triage(
             conn, corpus_dir, index_path, call=call, now=WHEN, limit=5)
-        self.assertEqual([], triage_driver.candidate_rules(corpus_dir, triaged, min_members=3))
+        self.assertEqual([], triage_driver.candidate_rules(corpus_dir, triaged, min_members=3).candidates)
 
 
 class ReportTestCase(DriverFixture, testtools.TestCase):
@@ -345,8 +347,8 @@ class ReportTestCase(DriverFixture, testtools.TestCase):
             verify_response=_verify_json(agrees=True, confidence='high'))
         stats, triaged = triage_driver.run_triage(
             conn, corpus_dir, index_path, call=call, now=WHEN, limit=2)
-        candidates = triage_driver.candidate_rules(corpus_dir, triaged, min_members=1)
-        report = triage_driver.render_run_report(stats, candidates)
+        scan = triage_driver.candidate_rules(corpus_dir, triaged, min_members=1)
+        report = triage_driver.render_run_report(stats, scan)
         self.assertIn('# Phase 4 triage run findings', report)
         self.assertIn('Untriaged remaining', report)
         self.assertIn('3', report)  # 5 queued - 2 triaged
@@ -477,14 +479,14 @@ class CrossBatchClusteringTestCase(DriverFixture, testtools.TestCase):
         # across separate runs (no single run's `triaged` list held all three).
         self._seed_verified(conn, fingerprints, ['bug-a.patch', 'bug-b.patch', 'bug-c.patch'])
 
-        from_ledger = triage_driver.candidate_rules_from_ledger(conn, corpus_dir, index_path)
-        self.assertEqual(1, len(from_ledger))
-        self.assertEqual(3, from_ledger[0].member_count)
-        self.assertEqual('bugfix', from_ledger[0].category)
+        scan = triage_driver.candidate_rules_from_ledger(conn, corpus_dir, index_path)
+        self.assertEqual(1, len(scan.candidates))
+        self.assertEqual(3, scan.candidates[0].member_count)
+        self.assertEqual('bugfix', scan.candidates[0].category)
 
         # The per-run view over an empty run finds nothing -- proving the value is
         # the cross-batch ledger clustering, not a single run.
-        self.assertEqual([], triage_driver.candidate_rules(corpus_dir, []))
+        self.assertEqual([], triage_driver.candidate_rules(corpus_dir, []).candidates)
 
     def test_unverified_decisions_do_not_cluster_from_the_ledger(self):
         corpus_dir, index_path, _, conn, fingerprints = self._setup()
@@ -494,4 +496,39 @@ class CrossBatchClusteringTestCase(DriverFixture, testtools.TestCase):
                 confidence='high', decided_by='llm-triage:m', rule_version=1,
                 kind='llm', verified=False, evidence='', decided_at=WHEN, commit=False)
         conn.commit()
-        self.assertEqual([], triage_driver.candidate_rules_from_ledger(conn, corpus_dir, index_path))
+        scan = triage_driver.candidate_rules_from_ledger(conn, corpus_dir, index_path)
+        self.assertEqual([], scan.candidates)
+
+    def test_counterexample_gate_refuses_an_ambiguous_structure(self):
+        # bug-a/b verify bugfix, bug-c verifies security -- all three share the
+        # code-only structural key.  The key carries two categories, so the gate
+        # refuses the bugfix cluster rather than proposing an unsound rule.
+        corpus_dir, index_path, _, conn, fingerprints = self._setup()
+        self._seed_verified(conn, fingerprints, ['bug-a.patch', 'bug-b.patch'], category='bugfix')
+        self._seed_verified(conn, fingerprints, ['bug-c.patch'], category='security')
+
+        scan = triage_driver.candidate_rules_from_ledger(
+            conn, corpus_dir, index_path, min_members=2)
+        self.assertEqual([], scan.candidates)  # the 2-member bugfix cluster is gated out
+        self.assertEqual(1, len(scan.rejected))
+        rejected = scan.rejected[0]
+        self.assertIn('code-only', rejected.structural_key)
+        self.assertEqual({'bugfix': 2, 'security': 1}, rejected.category_counts)
+        self.assertIn('NOT a rule', rejected.describe())
+
+    def test_human_override_counts_as_a_counterexample(self):
+        # A human verdict on a same-key fingerprint disagrees with the LLM cluster;
+        # because mining uses the CURRENT verdict, the human category is counted and
+        # the structure is (correctly) refused.
+        corpus_dir, index_path, _, conn, fingerprints = self._setup()
+        self._seed_verified(conn, fingerprints, ['bug-a.patch', 'bug-b.patch'], category='bugfix')
+        ledger_mod.append_decision(
+            conn, fingerprint=fingerprints['bug-c.patch'], category='security',
+            confidence='high', decided_by='human-review', rule_version=1,
+            kind='human', verified=True, evidence='', decided_at=WHEN, commit=True)
+
+        scan = triage_driver.candidate_rules_from_ledger(
+            conn, corpus_dir, index_path, min_members=2)
+        self.assertEqual([], scan.candidates)
+        self.assertEqual(1, len(scan.rejected))
+        self.assertEqual({'bugfix': 2, 'security': 1}, scan.rejected[0].category_counts)
