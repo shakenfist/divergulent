@@ -273,6 +273,14 @@ class VerdictPostTestCase(ReviewWebFixture, testtools.TestCase):
         resp = client.post('/review/' + fp_hex, data={'choice': 'accept'})
         self.assertEqual(405, resp.status_code)
 
+    def test_verdict_form_has_numbered_keyboard_shortcuts(self):
+        signer, _seen = _recording_signer()
+        client, _conn, fp_hex = self._client(signer=signer)
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn('class="key"', body)          # numbered key hints
+        self.assertIn('addEventListener', body)      # the keydown handler
+        self.assertIn("name=choice", body)           # radios the handler targets
+
 
 class AuditTestCase(ReviewWebFixture, testtools.TestCase):
 

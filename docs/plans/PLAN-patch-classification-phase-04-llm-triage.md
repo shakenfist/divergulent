@@ -280,10 +280,17 @@ untouched — no silent truncation.
   (offline, no browser). Lean Sigstore for consistency; confirm it works for an
   interactive local reviewer, and decide what the signature covers (a canonical
   decision record) and how phase 5 re-verifies it on export.
-- **Review-tool form** — start with the local CLI, or go straight to the stdlib
-  `http.server` local web UI (nicer diff reading, side-by-side, syntax
-  highlighting)? And how to present the LLM draft + claim + flags so the human
-  decides fast without anchoring on the LLM.
+- **Review-tool form** — *resolved*: **both ship**, against one ledger. The CLI
+  (`review.py`) landed first and was operated across several sessions; that
+  experience motivated a **local web UI** (`review_web.py`), specced and built in
+  [PLAN-patch-classification-phase-04-review-web.md](PLAN-patch-classification-phase-04-review-web.md).
+  The web tool reuses the CLI's read and signed-verdict paths verbatim (verdicts
+  are byte-identical), adds review-by-category / fingerprint cherry-pick / an
+  audit spot-check view, and uses Flask + Jinja2 behind a new `review` extra
+  (the `http.server`/stdlib-only idea was reconsidered: review is a tiny opted-in
+  population, so an extra is in keeping with dependency-minimalism). The LLM draft
+  + claim + flags are presented as in the CLI — the draft shown but the full diff
+  is the primary evidence, so the human does not anchor on the LLM.
 - **Original-context fetch** — full `apt-get source` + quilt to reconstruct the
   exact pre-patch file state (complete but heavier), vs a targeted
   sources.debian.org fetch of just the touched file(s) at the version (lighter,

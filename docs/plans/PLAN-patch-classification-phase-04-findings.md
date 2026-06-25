@@ -57,6 +57,16 @@ Operating the pipeline for real surfaced gaps the offline suite could not:
 - **Review UX**: a pager for big diffs; the carrying **package name(s)** shown
   (blast radius); `requeue` (re-open a fingerprint) and `history` (reconsider a
   past verdict) subcommands.
+- **Local web review UI** (`review_web.py`): several CLI review sessions made the
+  case for a browser. The **"Review-tool form" open question is resolved — both
+  ship**: the web UI reuses the CLI's read + signed-verdict paths verbatim (web
+  and CLI verdicts are byte-identical), and adds the slices the linear queue
+  cannot — review **by category**, **cherry-pick by fingerprint**, and an
+  **audit/spot-check view** over settled patches *not* in the queue (to confirm a
+  deterministic rule is right, and re-queue a misfire without recording a
+  decision). Flask + Jinja2 live behind a new `review` extra (off the default
+  scan/report path). Specced + built in
+  [PLAN-patch-classification-phase-04-review-web.md](PLAN-patch-classification-phase-04-review-web.md).
 - **Ledger safety**: `build` now refuses to silently wipe a populated ledger;
   **`ledger record`** applies new/changed rules to an existing ledger
   non-destructively (append-only re-record + supersede-on-change), so a rule

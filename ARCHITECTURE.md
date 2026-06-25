@@ -153,6 +153,27 @@ installed-package inventory never leaves the machine.
   including superseded ones, so a reviewer can spot and reconsider a past call.
   The LLM backends (`claude -p` default, Anthropic API optional) and signing are
   curation-side only; clients never run either.
+- `divergulent/classify/review_web.py` (the
+  `python -m divergulent.classify.review_web` tool) is a **local web UI over the
+  same review machinery** — a presentation swap, not a second implementation. It
+  reuses `review.py`'s fingerprint-keyed `build_review_context` and the signed
+  `record_review_verdict` verbatim, so a web verdict and a CLI verdict are
+  **byte-identical** (same canonical record, same `kind='human'` signature, same
+  dequeue) and a reviewer can switch front-ends mid-grind against one ledger. It
+  adds the slices the linear CLI queue cannot: **review by category**,
+  **cherry-pick by fingerprint**, and an **audit/spot-check view** over settled
+  patches *not* in the queue (the derived `current_verdict`, filtered by category
+  and provenance) to confirm a deterministic rule is right — re-queuing a misfire
+  via the existing `requeue_one` (which records no decision; only the eventual
+  human verdict is signed). The queue worklist filters on the **LLM draft**
+  category; the audit view filters on the **derived verdict** — which for a
+  rule-classified fingerprint is the rule's category, so "the rule defines the
+  category when a patch never reached the LLM" needs no special case. Flask +
+  Jinja2 (autoescaping HTML) live behind the optional **`review` extra**
+  (`pip install divergulent[review]`, or `[review,verify]` to sign), off the
+  default scan/report path; the server binds **loopback only**, has no auth, and
+  is a single-user local tool — never CI, never a client feature. Signing is the
+  same lazy Sigstore flow, built on the first verdict so browsing needs no extra.
 - `divergulent/bundle.py` — the precomputed cache **bundle** schema, a
   gzipped-JSON `write()` and `load()`. A bundle is the shareable half of
   a cold run: staleness and divergence for a whole Debian release,

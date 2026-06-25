@@ -21,8 +21,11 @@ already-settled patches — to confirm a rule is classifying correctly, and
 re-queue any misfire for human review. The CLI only ever showed the residue
 queue; a browser is the natural place to audit the settled view.
 
-**Status: planned (not started).** No code written; this document is the
-proposal for review before any building.
+**Status: implemented.** Shipped as `divergulent/classify/review_web.py` behind
+the `review` extra, in commits across W1–W5 (the keystone `review_one` split, the
+read-only server, the signed verdict POST, the audit/spot-check view + re-queue,
+and keyboard-shortcut/doc polish). The CLI is unchanged; web and CLI verdicts are
+byte-identical. This document is kept as the design record.
 
 ## Prompt
 

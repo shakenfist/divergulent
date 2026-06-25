@@ -343,6 +343,9 @@ _HEAD = '''<!doctype html>
  fieldset.verdict { border: 1px solid #ddd; border-radius: 0.3rem; }
  fieldset.verdict label { display: block; padding: 0.15rem 0; }
  button { font-size: 1rem; padding: 0.4rem 0.8rem; cursor: pointer; }
+ .key { display: inline-block; min-width: 1.1em; padding: 0 0.25em; text-align: center;
+        background: #eee; border: 1px solid #ccc; border-radius: 0.2rem;
+        font: 11px/1.4 ui-monospace, monospace; color: #555; }
 </style></head><body>
 '''
 
@@ -366,8 +369,18 @@ WORKLIST_TEMPLATE = _HEAD.replace('{{ title }}', 'worklist') + '''
 </p>
 {% if top %}
   <a class="next" href="/review/{{ top }}">Review next most important &rarr;</a>
+  <span class="muted">(press <span class="key">j</span>)</span>
 {% endif %}
 <p class="muted">{{ total }} pending{% if category %} in <b>{{ category }}</b>{% endif %}.</p>
+<script>
+document.addEventListener('keydown', function(e) {
+  if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'j' || e.key === 'n') {
+    var a = document.querySelector('a.next');
+    if (a) location.href = a.getAttribute('href');
+  }
+});
+</script>
 <table>
   <tr><th>priority</th><th>draft</th><th>pkgs</th><th>fingerprint</th><th>reason</th></tr>
   {% for row in rows %}
@@ -415,17 +428,38 @@ REVIEW_TEMPLATE = _HEAD.replace('{{ title }}', 'review') + '''
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 <form method="post" action="/review/{{ ctx.fingerprint }}">
   <fieldset class="verdict">
-    {% if ctx.draft_category %}
-      <label><input type="radio" name="choice" value="accept" checked>
+    {% set ns = namespace(n=0) %}
+    {% if ctx.draft_category %}{% set ns.n = ns.n + 1 %}
+      <label><span class="key">{{ ns.n }}</span>
+        <input type="radio" name="choice" value="accept" checked>
         accept the draft (<b>{{ ctx.draft_category }}</b>)</label>
     {% endif %}
-    {% for cat in categories %}
-      <label><input type="radio" name="choice" value="{{ cat }}"> {{ cat }}</label>
+    {% for cat in categories %}{% set ns.n = ns.n + 1 %}
+      <label><span class="key">{{ ns.n }}</span>
+        <input type="radio" name="choice" value="{{ cat }}"> {{ cat }}</label>
     {% endfor %}
-    <label><input type="radio" name="choice" value="defer"> defer (record nothing)</label>
+    {% set ns.n = ns.n + 1 %}
+    <label><span class="key">{{ ns.n }}</span>
+      <input type="radio" name="choice" value="defer"> defer (record nothing)</label>
   </fieldset>
   <button type="submit">Record verdict &amp; sign</button>
+  <p class="muted">keys: <span class="key">1</span>-<span class="key">9</span> pick &middot;
+    <span class="key">a</span> accept &middot; <span class="key">d</span> defer &middot;
+    <span class="key">Enter</span> submit</p>
 </form>
+<script>
+document.addEventListener('keydown', function(e) {
+  if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return;
+  var radios = Array.prototype.slice.call(document.querySelectorAll('input[name=choice]'));
+  if (!radios.length) return;
+  var pick = null;
+  if (e.key >= '1' && e.key <= '9') pick = radios[parseInt(e.key, 10) - 1];
+  else if (e.key === 'a') pick = radios.filter(function(r){ return r.value === 'accept'; })[0];
+  else if (e.key === 'd') pick = radios.filter(function(r){ return r.value === 'defer'; })[0];
+  if (pick) { pick.checked = true; e.preventDefault(); }
+  else if (e.key === 'Enter') document.querySelector('form').submit();
+});
+</script>
 {% endif %}
 <h2>Diff in upstream context</h2>
 <pre class="diff">{% for line in diff %}<span class="{{ line.cls }}">{{ line.text }}</span>
