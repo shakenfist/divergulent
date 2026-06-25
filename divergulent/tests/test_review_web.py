@@ -198,6 +198,14 @@ class ReviewPageTestCase(ReviewWebFixture, testtools.TestCase):
         self.assertIn('bugfix', body)                # the LLM draft category
         self.assertIn(SOURCE_PACKAGE, body)          # the carrying package
 
+    def test_shows_the_author_claim_description(self):
+        client, _conn, fp_hex = self._client()
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn('What the author claims', body)
+        # The DEP-3 Description from the PATCH fixture.
+        self.assertIn('enlarge the read buffer to avoid truncation', body)
+        self.assertIn('claimed category', body)
+
     def test_review_page_resolves_a_prefix(self):
         client, _conn, fp_hex = self._client()
         resp = client.get('/review/' + fp_hex[:12])

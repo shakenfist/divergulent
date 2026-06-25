@@ -345,6 +345,9 @@ _HEAD = '''<!doctype html>
  .next { display: inline-block; margin: 0.5rem 0; padding: 0.4rem 0.8rem;
          background: #2563eb; color: #fff; border-radius: 0.3rem; text-decoration: none; }
  .meta-block { background: #232730; padding: 0.6rem 0.8rem; border-radius: 0.3rem; }
+ .claim-block { background: #1e2128; border-left: 3px solid #b8860b;
+                padding: 0.5rem 0.8rem; border-radius: 0.3rem; margin: 0.6rem 0; }
+ .claim-desc { white-space: pre-wrap; margin: 0.3rem 0; color: #e0e3e8; }
  pre.diff { background: #0f1115; border: 1px solid #2a2f38; padding: 0.6rem;
             overflow-x: auto; font: 12px/1.4 ui-monospace, monospace; }
  pre.diff .add { color: #5fd17a; } pre.diff .del { color: #ff7b72; }
@@ -426,7 +429,6 @@ REVIEW_TEMPLATE = _HEAD.replace('{{ title }}', 'review') + '''
 <div class="meta-block">
   {% for line in package_lines %}<div>{{ line }}</div>{% endfor %}
   {% if ctx.reason %}<div>routed to review because: {{ ctx.reason }}</div>{% endif %}
-  <div>author claim category: <b>{{ ctx.claim_category }}</b></div>
   {% if ctx.draft_category %}
     <div>LLM draft: <b>{{ ctx.draft_category }}</b> (confidence {{ ctx.draft_confidence }})</div>
     {% if ctx.draft_reasoning %}<div class="muted">LLM reasoning: {{ ctx.draft_reasoning }}</div>{% endif %}
@@ -441,6 +443,23 @@ REVIEW_TEMPLATE = _HEAD.replace('{{ title }}', 'review') + '''
         by {{ verdict.decided_by }} v{{ verdict.rule_version }})</div>
     {% endif %}
   {% endif %}
+</div>
+<div class="claim-block">
+  <div class="muted">What the author claims (unverified -- read it against the diff):</div>
+  {% if ctx.claim_description %}
+    <div class="claim-desc">{{ ctx.claim_description }}</div>
+  {% else %}
+    <div class="muted">(no DEP-3 description in the patch header)</div>
+  {% endif %}
+  <div class="muted">claimed category: <b>{{ ctx.claim_category }}</b>
+    &middot; forwarding: {{ ctx.claim_forwarded }}
+    {% if ctx.claim_bugs %}&middot; bugs:
+      {% for b in ctx.claim_bugs %}{%
+        if b.ref.startswith('http') %}<a href="{{ b.ref }}">{{ b.tracker }}</a>{%
+        else %}{{ b.tracker }}:{{ b.ref }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+    {% endif %}
+    {% if ctx.claim_cves %}&middot; CVEs: {{ ctx.claim_cves | join(', ') }}{% endif %}
+  </div>
 </div>
 {% if can_requeue %}
 <form method="post" action="/requeue/{{ ctx.fingerprint }}">

@@ -57,6 +57,7 @@ from divergulent.classify import fingerprint as fp
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import measure
 from divergulent.classify.claim import extract_claim
+from divergulent.dep3 import BugRef
 
 _DEV_NULL = '/dev/null'
 
@@ -622,16 +623,19 @@ class ReviewContext:
     """Everything a human needs to judge one item -- the input to ``ask``.
 
     Assembled by :func:`build_review_context`: the representative diff body, the
-    LLM draft (category + confidence + reasoning), the author's claim category, the
-    routing flags/reason that sent the item to review, the diff rendered in the
-    context of the original upstream file, and the package(s) that carry this
-    fingerprint (``source_package``/``version``/``patch_name`` are the
-    representative instance; ``patch_name`` travels here because the evidence blob
-    records it; ``packages`` is every source package carrying the identical patch --
-    a fingerprint is deduplicated, so "which packages does this affect?" is real
-    review context).  ``reason`` is the queue routing reason when this context was
-    built from a queue item, and ``None`` when built straight from a fingerprint
-    (the audit/spot-check path).
+    LLM draft (category + confidence + reasoning), the author's CLAIM (its derived
+    category plus the raw, author-written DEP-3 story -- ``claim_description``,
+    ``claim_forwarded``, ``claim_bugs``, ``claim_cves``), the routing flags/reason
+    that sent the item to review, the diff rendered in the context of the original
+    upstream file, and the package(s) that carry this fingerprint
+    (``source_package``/``version``/``patch_name`` are the representative instance;
+    ``patch_name`` travels here because the evidence blob records it; ``packages``
+    is every source package carrying the identical patch -- a fingerprint is
+    deduplicated, so "which packages does this affect?" is real review context).
+    The claim fields are AUTHOR-CONTROLLED and unverified -- they say what the
+    author alleges the patch fixes, to be read against the diff, never trusted.
+    ``reason`` is the queue routing reason when this context was built from a queue
+    item, and ``None`` when built straight from a fingerprint (the audit path).
     """
 
     fingerprint: str
@@ -641,6 +645,10 @@ class ReviewContext:
     draft_confidence: str | None
     draft_reasoning: str | None
     claim_category: str
+    claim_description: str | None
+    claim_forwarded: str
+    claim_bugs: tuple[BugRef, ...]
+    claim_cves: tuple[str, ...]
     reason: str | None
     source_package: str
     version: str
@@ -722,6 +730,10 @@ def build_review_context(conn: sqlite3.Connection, corpus_dir: str, index_path: 
         draft_confidence=draft['confidence'] if draft is not None else None,
         draft_reasoning=_draft_reasoning(draft),
         claim_category=claim.claimed_category,
+        claim_description=claim.description,
+        claim_forwarded=claim.forwarded,
+        claim_bugs=tuple(claim.bugs),
+        claim_cves=tuple(claim.cves),
         reason=item['reason'] if item is not None else None,
         source_package=source_package,
         version=version,
@@ -1065,7 +1077,15 @@ def _interactive_ask(context: ReviewContext) -> str:
     view.extend(_format_package_lines(context, limit=MAX_PACKAGES_SHOWN))
     if context.reason:
         view.append('routed to review because: %s' % context.reason)
-    view.append('author claim category: %s' % context.claim_category)
+    view.append('author claim category: %s (forwarding: %s)' % (
+        context.claim_category, context.claim_forwarded))
+    if context.claim_description:
+        view.append('author says: %s' % context.claim_description)
+    if context.claim_bugs:
+        view.append('author cites bugs: %s' % ', '.join(
+            '%s:%s' % (bug.tracker, bug.ref) for bug in context.claim_bugs))
+    if context.claim_cves:
+        view.append('author cites CVEs: %s' % ', '.join(context.claim_cves))
     if context.draft_category is not None:
         view.append('LLM draft: %s (confidence %s)' % (
             context.draft_category, context.draft_confidence))

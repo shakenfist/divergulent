@@ -348,6 +348,18 @@ class BuildReviewContextTestCase(ReviewFixture, testtools.TestCase):
             fetch=_recording_fetch()[0])
         self.assertEqual(item['reason'], context.reason)
 
+    def test_carries_the_author_claim_description_and_forwarding(self):
+        # The PATCH fixture's DEP-3 header: "Description: enlarge the read buffer
+        # to avoid truncation" + "Forwarded: no" -> the author's unverified story.
+        conn, corpus_dir, index_path, fp_hex = self._setup()
+        context = review.build_review_context(
+            conn, corpus_dir, index_path, fingerprint=fp_hex,
+            fetch=_recording_fetch()[0])
+        self.assertEqual('enlarge the read buffer to avoid truncation', context.claim_description)
+        self.assertEqual('debian-only', context.claim_forwarded)  # Forwarded: no
+        self.assertEqual((), context.claim_bugs)
+        self.assertEqual((), context.claim_cves)
+
 
 class RecordReviewVerdictTestCase(ReviewFixture, testtools.TestCase):
     """The record half of the split records the same signed decision as before."""
@@ -457,7 +469,8 @@ def _context(*, packages, source_package='reader', version='1.2-3'):
     return review.ReviewContext(
         fingerprint='f' * 64, diff_body='', context_view='',
         draft_category=None, draft_confidence=None, draft_reasoning=None,
-        claim_category='unknown', reason=None,
+        claim_category='unknown', claim_description=None, claim_forwarded='unknown',
+        claim_bugs=(), claim_cves=(), reason=None,
         source_package=source_package, version=version, patch_name='fix.patch',
         packages=tuple(packages))
 
