@@ -577,6 +577,45 @@ class SplitDiffByFileTestCase(testtools.TestCase):
         self.assertEqual([], review.split_diff_by_file('not a diff at all\n'))
 
 
+class SourceTreePathTestCase(testtools.TestCase):
+    """The sources.debian.org fetch path: strip a tarball root, keep real paths."""
+
+    def _seg(self, old, new):
+        body = '--- %s\n+++ %s\n@@ -1 +1 @@\n-x\n+y\n' % (old, new)
+        return review.split_diff_by_file(body)[0]
+
+    def test_quilt_ab_prefix_is_already_root_relative(self):
+        # The common case: a/ b/ stripped, nothing more to strip.
+        seg = self._seg('a/src/reader.c', 'b/src/reader.c')
+        self.assertEqual('src/reader.c', review._source_tree_path(seg))
+
+    def test_two_tree_orig_suffix_strips_the_root(self):
+        # diff -ruN <root>.orig/<path> <root>/<path> -> drop the root component.
+        seg = self._seg(
+            'llvm-snapshot_17~++20230517.orig/llvm/utils/lit/lit/ProgressBar.py',
+            'llvm-snapshot_17~++20230517/llvm/utils/lit/lit/ProgressBar.py')
+        self.assertEqual('llvm/utils/lit/lit/ProgressBar.py', review._source_tree_path(seg))
+
+    def test_two_tree_non_versioned_root_with_orig_suffix_strips(self):
+        # .orig suffix is definitive even when the root is not version-shaped.
+        seg = self._seg('pgpainless.orig/build.gradle', 'pgpainless/build.gradle')
+        self.assertEqual('build.gradle', review._source_tree_path(seg))
+
+    def test_shared_versioned_root_without_suffix_strips(self):
+        # Both sides name the same versioned tarball dir, no .orig suffix.
+        seg = self._seg('botan-2.12.0/src/os/hurd.txt', 'botan-2.12.0/src/os/hurd.txt')
+        self.assertEqual('src/os/hurd.txt', review._source_tree_path(seg))
+
+    def test_bare_path_against_a_real_subdir_is_not_stripped(self):
+        # No a/ b/, no version, no .orig: src/ is a real subdir -> leave it alone.
+        seg = self._seg('src/reader.c', 'src/reader.c')
+        self.assertEqual('src/reader.c', review._source_tree_path(seg))
+
+    def test_single_component_path_is_unchanged(self):
+        seg = self._seg('a/Makefile', 'b/Makefile')
+        self.assertEqual('Makefile', review._source_tree_path(seg))
+
+
 class BuildContextViewTestCase(testtools.TestCase):
 
     def test_fetches_each_file_by_its_real_path(self):

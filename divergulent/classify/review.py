@@ -47,6 +47,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import re
 import sqlite3
 import sys
 import urllib.parse
@@ -260,12 +261,93 @@ def build_context_view(source_package: str, version: str, diff_body: str, *,
 
     blocks: list[str] = []
     for segment in segments:
-        original = fetch_source_file(source_package, version, segment.path, fetch=fetch, area=area)
+        # Most quilt patches are a/ b/ prefixed, so segment.path is already
+        # source-root-relative; a raw two-tree diff keeps the upstream tarball
+        # root directory, which sources.debian.org does not have in its path.
+        fetch_path = _source_tree_path(segment)
+        original = fetch_source_file(source_package, version, fetch_path, fetch=fetch, area=area)
+        if original is None and fetch_path != segment.path:
+            original = fetch_source_file(source_package, version, segment.path, fetch=fetch, area=area)
         header = '### %s' % segment.path
         if original is None:
-            header += '  [original not fetched -- showing the raw diff only]'
+            header += '  [original not fetched: %s]' % source_file_url(
+                source_package, version, fetch_path, area=area)
         blocks.append('%s\n%s' % (header, render_in_context(original, segment.body)))
     return '\n\n'.join(blocks)
+
+
+# Suffixes the OLD side of a raw two-tree diff puts on the tarball-root directory
+# (``diff -ruN <root>.orig/... <root>/...``); a trailing one is stripped to match
+# the NEW side when detecting the shared root component.
+_TWO_TREE_OLD_SUFFIXES = ('.orig', '.old', '~')
+
+# A tarball-root directory looks versioned (``botan-2.12.0``, ``foo_1.0``,
+# ``llvm-toolchain-snapshot_17~++...``); a plain source subdir (``src``, ``lib``,
+# ``tests``) does not.  Used to avoid stripping a real subdir off a bare-path diff.
+_VERSIONED_DIR_RE = re.compile(r'[-_]\d')
+
+
+def _raw_header_path(line: str) -> str:
+    """The ``--- ``/``+++ `` header path, timestamp-stripped but NOT ``a/``/``b/`` stripped.
+
+    Unlike ``fingerprint._header_path`` this keeps any leading ``a/``/``b/`` or
+    tarball-root component, so :func:`_source_tree_path` can tell a quilt-prefixed
+    diff (root-relative already) from a raw two-tree diff (carries the root dir).
+    """
+    rest = line[4:]
+    tab = rest.find('\t')
+    if tab != -1:
+        rest = rest[:tab]
+    else:
+        double = rest.find('  ')
+        if double != -1:
+            rest = rest[:double]
+    return rest.strip()
+
+
+def _source_tree_path(segment: _FileDiff) -> str:
+    """The path within the unpacked source tree to fetch from sources.debian.org.
+
+    sources.debian.org serves files relative to the unpacked source ROOT.  A
+    quilt patch's ``a/``/``b/`` path is already root-relative, but a raw two-tree
+    diff (``--- <root>.orig/<path>`` / ``+++ <root>/<path>``) keeps the upstream
+    tarball-root directory, so the leading component must be dropped.
+
+    Works from the RAW headers (``a/``/``b/`` intact): a quilt prefix means the
+    path is already root-relative (leave it); otherwise, when both sides share a
+    leading component -- the old side modulo a trailing ``.orig``/``.old``/``~`` --
+    that component is the tarball root and is dropped, but only when it actually
+    looks like a versioned tarball dir (or carried an ``.orig``-family suffix), so
+    a bare-path diff against a real subdir like ``src/`` is left untouched.
+    """
+    lines = segment.body.splitlines()
+    raw_old = raw_new = None
+    for index, line in enumerate(lines):
+        if line.startswith('--- ') and index + 1 < len(lines) and lines[index + 1].startswith('+++ '):
+            raw_old = _raw_header_path(line)
+            raw_new = _raw_header_path(lines[index + 1])
+            break
+    if not raw_old or not raw_new or '/' not in raw_new:
+        return segment.path
+
+    old_first = raw_old.split('/', 1)[0]
+    new_first = raw_new.split('/', 1)[0]
+    if old_first in ('a', 'b') or new_first in ('a', 'b'):
+        return segment.path  # quilt-prefixed: segment.path is already root-relative
+
+    had_suffix = False
+    old_root = old_first
+    for suffix in _TWO_TREE_OLD_SUFFIXES:
+        if old_root.endswith(suffix):
+            old_root, had_suffix = old_root[:-len(suffix)], True
+            break
+    if old_root != new_first:
+        return segment.path
+    # Shared leading dir: strip it only when it is clearly a tarball root (had an
+    # .orig-family suffix, or looks versioned), never a plain source subdir.
+    if had_suffix or _VERSIONED_DIR_RE.search(new_first):
+        return raw_new.split('/', 1)[1]
+    return segment.path
 
 
 # ---------------------------------------------------------------------------
