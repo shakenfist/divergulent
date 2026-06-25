@@ -132,10 +132,16 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             items = ledger_mod.pending_review_items_in_category(conn, category)
         else:
             items = ledger_mod.pending_review_items(conn)
+        # Package filter: narrow to pending items whose fingerprint is carried by a
+        # source package matching the query (priority order preserved).
+        package = request.args.get('package', '').strip() or None
+        if package:
+            fps = review_mod.fingerprints_for_package(index_path, package)
+            items = [item for item in items if item['fingerprint'] in fps]
         rows = [_worklist_row(item) for item in items]
         top = items[0]['fingerprint'] if items else None
         return render_template_string(
-            WORKLIST_TEMPLATE, rows=rows, category=category,
+            WORKLIST_TEMPLATE, rows=rows, category=category, package=package,
             categories=_categories_present(), top=top, total=len(items))
 
     @app.route('/review/<fingerprint>')
@@ -367,21 +373,30 @@ WORKLIST_TEMPLATE = _HEAD.replace('{{ title }}', 'worklist') + '''
 <p><a href="/audit">audit settled patches &rarr;</a></p>
 <form method="get" action="/">
   <input type="text" name="fingerprint" placeholder="jump to fingerprint / prefix"
-         class="mono" size="40">
+         class="mono" size="34">
   <button type="submit">go</button>
 </form>
+<form method="get" action="/">
+  <input type="text" name="package" placeholder="filter by package (e.g. llvm)"
+         value="{{ package or '' }}" size="34">
+  {% if category %}<input type="hidden" name="category" value="{{ category }}">{% endif %}
+  <button type="submit">filter</button>
+  {% if package %}<a href="/{{ '?category=' + category if category }}">clear</a>{% endif %}
+</form>
 <p>
-  <a class="chip {{ 'on' if not category }}" href="/">all</a>
+  <a class="chip {{ 'on' if not category }}"
+     href="/{{ '?package=' + package if package }}">all</a>
   {% for cat in categories %}
     <a class="chip {{ 'on' if category == cat }}"
-       href="/?category={{ cat | urlencode }}">{{ cat }}</a>
+       href="/?category={{ cat | urlencode }}{{ '&package=' + package if package }}">{{ cat }}</a>
   {% endfor %}
 </p>
 {% if top %}
   <a class="next" href="/review/{{ top }}">Review next most important &rarr;</a>
   <span class="muted">(press <span class="key">j</span>)</span>
 {% endif %}
-<p class="muted">{{ total }} pending{% if category %} in <b>{{ category }}</b>{% endif %}.</p>
+<p class="muted">{{ total }} pending{% if category %} in <b>{{ category }}</b>{% endif %}{%
+  if package %} carried by <b>{{ package }}</b>{% endif %}.</p>
 <script>
 document.addEventListener('keydown', function(e) {
   if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return;

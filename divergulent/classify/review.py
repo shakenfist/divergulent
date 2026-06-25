@@ -853,6 +853,25 @@ def _carrying_packages(index_path: str, fingerprint: str) -> tuple[str, ...]:
     return tuple(row[0] for row in rows)
 
 
+def fingerprints_for_package(index_path: str, query: str) -> set[str]:
+    """Distinct fingerprints carried by any source package matching ``query``.
+
+    Case-insensitive substring match on the source-package name, so ``llvm`` finds
+    every ``llvm-toolchain-*`` package's patches -- the package counterpart to the
+    fingerprint cherry-pick, for hunting a theory across a package or a family.
+    Debian source-package names cannot contain SQL ``LIKE`` wildcards, so the
+    query is used directly.  Returns an empty set when nothing matches.
+    """
+    connection = sqlite3.connect(index_path)
+    try:
+        rows = connection.execute(
+            'SELECT DISTINCT fingerprint FROM patch WHERE source_package LIKE ?',
+            ('%' + query + '%',)).fetchall()
+    finally:
+        connection.close()
+    return {row[0] for row in rows}
+
+
 # ---------------------------------------------------------------------------
 # 5. Re-queue and history (ledger operations -- no diff, no signing).
 # ---------------------------------------------------------------------------

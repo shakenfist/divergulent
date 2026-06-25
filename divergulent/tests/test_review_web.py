@@ -146,6 +146,39 @@ class WorklistTestCase(ReviewWebFixture, testtools.TestCase):
         self.assertEqual(404, resp.status_code)
         self.assertIn('No single match', resp.get_data(as_text=True))
 
+    def test_package_filter_narrows_to_the_carrying_package(self):
+        # The seed fingerprint is carried by SOURCE_PACKAGE ('reader'); a second
+        # item is not in the index, so a package search excludes it.
+        client, _conn, fp_hex = self._client(extra_items=[dict(
+            fingerprint='b' * 64, draft_category='documentation', priority=9)])
+        body = client.get('/?package=' + SOURCE_PACKAGE).get_data(as_text=True)
+        self.assertIn(fp_hex[:16], body)
+        self.assertNotIn('b' * 64, body)
+        self.assertIn('carried by', body)              # the filter note
+
+    def test_package_filter_is_a_substring_match(self):
+        client, _conn, fp_hex = self._client()
+        body = client.get('/?package=' + SOURCE_PACKAGE[:4]).get_data(as_text=True)
+        self.assertIn(fp_hex[:16], body)               # 'read' matches 'reader'
+
+    def test_unknown_package_yields_an_empty_worklist(self):
+        client, _conn, fp_hex = self._client()
+        body = client.get('/?package=nosuchpackage').get_data(as_text=True)
+        self.assertNotIn(fp_hex[:16], body)
+        self.assertIn('0 pending', body)
+
+    def test_package_filter_composes_with_category(self):
+        client, _conn, fp_hex = self._client()  # seed is bugfix, carried by reader
+        hit = client.get('/?package=%s&category=bugfix' % SOURCE_PACKAGE).get_data(as_text=True)
+        self.assertIn(fp_hex[:16], hit)
+        miss = client.get('/?package=%s&category=security' % SOURCE_PACKAGE).get_data(as_text=True)
+        self.assertNotIn(fp_hex[:16], miss)
+
+    def test_package_box_is_prefilled_with_the_query(self):
+        client, _conn, _fp = self._client()
+        body = client.get('/?package=' + SOURCE_PACKAGE).get_data(as_text=True)
+        self.assertIn('value="%s"' % SOURCE_PACKAGE, body)
+
     def test_hostile_reason_is_escaped(self):
         client, _conn, _fp = self._client(extra_items=[dict(
             fingerprint='c' * 64, draft_category='bugfix', priority=1,
