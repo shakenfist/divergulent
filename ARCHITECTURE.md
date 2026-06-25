@@ -161,7 +161,7 @@ installed-package inventory never leaves the machine.
   **byte-identical** (same canonical record, same `kind='human'` signature, same
   dequeue) and a reviewer can switch front-ends mid-grind against one ledger. It
   adds the slices the linear CLI queue cannot: **review by category**,
-  **cherry-pick by fingerprint**, and an **audit/spot-check view** over settled
+  **cherry-pick by fingerprint or package**, and an **audit/spot-check view** over settled
   patches *not* in the queue (the derived `current_verdict`, filtered by category
   and provenance) to confirm a deterministic rule is right — re-queuing a misfire
   via the existing `requeue_one` (which records no decision; only the eventual

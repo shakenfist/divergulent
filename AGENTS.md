@@ -239,7 +239,7 @@ web UI over the same review machinery** — it reuses `build_review_context` and
 `record_review_verdict` verbatim, so a web verdict is **byte-identical** to a CLI
 verdict and the two front-ends are interchangeable against one ledger. It adds
 the slices the linear queue cannot: review **by category**, **cherry-pick by
-fingerprint**, and an **audit/spot-check view** over settled patches not in the
+fingerprint or package**, and an **audit/spot-check view** over settled patches not in the
 queue (the derived `current_verdict`, filtered by category and provenance) to
 check a deterministic rule and **re-queue** a misfire via `requeue_one` (records
 no decision). The queue worklist keys category off the **LLM draft**; the audit
