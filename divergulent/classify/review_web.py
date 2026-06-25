@@ -73,6 +73,20 @@ def diff_lines(text: str) -> list[dict]:
     return rows
 
 
+def category_chips(counts: dict) -> list[dict]:
+    """The full assignable category set as ``{name, count}`` chips, in enum order.
+
+    Renders EVERY category (a stable, complete filter bar) from a name->count map,
+    so the bar does not jump as items are reviewed and an empty category -- notably
+    ``test``, which the LLM never drafts (it is assigned by the deterministic rule
+    or a human) -- is visibly empty rather than silently missing.  Any category in
+    ``counts`` outside the assignable set is appended so nothing is hidden.
+    """
+    names = list(review_mod._assignable_categories())
+    names.extend(sorted(name for name in counts if name not in names))
+    return [{'name': name, 'count': counts.get(name, 0)} for name in names]
+
+
 def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fetch,
                signer=None, clock=None):
     """Build the Flask app over an open ledger ``conn`` and the corpus/index.
@@ -111,11 +125,14 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             'n_packages': len(packages),
         }
 
-    def _categories_present() -> list[str]:
-        """Distinct draft categories among pending items, for the filter chips."""
-        return sorted({
-            item['draft_category'] for item in ledger_mod.pending_review_items(conn)
-            if item['draft_category']})
+    def _worklist_category_chips() -> list[dict]:
+        """The category filter chips for the worklist: full set, pending counts."""
+        counts: dict[str, int] = {}
+        for item in ledger_mod.pending_review_items(conn):
+            category = item['draft_category']
+            if category:
+                counts[category] = counts.get(category, 0) + 1
+        return category_chips(counts)
 
     @app.route('/')
     def index():
@@ -142,7 +159,7 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
         top = items[0]['fingerprint'] if items else None
         return render_template_string(
             WORKLIST_TEMPLATE, rows=rows, category=category, package=package,
-            categories=_categories_present(), top=top, total=len(items))
+            categories=_worklist_category_chips(), top=top, total=len(items))
 
     @app.route('/review/<fingerprint>')
     def review(fingerprint):
@@ -236,10 +253,13 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
 
         total = len(verdicts)
         shown = verdicts[:AUDIT_LIMIT]
+        cat_counts: dict[str, int] = {}
+        for verdict in all_verdicts:
+            cat_counts[verdict.category] = cat_counts.get(verdict.category, 0) + 1
         return render_template_string(
             AUDIT_TEMPLATE, rows=shown, total=total, shown=len(shown),
             limit=AUDIT_LIMIT, category=category, source_sel=source,
-            categories=sorted({v.category for v in all_verdicts}),
+            categories=category_chips(cat_counts),
             kinds=sorted({v.kind for v in all_verdicts}))
 
     @app.route('/requeue/<fingerprint>', methods=['POST'])
@@ -342,6 +362,7 @@ _HEAD = '''<!doctype html>
  .chip { display: inline-block; padding: 0.1rem 0.5rem; margin: 0.1rem;
          border: 1px solid #3a4150; border-radius: 1rem; text-decoration: none; }
  .chip.on { background: #2563eb; color: #fff; border-color: #2563eb; }
+ .chip.empty { opacity: 0.45; }
  .next { display: inline-block; margin: 0.5rem 0; padding: 0.4rem 0.8rem;
          background: #2563eb; color: #fff; border-radius: 0.3rem; text-decoration: none; }
  .meta-block { background: #232730; padding: 0.6rem 0.8rem; border-radius: 0.3rem; }
@@ -390,8 +411,9 @@ WORKLIST_TEMPLATE = _HEAD.replace('{{ title }}', 'worklist') + '''
   <a class="chip {{ 'on' if not category }}"
      href="/{{ '?package=' + package if package }}">all</a>
   {% for cat in categories %}
-    <a class="chip {{ 'on' if category == cat }}"
-       href="/?category={{ cat | urlencode }}{{ '&package=' + package if package }}">{{ cat }}</a>
+    <a class="chip {{ 'on' if category == cat.name }}{{ ' empty' if cat.count == 0 }}"
+       href="/?category={{ cat.name | urlencode }}{{ '&package=' + package if package }}"
+       >{{ cat.name }} <span class="muted">({{ cat.count }})</span></a>
   {% endfor %}
 </p>
 {% if top %}
@@ -530,8 +552,9 @@ right, or re-queue a misfire for human review.</p>
   <a class="chip {{ 'on' if not category }}"
      href="/audit{{ '?source=' + source_sel if source_sel }}">all</a>
   {% for cat in categories %}
-    <a class="chip {{ 'on' if category == cat }}"
-       href="/audit?category={{ cat | urlencode }}{{ '&source=' + source_sel if source_sel }}">{{ cat }}</a>
+    <a class="chip {{ 'on' if category == cat.name }}{{ ' empty' if cat.count == 0 }}"
+       href="/audit?category={{ cat.name | urlencode }}{{ '&source=' + source_sel if source_sel }}"
+       >{{ cat.name }} <span class="muted">({{ cat.count }})</span></a>
   {% endfor %}
 </p>
 <p>source:

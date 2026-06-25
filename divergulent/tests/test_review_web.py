@@ -121,6 +121,17 @@ class WorklistTestCase(ReviewWebFixture, testtools.TestCase):
         # And it leads the table: the priority-9 item's row precedes the seed's.
         self.assertLess(body.index('b' * 64), body.index(fp_hex[:16]))
 
+    def test_category_chips_show_the_full_set_with_counts(self):
+        # The bar is stable and complete: every assignable category appears, even
+        # empty ones, with counts -- notably 'test', which the LLM never drafts.
+        client, _conn, _fp = self._client()  # one bugfix item seeded
+        body = client.get('/').get_data(as_text=True)
+        for category in ('packaging', 'documentation', 'bugfix', 'security',
+                         'feature', 'unknown', 'test'):
+            self.assertIn('category=%s' % category, body)
+        self.assertIn('bugfix <span class="muted">(1)</span>', body)
+        self.assertIn('test <span class="muted">(0)</span>', body)  # always present, empty
+
     def test_category_filter_narrows_the_worklist(self):
         client, _conn, fp_hex = self._client(extra_items=[dict(
             fingerprint='b' * 64, draft_category='documentation', priority=9)])
