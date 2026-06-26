@@ -511,6 +511,32 @@ def supersede_observations(conn: sqlite3.Connection, *, observed_by: str, rule_v
     return cursor.rowcount
 
 
+def supersede_observations_for_fingerprint(conn: sqlite3.Connection, *, fingerprint: str,
+                                           kind: str, observed_by: str | None = None,
+                                           superseded_at: str, commit: bool = True) -> int:
+    """Supersede the LIVE ``kind`` observations of ONE fingerprint; returns the count.
+
+    The surgical, single-fingerprint counterpart to :func:`supersede_observations`:
+    sets ``superseded_at`` only on currently-live ``kind`` rows for ``fingerprint``,
+    optionally narrowed to one ``observed_by`` source.  Used to re-score a single
+    fingerprint (e.g. the risk gate) without disturbing any other.  Rows are never
+    deleted -- they stay as the audit trail.  ``commit`` defaults to True.
+    """
+    if observed_by is None:
+        cursor = conn.execute(
+            'UPDATE observation SET superseded_at = ? '
+            'WHERE fingerprint = ? AND kind = ? AND superseded_at IS NULL',
+            (superseded_at, fingerprint, kind))
+    else:
+        cursor = conn.execute(
+            'UPDATE observation SET superseded_at = ? '
+            'WHERE fingerprint = ? AND kind = ? AND observed_by = ? AND superseded_at IS NULL',
+            (superseded_at, fingerprint, kind, observed_by))
+    if commit:
+        conn.commit()
+    return cursor.rowcount
+
+
 # ---------------------------------------------------------------------------
 # Read helpers.  Pure SELECTs; the derived current-verdict view is step 3c and
 # is deliberately NOT built here.
