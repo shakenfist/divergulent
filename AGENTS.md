@@ -234,6 +234,23 @@ are curation-side and injected, so the whole suite is offline; the actual
 triage/review pass is the operator's budgeted step. See
 `docs/plans/PLAN-patch-classification-phase-04-llm-triage.md`.
 
+`python -m divergulent.classify.review_web` (in `review_web.py`) is a **local
+web UI over the same review machinery** — it reuses `build_review_context` and
+`record_review_verdict` verbatim, so a web verdict is **byte-identical** to a CLI
+verdict and the two front-ends are interchangeable against one ledger. It adds
+the slices the linear queue cannot: review **by category**, **cherry-pick by
+fingerprint or package**, and an **audit/spot-check view** over settled patches not in the
+queue (the derived `current_verdict`, filtered by category and provenance) to
+check a deterministic rule and **re-queue** a misfire via `requeue_one` (records
+no decision). The queue worklist keys category off the **LLM draft**; the audit
+view keys it off the **derived verdict** (the rule's category for rule-classified
+patches). Flask + Jinja2 (autoescaping) are behind the optional **`review`
+extra** — `pip install divergulent[review]`, or `[review,verify]` to sign — off
+the default scan/report install; it binds **loopback only**, has no auth, is
+single-user, and is never run in CI or by clients. Handlers test offline through
+Flask's test client (injected fake `fetch`/`signer`, temp ledger; no socket). See
+`docs/plans/PLAN-patch-classification-phase-04-review-web.md`.
+
 ## Scoring
 
 `score.combine` ranks packages with a transparent weighted sum

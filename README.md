@@ -232,6 +232,19 @@ publishes the bundle daily to a stable URL, so `cache pull` just works.
 Growing the published cache to a Debian 11/12/13/testing/unstable matrix
 is tracked in the road-to-1.0 plan.
 
+A **patch-classification** pipeline (curation-side, for whoever builds the
+published cache — not something end users run) turns the carried-patch
+residue into an explainable, signed classification: deterministic rules
+first, a verified LLM triage tier, then a Sigstore-signed human-review
+tier. The human tier is both a CLI (`python -m divergulent.classify.review`)
+and a **local web UI** (`python -m divergulent.classify.review_web`, behind
+the optional `review` extra — `pip install divergulent[review]`, or
+`[review,verify]` to sign) that adds review-by-category, fingerprint
+cherry-picking, and an audit view for spot-checking that the deterministic
+rules classify correctly. Both front-ends record byte-identical verdicts
+against one ledger. See
+[docs/plans/PLAN-patch-classification.md](docs/plans/PLAN-patch-classification.md).
+
 ## Development
 
 Tests and linting run through `tox`:

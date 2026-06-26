@@ -674,6 +674,21 @@ def pending_review_items(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         'ORDER BY priority DESC, id').fetchall()
 
 
+def pending_review_items_in_category(conn: sqlite3.Connection, category: str) -> list[sqlite3.Row]:
+    """Pending review items whose LLM draft category is ``category``.
+
+    The web review UI's category slice.  Same priority-then-id order as
+    :func:`pending_review_items`, narrowed to one ``draft_category`` (denormalised
+    onto the queue row at enqueue time, so this needs no join).  The filter scopes
+    the worklist; it does not change the ordering, so "next most important" still
+    holds within a category.
+    """
+    conn.row_factory = sqlite3.Row
+    return conn.execute(
+        'SELECT * FROM review_queue WHERE reviewed_at IS NULL AND draft_category = ? '
+        'ORDER BY priority DESC, id', (category,)).fetchall()
+
+
 def mark_reviewed(conn: sqlite3.Connection, *, item_id: int, reviewed_at: str) -> int:
     """Mark one PENDING review item reviewed; returns the count touched (0 or 1).
 

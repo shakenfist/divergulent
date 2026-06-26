@@ -57,6 +57,16 @@ Operating the pipeline for real surfaced gaps the offline suite could not:
 - **Review UX**: a pager for big diffs; the carrying **package name(s)** shown
   (blast radius); `requeue` (re-open a fingerprint) and `history` (reconsider a
   past verdict) subcommands.
+- **Local web review UI** (`review_web.py`): several CLI review sessions made the
+  case for a browser. The **"Review-tool form" open question is resolved — both
+  ship**: the web UI reuses the CLI's read + signed-verdict paths verbatim (web
+  and CLI verdicts are byte-identical), and adds the slices the linear queue
+  cannot — review **by category**, **cherry-pick by fingerprint**, and an
+  **audit/spot-check view** over settled patches *not* in the queue (to confirm a
+  deterministic rule is right, and re-queue a misfire without recording a
+  decision). Flask + Jinja2 live behind a new `review` extra (off the default
+  scan/report path). Specced + built in
+  [PLAN-patch-classification-phase-04-review-web.md](PLAN-patch-classification-phase-04-review-web.md).
 - **Ledger safety**: `build` now refuses to silently wipe a populated ledger;
   **`ledger record`** applies new/changed rules to an existing ledger
   non-destructively (append-only re-record + supersede-on-change), so a rule
@@ -75,7 +85,13 @@ holds it at the structural floor.
 - Apply `test-only` to the production ledger (`ledger record`), dropping the
   residue ~42k → ~36k.
 - Continue the triage + review loop to whatever coverage the operator wants.
-- The candidate-rule miner should gain a **whole-corpus counterexample gate**
-  (only surface a rule when *no* fingerprint matching the predicate got a
-  different verdict) so it stops proposing unsound semantic "rules"; with that,
-  it will mostly confirm there is little left to deterministically peel.
+- The candidate-rule miner now has a **counterexample gate** (done): it surfaces
+  a `(category, structural key)` cluster only when that key carries ONE category
+  across the settled population (current verdicts, so a human override counts),
+  and otherwise REFUSES it with the conflicting spread. Run against the production
+  ledger this collapsed the candidate list to **0 sound rules, 15 refused** --
+  e.g. `types={code};shape=code-only` spans 6 categories (bugfix 868, packaging
+  136, security 131, feature 91, documentation 70, test 3), so it is not a rule.
+  This confirms the structural signature does not determine the semantic category:
+  the deterministic tier can only peel *structural* categories (`test-only →
+  test`), and the residue genuinely needs the LLM/human tiers.
