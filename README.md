@@ -236,7 +236,10 @@ A **patch-classification** pipeline (curation-side, for whoever builds the
 published cache — not something end users run) turns the carried-patch
 residue into an explainable, signed classification: deterministic rules
 first, a verified LLM triage tier, then a Sigstore-signed human-review
-tier. The human tier is both a CLI (`python -m divergulent.classify.review`)
+tier. A cheap, claim-blind **security-risk gate**
+(`python -m divergulent.classify.risk`) scores each patch's security risk
+so the triage and human tiers reach the riskiest carried patches first.
+The human tier is both a CLI (`python -m divergulent.classify.review`)
 and a **local web UI** (`python -m divergulent.classify.review_web`, behind
 the optional `review` extra — `pip install divergulent[review]`, or
 `[review,verify]` to sign) that adds review-by-category, fingerprint

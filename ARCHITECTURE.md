@@ -121,8 +121,18 @@ installed-package inventory never leaves the machine.
   decision per fingerprint — plus the phase-4 residue queue and a report). The
   current verdict is never stored, so it cannot drift, and retiring a rule
   re-queues exactly its fingerprints. Phase 4 fills the llm/human seats:
-  `triage.py` runs the claim-blind LLM draft + adversarial verification, and
-  step 4c bumps the ledger to **schema v2** (a `verified` flag on `decision`,
+  `triage.py` runs the claim-blind LLM draft + adversarial verification over a
+  `call(system, user, *, model) -> CallResult(text, usage)` boundary — the static
+  rubric is the `system` prompt, the diff the variable user message. The default
+  `claude -p` backend runs with `--system-prompt` + `--tools ""`
+  + `--strict-mcp-config` + `--setting-sources ""` + `--output-format json` (no
+  new dependency): stripping the unused built-in tools, MCP, and project/global
+  `CLAUDE.md`+settings shrinks each request from ~66k to ~640 tokens (plain input,
+  no wasteful cache writes) — API-level efficiency on subscription.
+  The anthropic backend caches the rubric with `cache_control`. Each call's token
+  usage flows to a **Cost & cache** report (tokens, cache-hit ratio, cost) so a
+  run's spend is visible. Step 4c bumps the ledger to **schema v2** (a
+  `verified` flag on `decision`,
   reserved `signature`/`signed_by` columns for signed human ManualDecisions, and
   a `review_queue` table) and refines the precedence to `human > verified-llm >
   heuristic > unverified-llm` via `verdict.decision_rank` — an unverified LLM
@@ -133,10 +143,26 @@ installed-package inventory never leaves the machine.
   supersedable), `verified` set from the routing, and a pending `review_queue`
   item for every `needs_human` result — idempotently. `triage_driver.py` (the
   `python -m divergulent.classify.triage` CLI) triages a **bounded, prioritised**
-  slice of the residue (dangerous-construct then high-occurrence first, never the
-  whole queue by accident), surfaces **candidate deterministic rules** (clusters
-  of identical verified verdicts — for human approval, never auto-applied), and
-  reports the untriaged remainder. `review.py` (the
+  slice of the residue (**risk then** dangerous-construct then high-occurrence
+  first, never the whole queue by accident), surfaces **candidate deterministic
+  rules** (clusters of identical verified verdicts — for human approval, never
+  auto-applied), and reports the untriaged remainder. `risk.py` (the
+  `python -m divergulent.classify.risk` CLI) is a **security-risk gate**: a cheap,
+  claim-blind LLM pass that scores **every** carried patch's security risk on a
+  coarse ordinal (`none/low/elevated/high`) — the whole corpus, not just the
+  residue, because a patch the deterministic tier settled as `packaging` can still
+  be security-relevant (a `debian/rules` hardening-flag change) — so the expensive
+  triage pass and the human reach the scariest patches **first**. It is **advisory** — it records a
+  supersedable `security-risk` **observation** (`observed_by='risk-gate:<model>'`
+  / `rule_version=RISK_PROMPT_VERSION`, the same `(model, prompt_version)`
+  provenance as the triage decisions) and feeds the work-list/`review_queue`
+  priority (risk is the top component, `risk_rank * WEIGHT + occurrence`), but
+  never the verdict precedence, so it needs no adversarial verify. A
+  **security-safe deterministic cull** scores provably-benign patches (empty/
+  whitespace/comment-only, doc-only, translation/changelog) `none` with no LLM
+  call — narrower than the packaging category, since a `debian/rules` change can
+  flip a hardening flag. Default model **Opus** (bake-off: 100% recall / 0%
+  false-alarm at the ≥elevated cut vs Sonnet 73%/3%). `review.py` (the
   `python -m divergulent.classify.review` CLI) is the local, interactive human
   tier, with three subcommands. `review` drains the queue: it shows each
   high-priority diff **in its original source context** — fetched on-demand from
@@ -174,6 +200,15 @@ installed-package inventory never leaves the machine.
   default scan/report path; the server binds **loopback only**, has no auth, and
   is a single-user local tool — never CI, never a client feature. Signing is the
   same lazy Sigstore flow, built on the first verdict so browsing needs no extra.
+- `divergulent/classify/cli.py` + `workspace.py` — `divergulent-classify`, the
+  **one curation front**. `workspace.py` resolves a **data root** (a
+  `.divergulent` marker beside `corpus/`+`cache/`, discovered git-style); `cli.py`
+  forwards each verb (`status`/`triage`/`risk`/`review`/`web`/`report`/…) to the
+  existing module main with the resolved paths spliced in, so the operator types
+  no paths. It guards a forgetful operator — clear errors for a missing ledger or
+  not-a-root cwd, and a loud nag when the published **cache looks stale** — and
+  `status` is the one-screen orientation. The old `python -m
+  divergulent.classify.<x>` forms still work.
 - `divergulent/bundle.py` — the precomputed cache **bundle** schema, a
   gzipped-JSON `write()` and `load()`. A bundle is the shareable half of
   a cold run: staleness and divergence for a whole Debian release,

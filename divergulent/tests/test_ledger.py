@@ -359,6 +359,19 @@ class SupersedeTestCase(LedgerFixture, testtools.TestCase):
         self.assertEqual(1, len(rows))
         self.assertEqual(LATER, rows[0]['superseded_at'])
 
+    def test_supersede_observations_for_fingerprint(self):
+        conn, _path = self._ledger()
+        for fp in ('fp1', 'fp2'):
+            ledger.append_observation(
+                conn, fingerprint=fp, kind='security-risk', detail='low',
+                evidence=None, observed_by='risk-gate:m', rule_version=1, observed_at=WHEN)
+        # Surgical: only fp1's security-risk row is superseded; fp2 untouched.
+        count = ledger.supersede_observations_for_fingerprint(
+            conn, fingerprint='fp1', kind='security-risk', superseded_at=LATER)
+        self.assertEqual(1, count)
+        live = {o['fingerprint'] for o in ledger.live_observations(conn)}
+        self.assertEqual({'fp2'}, live)
+
 
 class ReviewQueueTestCase(LedgerFixture, testtools.TestCase):
     """The human-review queue helpers (schema v2)."""

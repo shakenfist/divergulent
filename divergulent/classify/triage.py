@@ -82,6 +82,52 @@ _JSON_OBJECT_RE = re.compile(r'\{.*?\}', re.DOTALL)
 
 
 # ---------------------------------------------------------------------------
+# The model-call boundary: usage + result
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Usage:
+    """Normalised per-call token usage (and cost when a backend reports it).
+
+    Mirrors the Anthropic usage block so cache behaviour is visible: the
+    ``cache_read_tokens`` (billed at ~0.1x) versus ``cache_creation_tokens`` split
+    is the signal that the cached rubric prefix is landing.  A backend fills what
+    it can; a fake or a text-only backend reports zeros.  ``cost_usd`` is the
+    backend's own figure (``claude -p`` reports one) or ``None`` when unknown --
+    the run report derives an at-rates estimate when it is ``None``.
+    """
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_creation_tokens: int = 0
+    cache_read_tokens: int = 0
+    cost_usd: float | None = None
+
+    def __add__(self, other: 'Usage') -> 'Usage':
+        cost = None if self.cost_usd is None and other.cost_usd is None else \
+            (self.cost_usd or 0.0) + (other.cost_usd or 0.0)
+        return Usage(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+            cache_creation_tokens=self.cache_creation_tokens + other.cache_creation_tokens,
+            cache_read_tokens=self.cache_read_tokens + other.cache_read_tokens,
+            cost_usd=cost)
+
+
+@dataclass(frozen=True)
+class CallResult:
+    """What a triage backend returns: the model's text plus its token usage.
+
+    The injected ``call(system, user, *, model) -> CallResult`` boundary: the
+    cacheable ``system`` rubric and the variable ``user`` diff go in, the answer
+    text and a normalised :class:`Usage` come out.
+    """
+
+    text: str
+    usage: Usage = Usage()
+
+
+# ---------------------------------------------------------------------------
 # LlmVerdict
 # ---------------------------------------------------------------------------
 
@@ -117,6 +163,10 @@ class LlmVerdict:
     non-deterministic, so the ledger keeps this as evidence -- the verdict must
     be auditable even though it is not reproducible."""
 
+    usage: Usage = Usage()
+    """Token usage for the call that produced this draft -- operational telemetry,
+    NOT part of the verdict identity or the ledger evidence."""
+
 
 # ---------------------------------------------------------------------------
 # Claim-blind diff extraction
@@ -144,15 +194,20 @@ def diff_body(patch_text: str) -> str:
 # Prompt construction -- deterministic given (diff_body, prompt_version)
 # ---------------------------------------------------------------------------
 
-def build_prompt(diff_body: str, *, prompt_version: int = PROMPT_VERSION) -> str:
-    """Build the claim-blind classification prompt for a diff body.
+def triage_system_prompt(*, prompt_version: int = PROMPT_VERSION) -> str:
+    """The static claim-blind classification rubric -- the CACHEABLE system prompt.
 
-    Deterministic given ``(diff_body, prompt_version)``. The prompt gives the
-    model ONLY the diff -- never the author's description -- and asks for
-    exactly one ``TRIAGE_CATEGORIES`` value with a confidence and a brief
+    Constant for a fixed ``prompt_version`` (it holds no diff), so it is sent once
+    as the prompt-cache prefix and read back cheaply for every patch in a run. The
+    diff is the variable user message (:func:`triage_user_message`). The rubric
+    asks for exactly one ``TRIAGE_CATEGORIES`` value with a confidence and a brief
     reasoning, as strict JSON. ``security`` is framed as a *candidate*
     (independently verified and human-reviewed downstream), never a verdict, so
     the model neither under- nor over-claims it.
+
+    Note: this is the SAME rubric text the prior single flat prompt led with --
+    relocated verbatim into the system prompt -- so verdict meaning, and the
+    ``(model, prompt_version)`` ledger identity, are unchanged.
     """
     categories = ', '.join(TRIAGE_CATEGORIES)
     return (
@@ -180,11 +235,16 @@ def build_prompt(diff_body: str, *, prompt_version: int = PROMPT_VERSION) -> str
         'Respond with STRICT JSON and nothing else, in exactly this shape:\n'
         '{"category": "...", "confidence": "high|medium|low", "reasoning": "..."}\n'
         'Keep "reasoning" to one or two sentences, grounded in the diff.\n'
-        '\n'
-        'Diff body:\n'
-        '\n'
-        f'{diff_body}\n'
     )
+
+
+def triage_user_message(diff_body: str) -> str:
+    """The variable per-patch user message: just the diff body, framed.
+
+    This is the only part that changes between patches, so it carries no cache
+    breakpoint -- the rubric prefix (:func:`triage_system_prompt`) does.
+    """
+    return 'Diff body:\n\n%s\n' % diff_body
 
 
 # ---------------------------------------------------------------------------
@@ -245,25 +305,27 @@ def triage(patch_text: str, *, call, model: str = DEFAULT_MODEL,
            prompt_version: int = PROMPT_VERSION) -> LlmVerdict:
     """Triage one patch with a claim-blind LLM read.
 
-    Extracts the claim-blind ``diff_body``, builds the prompt, invokes
-    ``call(prompt, model=model) -> str`` (the injectable backend boundary),
-    parses the JSON answer, and returns an ``LlmVerdict`` carrying the full raw
-    response as evidence.
+    Extracts the claim-blind ``diff_body``, builds the cacheable rubric system
+    prompt and the per-patch diff user message, invokes
+    ``call(system, user, *, model) -> CallResult`` (the injectable backend
+    boundary), parses the JSON answer, and returns an ``LlmVerdict`` carrying the
+    full raw response as evidence and the call's token ``usage``.
 
     ``call`` is required (no default) so the function is pure given an injected
     fake -- the test suite never touches the network. For the real backend,
-    build a ``call`` from ``anthropic_call`` (an optional extra).
+    build a ``call`` from ``claude_cli_call`` or ``anthropic_call``.
 
     A category outside ``TRIAGE_CATEGORIES`` is coerced to ``unknown`` and noted
     in the reasoning; an LLM must not be able to invent a category the rest of
     the system does not understand.
     """
     body = diff_body(patch_text)
-    prompt = build_prompt(body, prompt_version=prompt_version)
+    system = triage_system_prompt(prompt_version=prompt_version)
+    user = triage_user_message(body)
 
-    raw_response = call(prompt, model=model)
+    result = call(system, user, model=model)
 
-    category, confidence, reasoning = _parse_response(raw_response)
+    category, confidence, reasoning = _parse_response(result.text)
 
     if category not in TRIAGE_CATEGORIES:
         reasoning = (
@@ -277,7 +339,8 @@ def triage(patch_text: str, *, call, model: str = DEFAULT_MODEL,
         reasoning=reasoning,
         model=model,
         prompt_version=prompt_version,
-        raw_response=raw_response,
+        raw_response=result.text,
+        usage=result.usage,
     )
 
 
@@ -325,17 +388,20 @@ class Verification:
     """The full verifier text, stored verbatim as auditable evidence -- the
     verification is non-deterministic and must be inspectable after the fact."""
 
+    usage: Usage = Usage()
+    """Token usage for the verify call -- operational telemetry, not evidence."""
 
-def build_verify_prompt(diff_body: str, proposed_category: str, *,
-                        prompt_version: int = VERIFY_PROMPT_VERSION) -> str:
-    """Build the independent, claim-blind ADVERSARIAL verification prompt.
 
-    Deterministic given ``(diff_body, proposed_category, prompt_version)``. The
-    prompt states the *proposed* category and asks the model to CONFIRM or
-    REFUTE it from the diff alone. It is given ONLY the diff body and the
-    proposed category -- NEVER the author's claim -- so this is a genuinely
-    independent second read, not a rubber stamp of the same evidence the draft
-    already had plus the author's framing.
+def verify_system_prompt(*, prompt_version: int = VERIFY_PROMPT_VERSION) -> str:
+    """The static adversarial verification rubric -- the CACHEABLE system prompt.
+
+    Constant for a fixed ``prompt_version``: it states the adversarial discipline
+    and the output schema, but NOT the specific proposed category or diff (those
+    vary per patch and live in :func:`verify_user_message`), so it caches as a
+    stable prefix. It is given ONLY the diff body and the proposed category --
+    NEVER the author's claim -- so this is a genuinely independent second read,
+    not a rubber stamp of the same evidence the draft already had plus the
+    author's framing.
 
     The discipline is adversarial: the model is told to default to REFUTE when
     unsure, and that confirming a wrong category is worse than refuting a right
@@ -348,16 +414,13 @@ def build_verify_prompt(diff_body: str, proposed_category: str, *,
         f'You are an adversarial reviewer checking a proposed classification of '
         f'a single Debian patch. (verify prompt version {prompt_version})\n'
         '\n'
-        'Another classifier proposed that the diff below belongs to the '
-        f'category: {proposed_category}.\n'
-        '\n'
+        'You will be given a diff body and a single PROPOSED category for it. '
         'You are given ONLY the diff body and that proposed category. You are '
         "NOT given the patch author's description, and you must not assume one: "
         'judge the proposal purely from the code the diff adds and removes.\n'
         '\n'
         'Your job is to try to BREAK the proposal. Decide whether the diff '
-        f'genuinely supports the category {proposed_category} (chosen from: '
-        f'{categories}).\n'
+        f'genuinely supports the proposed category (chosen from: {categories}).\n'
         '\n'
         'Be adversarial and skeptical:\n'
         '  - DEFAULT TO REFUTE when you are unsure. Do not give the proposal '
@@ -367,16 +430,21 @@ def build_verify_prompt(diff_body: str, proposed_category: str, *,
         'refusal merely sends a correct call to a human who can still accept '
         'it.\n'
         '  - Only set "agrees" to true if the diff clearly and specifically '
-        f'supports {proposed_category}.\n'
+        'supports the proposed category.\n'
         '\n'
         'Respond with STRICT JSON and nothing else, in exactly this shape:\n'
         '{"agrees": true|false, "confidence": "high|medium|low", "reasoning": "..."}\n'
         'Keep "reasoning" to one or two sentences, grounded in the diff.\n'
-        '\n'
-        'Diff body:\n'
-        '\n'
-        f'{diff_body}\n'
     )
+
+
+def verify_user_message(diff_body: str, proposed_category: str) -> str:
+    """The variable per-patch verify user message: the proposed category + diff.
+
+    The proposed category varies per patch, so it rides here (not in the cached
+    system prefix). States it plainly, then the diff to judge it against.
+    """
+    return 'Proposed category: %s\n\nDiff body:\n\n%s\n' % (proposed_category, diff_body)
 
 
 def _parse_verification(text: str) -> tuple[bool, str, str]:
@@ -413,11 +481,13 @@ def verify(patch_text: str, proposed_category: str, *, call,
            prompt_version: int = VERIFY_PROMPT_VERSION) -> Verification:
     """Independently, adversarially verify a proposed category for one patch.
 
-    Extracts the claim-blind ``diff_body``, builds the adversarial verify prompt
-    (which sees only the diff and the proposed category, never the claim),
-    invokes ``call(prompt, model=model) -> str`` (the same injectable backend
-    boundary ``triage`` uses), parses the JSON robustly, and returns a
-    ``Verification`` carrying the full raw response as evidence.
+    Extracts the claim-blind ``diff_body``, builds the cacheable adversarial
+    rubric system prompt and the per-patch (proposed category + diff) user
+    message -- seeing only the diff and the proposed category, never the claim --
+    invokes ``call(system, user, *, model) -> CallResult`` (the same injectable
+    backend boundary ``triage`` uses), parses the JSON robustly, and returns a
+    ``Verification`` carrying the full raw response as evidence and the call's
+    token ``usage``.
 
     ``call`` is required (no default) so the function is pure given an injected
     fake -- the test suite never touches the network. A missing or garbled
@@ -425,11 +495,12 @@ def verify(patch_text: str, proposed_category: str, *, call,
     safe default, never a silent confirmation.
     """
     body = diff_body(patch_text)
-    prompt = build_verify_prompt(body, proposed_category, prompt_version=prompt_version)
+    system = verify_system_prompt(prompt_version=prompt_version)
+    user = verify_user_message(body, proposed_category)
 
-    raw_response = call(prompt, model=model)
+    result = call(system, user, model=model)
 
-    agrees, confidence, reasoning = _parse_verification(raw_response)
+    agrees, confidence, reasoning = _parse_verification(result.text)
 
     return Verification(
         agrees=agrees,
@@ -437,7 +508,8 @@ def verify(patch_text: str, proposed_category: str, *, call,
         reasoning=reasoning,
         model=model,
         prompt_version=prompt_version,
-        raw_response=raw_response,
+        raw_response=result.text,
+        usage=result.usage,
     )
 
 
@@ -469,6 +541,10 @@ class TriageResult:
     """The deciding reason(s). For ``'needs_human'`` this lists every condition
     that fired (verifier disagreed, low confidence, claim mismatch, dangerous
     construct); for ``'verified'`` it states the draft passed."""
+
+    usage: Usage = Usage()
+    """Total token usage for this patch -- the draft call plus the verify call --
+    summed for the driver's per-run cost/cache telemetry."""
 
 
 def triage_and_verify(patch_text: str, *, call, claim_category: str | None = None,
@@ -516,14 +592,17 @@ def triage_and_verify(patch_text: str, *, call, claim_category: str | None = Non
     if has_dangerous_construct:
         reasons.append('a dangerous-construct observation is present')
 
+    usage = draft.usage + verification.usage
+
     if reasons:
         return TriageResult(
             draft=draft, verification=verification,
-            routing='needs_human', reason='; '.join(reasons))
+            routing='needs_human', reason='; '.join(reasons), usage=usage)
 
     return TriageResult(
         draft=draft, verification=verification, routing='verified',
-        reason='verifier confirmed the drafted category at sufficient confidence')
+        reason='verifier confirmed the drafted category at sufficient confidence',
+        usage=usage)
 
 
 # ---------------------------------------------------------------------------
@@ -533,23 +612,36 @@ def triage_and_verify(patch_text: str, *, call, claim_category: str | None = Non
 # optional separately-billed API alternative.
 # ---------------------------------------------------------------------------
 
-def claude_cli_call(prompt: str, *, model: str = DEFAULT_MODEL, timeout: float = 180) -> str:
+def claude_cli_call(system: str, user: str, *, model: str = DEFAULT_MODEL,
+                    timeout: float = 180) -> CallResult:
     """Triage backend that shells out to the local ``claude`` CLI (print mode).
 
     The DEFAULT backend: it runs the prompt through ``claude -p`` so triage is
     billed against the operator's Claude subscription rather than separately-
     billed API calls, and it needs NO Python dependency -- only the ``claude``
-    CLI on ``PATH``. The prompt is fed on stdin (diffs are large and multi-line,
-    so an argv-safe path matters); ``--model`` selects the model and
-    ``--output-format text`` keeps stdout to the model's answer, from which
-    ``triage`` extracts the JSON. A missing ``claude`` or a non-zero exit raises
-    a clear, actionable error. The base install never needs this -- only an
-    operator running a curation-side triage pass does.
+    CLI on ``PATH``. The rubric ``system`` is passed via ``--system-prompt``
+    (replacing Claude Code's default system prompt) and the variable ``user`` diff
+    is fed on stdin (diffs are large and multi-line). ``--output-format json``
+    returns the answer text alongside a token-usage block and a reported cost,
+    which become the call's :class:`Usage`.
+
+    Three flags strip everything Claude Code would otherwise inject into the
+    context of a one-shot classification that uses none of it:
+    ``--tools ""`` (the built-in tool definitions, ~17k tokens/call),
+    ``--strict-mcp-config`` (any local MCP servers), and ``--setting-sources ""``
+    (project/global ``CLAUDE.md`` and settings, ~2.8k tokens/call). With all three
+    a request is just the rubric + diff as plain input (~600 tokens + diff), down
+    from ~66k by default -- API-level token efficiency on the subscription path,
+    measured an order of magnitude cheaper per call. A missing ``claude`` or a
+    non-zero exit raises a clear, actionable error. Only a curation-side triage
+    pass uses this.
     """
-    cmd = ['claude', '-p', '--model', model, '--output-format', 'text']
+    cmd = ['claude', '-p', '--model', model, '--system-prompt', system,
+           '--tools', '', '--strict-mcp-config', '--setting-sources', '',
+           '--output-format', 'json']
     try:
         result = subprocess.run(
-            cmd, input=prompt, capture_output=True, text=True, timeout=timeout)
+            cmd, input=user, capture_output=True, text=True, timeout=timeout)
     except FileNotFoundError as exc:
         raise RuntimeError(
             'the "claude" CLI was not found on PATH; install Claude Code to use '
@@ -561,27 +653,58 @@ def claude_cli_call(prompt: str, *, model: str = DEFAULT_MODEL, timeout: float =
         detail = result.stderr.strip() or result.stdout.strip() or '(no output on stdout or stderr)'
         raise RuntimeError(
             'claude -p failed (exit %d).\n  command: %s\n  output: %s'
-            % (result.returncode, ' '.join(cmd), detail[:4000]))
+            % (result.returncode, ' '.join(cmd[:5]), detail[:4000]))
     if not result.stdout.strip():
-        # A zero exit with no output is also a failure for us (nothing to parse);
-        # surface stderr in case claude logged a warning there.
         raise RuntimeError(
             'claude -p returned an empty response (exit 0).\n  command: %s\n  stderr: %s'
-            % (' '.join(cmd), result.stderr.strip() or '(empty)'))
-    return result.stdout
+            % (' '.join(cmd[:5]), result.stderr.strip() or '(empty)'))
+    return _parse_claude_cli_json(result.stdout)
 
 
-def anthropic_call(prompt: str, *, model: str) -> str:
-    """Call the Anthropic API with ``prompt`` and return the model's text.
+def _parse_claude_cli_json(stdout: str) -> CallResult:
+    """Parse a ``claude -p --output-format json`` result into a :class:`CallResult`.
 
-    The default real backend for ``triage``'s injectable ``call``. The
+    The result object carries the answer in ``result`` and a ``usage`` block with
+    the token counts (including the ``cache_creation``/``cache_read`` split) plus a
+    ``total_cost_usd``.  A non-JSON or schema-surprising payload raises a clear
+    error rather than silently triaging on garbage.
+    """
+    try:
+        data = json.loads(stdout)
+    except ValueError as exc:
+        raise RuntimeError(
+            'claude -p did not return parseable JSON (expected --output-format '
+            'json):\n  %s' % stdout[:2000]) from exc
+
+    text = data.get('result')
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError(
+            'claude -p JSON had no usable "result" text:\n  %s' % stdout[:2000])
+
+    usage_block = data.get('usage') or {}
+    usage = Usage(
+        input_tokens=int(usage_block.get('input_tokens', 0) or 0),
+        output_tokens=int(usage_block.get('output_tokens', 0) or 0),
+        cache_creation_tokens=int(usage_block.get('cache_creation_input_tokens', 0) or 0),
+        cache_read_tokens=int(usage_block.get('cache_read_input_tokens', 0) or 0),
+        cost_usd=data.get('total_cost_usd'))
+    return CallResult(text=text, usage=usage)
+
+
+def anthropic_call(system: str, user: str, *, model: str) -> CallResult:
+    """Call the Anthropic API with the cached rubric ``system`` + ``user`` diff.
+
+    The metered (API-key) backend for ``triage``'s injectable ``call``. The
     ``anthropic`` SDK is imported *lazily* inside this function -- exactly as
     ``verify.py`` imports ``sigstore`` -- so the base install never loads it and
     the dependency stays an opt-in curation-side extra. If the SDK is absent a
     clear, actionable error names the ``triage`` extra.
 
-    Reads the API key from ``ANTHROPIC_API_KEY`` in the environment. Issues a
-    single ``messages.create`` and returns the concatenated text blocks. This is
+    Reads the API key from ``ANTHROPIC_API_KEY``. The ``system`` rubric is sent as
+    a cached content block (a 1-hour ephemeral ``cache_control`` breakpoint), so it
+    is written to cache once and read back cheaply for every patch in a run; the
+    ``user`` diff varies and is not cached. Returns the model text and the
+    response's token ``usage`` (including the cache-read/creation split). This is
     the only function in the module that performs network I/O.
     """
     try:
@@ -595,9 +718,18 @@ def anthropic_call(prompt: str, *, model: str) -> str:
     response = client.messages.create(
         model=model,
         max_tokens=1024,
-        messages=[{'role': 'user', 'content': prompt}],
+        system=[{'type': 'text', 'text': system,
+                 'cache_control': {'type': 'ephemeral', 'ttl': '1h'}}],
+        messages=[{'role': 'user', 'content': user}],
     )
-    return ''.join(block.text for block in response.content if block.type == 'text')
+    text = ''.join(block.text for block in response.content if block.type == 'text')
+    raw = response.usage
+    usage = Usage(
+        input_tokens=getattr(raw, 'input_tokens', 0) or 0,
+        output_tokens=getattr(raw, 'output_tokens', 0) or 0,
+        cache_creation_tokens=getattr(raw, 'cache_creation_input_tokens', 0) or 0,
+        cache_read_tokens=getattr(raw, 'cache_read_input_tokens', 0) or 0)
+    return CallResult(text=text, usage=usage)
 
 
 # ---------------------------------------------------------------------------

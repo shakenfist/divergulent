@@ -17,8 +17,9 @@ import subprocess
 from unittest import mock
 
 from divergulent.classify.triage import (
-    DEFAULT_MODEL, LlmVerdict, PROMPT_VERSION, TRIAGE_CATEGORIES,
-    anthropic_call, build_prompt, claude_cli_call, diff_body, triage)
+    DEFAULT_MODEL, CallResult, LlmVerdict, PROMPT_VERSION, TRIAGE_CATEGORIES, Usage,
+    anthropic_call, claude_cli_call, diff_body, triage, triage_system_prompt,
+    triage_user_message)
 
 
 # ---------------------------------------------------------------------------
@@ -54,12 +55,12 @@ def _patch_with_subject(subject=_SUBJECT, diff=_DIFF):
     return f'Subject: {subject}\nForwarded: yes\n\n' + diff
 
 
-def _fake_call(response, *, recorder=None):
-    """A fake ``call`` returning a canned ``response``; records (prompt, model)."""
-    def call(prompt, *, model):
+def _fake_call(response, *, recorder=None, usage=None):
+    """A fake ``call`` returning a canned ``response``; records (system, user, model)."""
+    def call(system, user, *, model):
         if recorder is not None:
-            recorder.append((prompt, model))
-        return response
+            recorder.append((system, user, model))
+        return CallResult(text=response, usage=usage or Usage())
     return call
 
 
@@ -95,37 +96,48 @@ class DiffBodyTestCase(testtools.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# build_prompt -- claim-blindness and determinism
+# Prompt split -- cacheable system rubric + variable user diff
 # ---------------------------------------------------------------------------
 
-class BuildPromptTestCase(testtools.TestCase):
+class TriagePromptTestCase(testtools.TestCase):
 
-    def test_prompt_is_blind_to_the_description(self):
-        # The loudest guarantee: a patch WITH a description must produce a
-        # prompt that contains the diff but NOT the author's claim.
+    def test_user_message_is_blind_to_the_description(self):
+        # The loudest guarantee: a patch WITH a description must produce a user
+        # message that contains the diff but NOT the author's claim.
         body = diff_body(_patch_with_description())
-        prompt = build_prompt(body)
-        self.assertNotIn(_DESCRIPTION, prompt)
-        self.assertNotIn('CVE-2024-9999', prompt)
-        self.assertIn('+    char buf[64];', prompt)
+        user = triage_user_message(body)
+        self.assertNotIn(_DESCRIPTION, user)
+        self.assertNotIn('CVE-2024-9999', user)
+        self.assertIn('+    char buf[64];', user)
 
-    def test_prompt_is_blind_to_the_subject(self):
+    def test_user_message_is_blind_to_the_subject(self):
         body = diff_body(_patch_with_subject())
-        prompt = build_prompt(body)
-        self.assertNotIn(_SUBJECT, prompt)
-        self.assertNotIn('turbo-encabulator', prompt)
+        user = triage_user_message(body)
+        self.assertNotIn(_SUBJECT, user)
+        self.assertNotIn('turbo-encabulator', user)
 
-    def test_prompt_lists_every_category(self):
-        prompt = build_prompt(diff_body(_patch_with_description()))
+    def test_system_prompt_holds_the_rubric_and_no_diff(self):
+        # The cacheable prefix lists every category and carries NO per-patch diff,
+        # so it is constant across patches (the cache key).
+        system = triage_system_prompt()
         for category in TRIAGE_CATEGORIES:
-            self.assertIn(category, prompt)
+            self.assertIn(category, system)
+        self.assertNotIn('char buf[64]', system)
 
-    def test_prompt_is_deterministic(self):
-        body = diff_body(_patch_with_description())
-        self.assertEqual(build_prompt(body), build_prompt(body))
+    def test_system_prompt_is_constant_across_patches_and_versioned(self):
+        # Constant for a fixed version (no diff in it) -> a stable cache prefix.
+        self.assertEqual(triage_system_prompt(), triage_system_prompt())
         self.assertNotEqual(
-            build_prompt(body, prompt_version=1),
-            build_prompt(body, prompt_version=2))
+            triage_system_prompt(prompt_version=1),
+            triage_system_prompt(prompt_version=2))
+
+    def test_relocation_preserves_the_flat_prompt_content(self):
+        # The rubric content is moved verbatim: system + the original separator +
+        # the user message reproduce the prior single flat prompt byte-for-byte.
+        body = diff_body(_patch_with_description())
+        flat = triage_system_prompt() + '\n' + triage_user_message(body)
+        self.assertIn('grounded in the diff.\n\nDiff body:\n\n', flat)
+        self.assertTrue(flat.rstrip().endswith('}'))  # ends with the diff's last line
 
 
 # ---------------------------------------------------------------------------
@@ -214,18 +226,23 @@ class TriageVerdictTestCase(testtools.TestCase):
         call = _fake_call(_json_response(), recorder=recorder)
         triage(_patch_with_description(), call=call, model='claude-opus-4-8')
         self.assertEqual(1, len(recorder))
-        _prompt, model = recorder[0]
+        _system, _user, model = recorder[0]
         self.assertEqual('claude-opus-4-8', model)
 
     def test_call_receives_claim_blind_prompt(self):
-        # End-to-end: the prompt the boundary actually sends must not contain
-        # the author's description.
+        # End-to-end: nothing the boundary actually sends (system or user) may
+        # contain the author's description; the diff rides in the user message.
         recorder = []
         call = _fake_call(_json_response(), recorder=recorder)
         triage(_patch_with_description(), call=call)
-        prompt, _model = recorder[0]
-        self.assertNotIn(_DESCRIPTION, prompt)
-        self.assertIn('char buf[64]', prompt)
+        system, user, _model = recorder[0]
+        self.assertNotIn(_DESCRIPTION, system + user)
+        self.assertIn('char buf[64]', user)
+
+    def test_verdict_carries_the_call_usage(self):
+        usage = Usage(input_tokens=120, output_tokens=18, cache_read_tokens=900)
+        verdict = triage(_patch_with_description(), call=_fake_call(_json_response(), usage=usage))
+        self.assertEqual(usage, verdict.usage)
 
 
 # ---------------------------------------------------------------------------
@@ -243,32 +260,102 @@ class AnthropicCallTestCase(testtools.TestCase):
             self.skipTest('anthropic SDK is installed; absent-extra path not exercised')
 
         exc = self.assertRaises(
-            RuntimeError, anthropic_call, 'prompt', model=DEFAULT_MODEL)
+            RuntimeError, anthropic_call, 'system', 'user', model=DEFAULT_MODEL)
         self.assertIn('divergulent[triage]', str(exc))
+
+    def test_caches_the_system_rubric_and_parses_usage(self):
+        try:
+            importlib.import_module('anthropic')
+        except ImportError:
+            self.skipTest('anthropic SDK not installed; the metered path is unavailable')
+
+        fake_usage = mock.Mock(
+            input_tokens=12, output_tokens=8,
+            cache_creation_input_tokens=500, cache_read_input_tokens=4000)
+        fake_response = mock.Mock(
+            content=[mock.Mock(type='text', text='{"category": "bugfix"}')], usage=fake_usage)
+        fake_client = mock.Mock()
+        fake_client.messages.create.return_value = fake_response
+
+        with mock.patch('anthropic.Anthropic', return_value=fake_client):
+            out = anthropic_call('RUBRIC', 'DIFF', model='claude-sonnet-4-6')
+
+        self.assertEqual('{"category": "bugfix"}', out.text)
+        self.assertEqual(4000, out.usage.cache_read_tokens)
+        self.assertEqual(500, out.usage.cache_creation_tokens)
+        # The rubric went to a CACHED system block; the diff to the user message.
+        _args, kwargs = fake_client.messages.create.call_args
+        self.assertEqual('RUBRIC', kwargs['system'][0]['text'])
+        self.assertEqual('ephemeral', kwargs['system'][0]['cache_control']['type'])
+        self.assertEqual('DIFF', kwargs['messages'][0]['content'])
 
 
 # ---------------------------------------------------------------------------
 # claude_cli_call -- the default subprocess backend (mocked; never spawns claude)
 # ---------------------------------------------------------------------------
 
+def _claude_json(result_text, **usage):
+    """The `claude -p --output-format json` stdout shape, with a usage block."""
+    return json.dumps({
+        'type': 'result', 'subtype': 'success', 'is_error': False,
+        'result': result_text,
+        'total_cost_usd': usage.pop('total_cost_usd', 0.0123),
+        'usage': {
+            'input_tokens': usage.get('input_tokens', 11),
+            'output_tokens': usage.get('output_tokens', 22),
+            'cache_creation_input_tokens': usage.get('cache_creation_input_tokens', 0),
+            'cache_read_input_tokens': usage.get('cache_read_input_tokens', 0),
+        },
+    })
+
+
 class ClaudeCliCallTestCase(testtools.TestCase):
 
-    def test_invokes_claude_print_mode_with_prompt_on_stdin(self):
+    def test_sends_rubric_as_system_prompt_and_diff_on_stdin(self):
         completed = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout='{"category": "bugfix"}', stderr='')
+            args=[], returncode=0, stdout=_claude_json('{"category": "bugfix"}'), stderr='')
         with mock.patch('divergulent.classify.triage.subprocess.run',
                         return_value=completed) as run:
-            out = claude_cli_call('PROMPT-TEXT', model='claude-sonnet-4-6')
-        self.assertEqual('{"category": "bugfix"}', out)
+            out = claude_cli_call('RUBRIC', 'DIFF-TEXT', model='claude-sonnet-4-6')
+        self.assertEqual('{"category": "bugfix"}', out.text)
         args, kwargs = run.call_args
+        # Tools, MCP, and settings/CLAUDE.md are all stripped: a one-shot
+        # classification uses none of them, and they are ~20k tokens/call of
+        # injected context we would otherwise pay for.
         self.assertEqual(['claude', '-p', '--model', 'claude-sonnet-4-6',
-                          '--output-format', 'text'], args[0])
-        self.assertEqual('PROMPT-TEXT', kwargs['input'])
+                          '--system-prompt', 'RUBRIC', '--tools', '',
+                          '--strict-mcp-config', '--setting-sources', '',
+                          '--output-format', 'json'], args[0])
+        self.assertEqual('DIFF-TEXT', kwargs['input'])  # the diff, not the rubric
+
+    def test_parses_usage_and_cost_from_the_json(self):
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout=_claude_json('{"category": "bugfix"}', input_tokens=9,
+                                output_tokens=52, cache_read_input_tokens=17283,
+                                cache_creation_input_tokens=9384, total_cost_usd=0.0207),
+            stderr='')
+        with mock.patch('divergulent.classify.triage.subprocess.run', return_value=completed):
+            out = claude_cli_call('RUBRIC', 'DIFF', model=DEFAULT_MODEL)
+        self.assertEqual(9, out.usage.input_tokens)
+        self.assertEqual(52, out.usage.output_tokens)
+        self.assertEqual(17283, out.usage.cache_read_tokens)
+        self.assertEqual(9384, out.usage.cache_creation_tokens)
+        self.assertEqual(0.0207, out.usage.cost_usd)
+
+    def test_non_json_stdout_on_zero_exit_raises(self):
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout='not json at all', stderr='')
+        with mock.patch('divergulent.classify.triage.subprocess.run', return_value=completed):
+            exc = self.assertRaises(
+                RuntimeError, claude_cli_call, 'RUBRIC', 'DIFF', model=DEFAULT_MODEL)
+        self.assertIn('parseable JSON', str(exc))
 
     def test_missing_claude_cli_raises_clear_error(self):
         with mock.patch('divergulent.classify.triage.subprocess.run',
                         side_effect=FileNotFoundError):
-            exc = self.assertRaises(RuntimeError, claude_cli_call, 'p', model=DEFAULT_MODEL)
+            exc = self.assertRaises(
+                RuntimeError, claude_cli_call, 'sys', 'p', model=DEFAULT_MODEL)
         self.assertIn('claude', str(exc))
 
     def test_nonzero_exit_raises_with_stderr(self):
@@ -276,12 +363,14 @@ class ClaudeCliCallTestCase(testtools.TestCase):
             args=[], returncode=1, stdout='', stderr='boom')
         with mock.patch('divergulent.classify.triage.subprocess.run',
                         return_value=completed):
-            exc = self.assertRaises(RuntimeError, claude_cli_call, 'p', model=DEFAULT_MODEL)
+            exc = self.assertRaises(
+                RuntimeError, claude_cli_call, 'sys', 'p', model=DEFAULT_MODEL)
         self.assertIn('boom', str(exc))
 
     def test_triage_through_the_claude_backend(self):
         completed = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=_json_response(category='feature'), stderr='')
+            args=[], returncode=0, stdout=_claude_json(_json_response(category='feature')),
+            stderr='')
         with mock.patch('divergulent.classify.triage.subprocess.run', return_value=completed):
             verdict = triage(_patch_with_description(), call=claude_cli_call)
         self.assertEqual('feature', verdict.category)
@@ -295,7 +384,8 @@ class ClaudeCliErrorDetailTestCase(testtools.TestCase):
         completed = subprocess.CompletedProcess(
             args=[], returncode=1, stdout='Usage limit reached. Try again later.', stderr='')
         with mock.patch('divergulent.classify.triage.subprocess.run', return_value=completed):
-            exc = self.assertRaises(RuntimeError, claude_cli_call, 'p', model=DEFAULT_MODEL)
+            exc = self.assertRaises(
+                RuntimeError, claude_cli_call, 'sys', 'p', model=DEFAULT_MODEL)
         self.assertIn('Usage limit reached', str(exc))
         self.assertIn('claude -p', str(exc))
 
@@ -303,5 +393,6 @@ class ClaudeCliErrorDetailTestCase(testtools.TestCase):
         completed = subprocess.CompletedProcess(
             args=[], returncode=0, stdout='   \n', stderr='')
         with mock.patch('divergulent.classify.triage.subprocess.run', return_value=completed):
-            exc = self.assertRaises(RuntimeError, claude_cli_call, 'p', model=DEFAULT_MODEL)
+            exc = self.assertRaises(
+                RuntimeError, claude_cli_call, 'sys', 'p', model=DEFAULT_MODEL)
         self.assertIn('empty response', str(exc))

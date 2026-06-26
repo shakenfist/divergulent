@@ -102,6 +102,16 @@ class UsableBundleTestCase(testtools.TestCase):
 
 class ResolveSourcesTestCase(testtools.TestCase):
 
+    def setUp(self):
+        super().setUp()
+        # Isolate the cache dir so a real stored bundle on the operator's machine
+        # is never auto-discovered when --bundle is absent (-> default_cache_dir).
+        cache_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, cache_dir, ignore_errors=True)
+        patcher = mock.patch.dict(os.environ, {'DIVERGULENT_CACHE_DIR': cache_dir})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_no_bundle_yields_live_sources(self):
         args = mock.Mock(bundle=None)
         staleness, divergence = cli._resolve_sources(args)

@@ -204,7 +204,26 @@ distribution exactly with a 42,907-fingerprint derived queue. See
 
 Phase 4 fills the reserved llm/human seats. `triage.py` does the claim-blind LLM
 draft + an independent adversarial verification, routing each patch to
-`verified` or `needs_human`. Step 4c bumped the ledger to **schema v2**: a
+`verified` or `needs_human`. The model-call boundary is
+`call(system, user, *, model, schema=None) -> CallResult(text, usage)`: the
+**static rubric is the cacheable `system` prompt** and the per-patch diff is the
+`user` message, so the rubric is billed once per run and read from cache
+thereafter (the rubric is relocated verbatim, so verdicts and the
+`(model, prompt_version)` identity are unchanged). The default `claude_cli_call`
+backend runs `claude -p --system-prompt <rubric> --tools "" --strict-mcp-config
+--setting-sources "" --output-format json` (no new dependency,
+subscription-billed) and parses the token-usage block + `total_cost_usd`. **Those
+three flags are the cost lever**: a one-shot classification uses none of what
+Claude Code injects by default — `--tools ""` drops the built-in tool definitions
+(~17k tokens/call), `--strict-mcp-config` ignores local MCP servers, and
+`--setting-sources ""` drops project/global `CLAUDE.md` + settings (~2.8k
+tokens/call). Together they shrink each request from ~66k to **~640 tokens**
+(rubric + diff as plain input, no wasteful cache writes) — API-level efficiency
+on the subscription path, ~100× less input. `anthropic_call` sends the rubric as
+a 1h-cached `cache_control` block. The driver sums each call's usage into a **Cost
+& cache** report section (tokens, cache-hit ratio, reported + at-rates cost per
+run and per patch). See
+`docs/plans/PLAN-patch-classification-phase-04-triage-backend.md`. Step 4c bumped the ledger to **schema v2**: a
 `verified` flag on `decision`, reserved `signature`/`signed_by` columns for
 signed human ManualDecisions (4e), and a `review_queue` worklist table. The
 precedence is now `human > verified-llm > heuristic > unverified-llm`
@@ -217,7 +236,24 @@ version), `verified` set from the routing, the draft+verification kept as JSON
 evidence, and a pending `review_queue` item for every `needs_human` result.
 `python -m divergulent.classify.triage` (in `triage_driver.py`) triages a
 bounded, prioritised slice (never the whole queue by accident) and surfaces
-candidate deterministic rules for human approval; `python -m
+candidate deterministic rules for human approval. `python -m
+divergulent.classify.risk` (in `risk.py`) is a **security-risk gate**: a cheap,
+claim-blind LLM scores **every** carried patch's security risk on a coarse ordinal
+(`none/low/elevated/high`) — the whole corpus, not just the residue, since a
+settled `packaging` patch (a `debian/rules` hardening change) can still be
+security-relevant — recorded as a supersedable `security-risk`
+**observation** (`observed_by='risk-gate:<model>'` / `rule_version=`, the same
+`(model, prompt_version)` provenance as triage). It is **advisory** — it feeds
+priority (risk is the top component of the work-list and `review_queue.priority`,
+so the scariest patches are triaged/reviewed first) but never the verdict, so it
+needs no verify. A **security-safe cull** scores provably-benign patches (empty/
+whitespace/comment-only, doc-only, translation/changelog) `none` with no LLM call
+— narrower than the packaging category (a `debian/rules` hardening-flag change is
+NOT culled). Default model Opus (bake-off: 100% recall / 0% false-alarm at
+≥elevated vs Sonnet 73%/3%); the cull fires ~7% of the full corpus (mostly
+doc-only), so ~93% of ~60k fingerprints get an LLM call — ~$340 Opus / ~$170
+Sonnet at-rates/quota, one-time. See
+`docs/plans/PLAN-patch-classification-phase-04-risk-gate.md`. `python -m
 divergulent.classify.review` (in `review.py`) is the local, interactive,
 Sigstore-signed human tier. It has three subcommands: `review <ledger>
 <corpus_dir>` drains the queue (showing each diff in its sources.debian.org
@@ -233,6 +269,19 @@ The LLM backends (default `claude -p`, optional Anthropic API) and the signing
 are curation-side and injected, so the whole suite is offline; the actual
 triage/review pass is the operator's budgeted step. See
 `docs/plans/PLAN-patch-classification-phase-04-llm-triage.md`.
+
+`divergulent-classify` (in `cli.py`, also `python -m divergulent.classify`) is the
+**one front** for all of the above: it resolves a **data root** (`workspace.py`:
+a `.divergulent` marker beside `corpus/`+`cache/`, discovered git-style via
+`--data`/`DIVERGULENT_DATA`/walk-up) and **forwards** to each command's existing
+module main with the ledger/corpus paths spliced in — so verbs (`status`,
+`triage`, `risk`, `review`, `web`, `report`, `requeue`, `history`, `init`) take no
+paths. It guards the forgetful operator: a missing ledger or a not-a-root cwd is a
+clear error not a crash, and a **stale published cache** is loudly flagged before
+data-consuming verbs. `status` is the one-screen orientation (residue, categories,
+risk distribution, pending review, cache age). The old `python -m
+divergulent.classify.<x>` forms still work. See
+`docs/plans/PLAN-curation-cli-ergonomics.md`.
 
 `python -m divergulent.classify.review_web` (in `review_web.py`) is a **local
 web UI over the same review machinery** — it reuses `build_review_context` and
