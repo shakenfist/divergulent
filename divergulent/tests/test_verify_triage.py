@@ -17,8 +17,9 @@ import json
 import testtools
 
 from divergulent.classify.triage import (
-    DEFAULT_MODEL, TriageResult, VERIFY_PROMPT_VERSION, Verification,
-    build_verify_prompt, diff_body, triage_and_verify, verify)
+    CallResult, DEFAULT_MODEL, TriageResult, Usage, VERIFY_PROMPT_VERSION,
+    Verification, diff_body, triage_and_verify, verify, verify_system_prompt,
+    verify_user_message)
 
 
 # ---------------------------------------------------------------------------
@@ -65,55 +66,54 @@ _VERIFY_MARKER = 'adversarial reviewer'
 def _routing_call(*, triage_response, verify_response, recorder=None):
     """A fake ``call`` that returns different JSON for the triage vs verify prompt.
 
-    Routes on the verify-prompt marker substring so one injected ``call`` serves
-    both passes of ``triage_and_verify``. Records (prompt, model) when asked.
+    Routes on the verify-prompt marker substring (in the SYSTEM rubric) so one
+    injected ``call`` serves both passes of ``triage_and_verify``. Records
+    (system, user, model) when asked.
     """
-    def call(prompt, *, model):
+    def call(system, user, *, model):
         if recorder is not None:
-            recorder.append((prompt, model))
-        if _VERIFY_MARKER in prompt:
-            return verify_response
-        return triage_response
+            recorder.append((system, user, model))
+        if _VERIFY_MARKER in system:
+            return CallResult(text=verify_response)
+        return CallResult(text=triage_response)
     return call
 
 
 # ---------------------------------------------------------------------------
-# build_verify_prompt -- claim-blind, states the proposed category, deterministic
+# Verify prompt split -- cacheable adversarial rubric + variable category/diff
 # ---------------------------------------------------------------------------
 
-class BuildVerifyPromptTestCase(testtools.TestCase):
+class VerifyPromptTestCase(testtools.TestCase):
 
-    def test_prompt_is_blind_to_the_description(self):
+    def test_user_message_is_blind_to_the_description(self):
         body = diff_body(_patch_with_description())
-        prompt = build_verify_prompt(body, 'bugfix')
-        self.assertNotIn(_DESCRIPTION, prompt)
-        self.assertNotIn('CVE-2024-9999', prompt)
-        self.assertIn('+    char buf[64];', prompt)
+        user = verify_user_message(body, 'bugfix')
+        self.assertNotIn(_DESCRIPTION, user)
+        self.assertNotIn('CVE-2024-9999', user)
+        self.assertIn('+    char buf[64];', user)
 
-    def test_prompt_states_the_proposed_category(self):
-        body = diff_body(_patch_with_description())
-        prompt = build_verify_prompt(body, 'security')
-        self.assertIn('security', prompt)
+    def test_user_message_states_the_proposed_category(self):
+        # The category varies per patch, so it is PINNED in the user message; the
+        # cached system rubric stays generic (it only lists the enum). That the
+        # system does not vary by category is proven by the constancy test below.
+        user = verify_user_message(diff_body(_patch_with_description()), 'security')
+        self.assertIn('Proposed category: security', user)
+        self.assertNotIn('Proposed category:', verify_system_prompt())
 
-    def test_prompt_is_adversarial_default_to_refute(self):
-        prompt = build_verify_prompt('diff', 'bugfix')
-        self.assertIn('REFUTE', prompt)
-        self.assertIn(_VERIFY_MARKER, prompt)
-
-    def test_prompt_is_deterministic(self):
-        body = diff_body(_patch_with_description())
-        self.assertEqual(
-            build_verify_prompt(body, 'bugfix'),
-            build_verify_prompt(body, 'bugfix'))
+    def test_system_prompt_is_adversarial_and_constant(self):
+        system = verify_system_prompt()
+        self.assertIn('REFUTE', system)
+        self.assertIn(_VERIFY_MARKER, system)
+        self.assertEqual(verify_system_prompt(), verify_system_prompt())  # cache-stable
         self.assertNotEqual(
-            build_verify_prompt(body, 'bugfix', prompt_version=1),
-            build_verify_prompt(body, 'bugfix', prompt_version=2))
+            verify_system_prompt(prompt_version=1),
+            verify_system_prompt(prompt_version=2))
 
-    def test_different_proposed_categories_differ(self):
+    def test_different_proposed_categories_differ_in_the_user_message(self):
         body = diff_body(_patch_with_description())
         self.assertNotEqual(
-            build_verify_prompt(body, 'bugfix'),
-            build_verify_prompt(body, 'security'))
+            verify_user_message(body, 'bugfix'),
+            verify_user_message(body, 'security'))
 
 
 # ---------------------------------------------------------------------------
@@ -123,10 +123,10 @@ class BuildVerifyPromptTestCase(testtools.TestCase):
 class VerifyTestCase(testtools.TestCase):
 
     def _fake_call(self, response, *, recorder=None):
-        def call(prompt, *, model):
+        def call(system, user, *, model):
             if recorder is not None:
-                recorder.append((prompt, model))
-            return response
+                recorder.append((system, user, model))
+            return CallResult(text=response)
         return call
 
     def test_agrees_true_high(self):
@@ -174,9 +174,15 @@ class VerifyTestCase(testtools.TestCase):
         recorder = []
         verify(_patch_with_description(), 'bugfix',
                call=self._fake_call(_verify_json(), recorder=recorder))
-        prompt, _model = recorder[0]
-        self.assertNotIn(_DESCRIPTION, prompt)
-        self.assertIn('char buf[64]', prompt)
+        system, user, _model = recorder[0]
+        self.assertNotIn(_DESCRIPTION, system + user)
+        self.assertIn('char buf[64]', user)
+
+    def test_verification_carries_the_call_usage(self):
+        def call(system, user, *, model):
+            return CallResult(text=_verify_json(), usage=Usage(input_tokens=80, output_tokens=12))
+        v = verify(_patch_with_description(), 'bugfix', call=call)
+        self.assertEqual(80, v.usage.input_tokens)
 
 
 # ---------------------------------------------------------------------------
@@ -194,10 +200,10 @@ class TriageAndVerifyTestCase(testtools.TestCase):
             recorder=recorder)
         triage_and_verify(_patch_with_description(), call=call)
         self.assertEqual(2, len(recorder))
-        triage_prompt, _ = recorder[0]
-        verify_prompt, _ = recorder[1]
-        self.assertNotIn(_VERIFY_MARKER, triage_prompt)
-        self.assertIn(_VERIFY_MARKER, verify_prompt)
+        triage_system, _tu, _ = recorder[0]
+        verify_system, _vu, _ = recorder[1]
+        self.assertNotIn(_VERIFY_MARKER, triage_system)
+        self.assertIn(_VERIFY_MARKER, verify_system)
 
     def test_agree_high_matching_claim_no_flag_verified(self):
         call = _routing_call(

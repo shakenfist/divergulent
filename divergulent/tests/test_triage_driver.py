@@ -173,19 +173,20 @@ def _verify_json(agrees=True, confidence='high', reasoning='r'):
     return json.dumps({'agrees': agrees, 'confidence': confidence, 'reasoning': reasoning})
 
 
-def _fixed_call(*, triage_response, verify_response, recorder=None):
+def _fixed_call(*, triage_response, verify_response, recorder=None, usage=None):
     """A fake ``call`` that answers the triage draft and the verification.
 
     The same canned answer for every fingerprint -- enough to exercise routing,
-    ordering, and clustering.  Records the (prompt, model) sequence so a test can
-    assert which fingerprint was triaged first.
+    ordering, and clustering.  Routes on the verify marker in the SYSTEM rubric;
+    records each call's ``user`` message (the per-fingerprint diff) so a test can
+    assert which fingerprint was triaged first.  ``usage`` is attached to every
+    CallResult so the per-run telemetry can be exercised.
     """
-    def call(prompt, *, model):
+    def call(system, user, *, model):
         if recorder is not None:
-            recorder.append(prompt)
-        if _VERIFY_MARKER in prompt:
-            return verify_response
-        return triage_response
+            recorder.append(user)
+        text = verify_response if _VERIFY_MARKER in system else triage_response
+        return triage_mod.CallResult(text=text, usage=usage or triage_mod.Usage())
     return call
 
 
