@@ -100,3 +100,55 @@ class GuardrailTestCase(DispatcherFixture, testtools.TestCase):
         self.assertEqual(0, rc)
         self.assertTrue(os.path.isfile(os.path.join(target, workspace.MARKER)))
         self.assertIn('initialised', out)
+
+
+class StatusTestCase(DispatcherFixture, testtools.TestCase):
+
+    def _seeded_root(self):
+        from divergulent.classify import ledger as ledger_mod
+        from divergulent.classify import risk
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        ws = workspace.init(tmp.name)
+        conn = ledger_mod.create_ledger(str(ws.ledger))
+        self.addCleanup(conn.close)
+        # fp1 settled as bugfix; fp2 left as residue and scored HIGH risk.
+        ledger_mod.append_decision(
+            conn, fingerprint='fp1', category='bugfix', confidence='high',
+            decided_by='llm-triage:m', rule_version=1, kind='llm', verified=True,
+            evidence='', decided_at='2026-06-26T00:00:00Z', commit=False)
+        ledger_mod.append_decision(
+            conn, fingerprint='fp2', category='unknown', confidence='low',
+            decided_by='substantive', rule_version=1, kind='heuristic', evidence=None,
+            decided_at='2026-06-26T00:00:00Z', commit=False)
+        risk.record_risk_observation(
+            conn, 'fp2', risk.RiskScore(level='high', rank=risk.RISK_RANK['high'], reason='r',
+                                        model='m', prompt_version=1, raw_response='{}'),
+            now='2026-06-26T00:00:00Z', commit=False)
+        ledger_mod.append_review_item(
+            conn, fingerprint='fp2', reason='r', draft_category='unknown',
+            draft_confidence='low', enqueued_at='2026-06-26T00:00:00Z')
+        conn.commit()
+        return ws
+
+    def test_status_orients_the_operator(self):
+        ws = self._seeded_root()
+        rc, out = self._run(['--data', str(ws.root), 'status'])
+        self.assertEqual(0, rc)
+        self.assertIn('residue (un-settled fingerprints): 1', out)   # fp2
+        self.assertIn('bugfix', out)                                  # fp1's verdict
+        self.assertIn('high', out)                                    # the risk level
+        self.assertIn('elevated+ still in the residue', out)
+        self.assertIn('pending human review: 1', out)
+        self.assertIn('cache:', out)                                  # best-effort cache line
+
+
+class CacheAgeTestCase(testtools.TestCase):
+
+    def test_age_and_staleness(self):
+        import datetime
+        now = datetime.datetime(2026, 6, 26, tzinfo=datetime.timezone.utc)
+        self.assertEqual(0, cli._age_days('2026-06-26T00:00:00Z', now=now))
+        self.assertEqual(30, cli._age_days('2026-05-27T00:00:00Z', now=now))
+        self.assertIsNone(cli._age_days('not a timestamp', now=now))
+        self.assertGreater(cli._age_days('2026-05-01T00:00:00Z', now=now), cli.CACHE_STALE_DAYS)

@@ -27,9 +27,88 @@ _FORWARDING_VERBS = ('triage', 'risk', 'review', 'requeue', 'history', 'web', 'r
 
 # Verbs that need a built ledger to do anything; checked up front so the operator
 # gets one clear message instead of a deeper failure.
-_NEEDS_LEDGER = _FORWARDING_VERBS
+_NEEDS_LEDGER = (*_FORWARDING_VERBS, 'status')
 
-_ALL_VERBS = (*_FORWARDING_VERBS, 'init')
+_ALL_VERBS = (*_FORWARDING_VERBS, 'status', 'init')
+
+# A stored published bundle older than this nags the operator to re-pull it.
+CACHE_STALE_DAYS = 14
+
+
+def _age_days(generated_at: str, *, now=None) -> int | None:
+    """Whole days between ``generated_at`` (ISO-8601) and ``now``, or ``None``."""
+    import datetime
+    try:
+        stamp = datetime.datetime.fromisoformat(generated_at.replace('Z', '+00:00'))
+    except (ValueError, AttributeError):
+        return None
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=datetime.timezone.utc)
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    return (now - stamp).days
+
+
+def _cache_report(*, now=None) -> tuple[str, bool]:
+    """A one-line cache-freshness summary and a ``stale`` flag; best-effort.
+
+    Looks at the stored published bundle for this Debian release (where the client
+    keeps it) and reports its age. Never raises -- a command must not fail because
+    the cache could not be inspected; an un-inspectable cache reports as such.
+    """
+    try:
+        from divergulent import bundle, cli as client_cli
+        from divergulent.cache import default_cache_dir
+        from pathlib import Path
+
+        release = client_cli._detect_release()
+        if not release:
+            return ('cache: (Debian release not detected)', False)
+        path = bundle.stored_path(default_cache_dir(), release)
+        if not Path(path).exists():
+            return ('cache: ⚠ no bundle stored for %s -- run `divergulent cache pull`'
+                    % release, True)
+        age = _age_days(bundle.load(path).generated_at, now=now)
+        stale = age is not None and age > CACHE_STALE_DAYS
+        age_str = '%d days old' % age if age is not None else 'age unknown'
+        flag = '  ⚠ STALE -- run `divergulent cache pull`' if stale else ''
+        return ('cache: %s bundle (%s)%s' % (release, age_str, flag), stale)
+    except Exception as exc:  # noqa: BLE001 -- best-effort; never break a command
+        return ('cache: (unavailable: %s)' % exc, False)
+
+
+def _status(ws: workspace.Workspace) -> int:
+    """Print a one-screen orientation for the data root before a session."""
+    from collections import Counter
+
+    from divergulent.classify import ledger as ledger_mod
+    from divergulent.classify import risk as risk_mod
+    from divergulent.classify import verdict as verdict_mod
+
+    conn = ledger_mod.open_ledger(str(ws.ledger))
+    try:
+        residue = set(verdict_mod.queue(conn))
+        by_category = Counter(v.category for v in verdict_mod.current_verdict(conn).values())
+        ranks = risk_mod.risk_rank_by_fingerprint(conn)
+        pending = len(ledger_mod.pending_review_items(conn))
+    finally:
+        conn.close()
+
+    print('data root: %s' % ws.root)
+    print('residue (un-settled fingerprints): %d' % len(residue))
+    print('verdicts by category:')
+    for category, count in by_category.most_common():
+        print('  %-14s %d' % (category, count))
+    print('security-risk scored: %d' % len(ranks))
+    for level in reversed(risk_mod.RISK_LEVELS):
+        count = sum(1 for rank in ranks.values() if rank == risk_mod.RISK_RANK[level])
+        if count:
+            print('  %-9s %d' % (level, count))
+    hot = sum(1 for fp, rank in ranks.items()
+              if rank >= risk_mod.RISK_RANK['elevated'] and fp in residue)
+    print('elevated+ still in the residue (review these first): %d' % hot)
+    print('pending human review: %d' % pending)
+    print(_cache_report()[0])
+    return 0
 
 
 def _forward(verb: str, ws: workspace.Workspace, rest: list[str]) -> int:
@@ -75,15 +154,32 @@ def main(argv: list[str] | None = None) -> int:
                         help='arguments forwarded to the verb (e.g. --limit 50)')
     args = parser.parse_args(argv)
 
+    # ``--data``/``--no-pull`` are global, but REMAINDER swallows them if they
+    # follow the verb; recover them so position does not matter (a forgetful-
+    # operator smoothing). Anything else stays as the forwarded verb args.
+    data, no_pull, rest = args.data, args.no_pull, []
+    index = 0
+    while index < len(args.rest):
+        token = args.rest[index]
+        if token == '--data' and index + 1 < len(args.rest):
+            data, index = args.rest[index + 1], index + 2
+        elif token.startswith('--data='):
+            data, index = token.split('=', 1)[1], index + 1
+        elif token == '--no-pull':
+            no_pull, index = True, index + 1
+        else:
+            rest.append(token)
+            index += 1
+
     if args.verb == 'init':
-        target = args.rest[0] if args.rest else (args.data or os.getcwd())
+        target = rest[0] if rest else (data or os.getcwd())
         ws = workspace.init(target)
         print('initialised divergulent data root at %s' % ws.root)
         print('  corpus -> %s   cache -> %s' % (ws.corpus_dir, ws.cache_dir))
         return 0
 
     try:
-        ws = workspace.find(args.data)
+        ws = workspace.find(data)
     except workspace.WorkspaceNotFound as exc:
         print('error: %s' % exc, file=sys.stderr)
         return 2
@@ -94,7 +190,17 @@ def main(argv: list[str] | None = None) -> int:
               'classify.ledger build), then re-run.' % ws.ledger, file=sys.stderr)
         return 2
 
-    return _forward(args.verb, ws, args.rest)
+    if args.verb == 'status':
+        return _status(ws)
+
+    # Guardrail: nag (loudly, but do not block) if the published cache looks stale
+    # before a data-consuming command, so a forgetful operator notices.
+    if not no_pull:
+        line, stale = _cache_report()
+        if stale:
+            print('%s' % line, file=sys.stderr)
+
+    return _forward(args.verb, ws, rest)
 
 
 if __name__ == '__main__':
