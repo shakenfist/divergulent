@@ -86,13 +86,18 @@ Operating the pipeline for real surfaced gaps the offline suite could not:
     -- including ~17k tokens of built-in **tool definitions** we never use, plus
     the per-patch diff and (briefly) the `--json-schema` scaffolding -- and
     re-*writing* the volatile parts (at ~2x) every call, never recouping them.
-    Fix: run with **`--tools "" --strict-mcp-config`** and **drop `--json-schema`**
-    (the robust parser already degrades malformed output safely to needs_human).
-    That shrinks each request from **~66k → ~3.4k tokens** (plain input, zero
-    `cache_creation`) -- API-level token efficiency **on the subscription path**,
-    measured ~3-5x cheaper per call, no new dependency. Output verbosity (the
-    model writing more than the one-or-two-sentence reasoning asked for) is the
-    next, backend-independent, cost lever.
+    Fix: run with **`--tools "" --strict-mcp-config --setting-sources ""`** and
+    **drop `--json-schema`** (the robust parser already degrades malformed output
+    safely to needs_human). Those flags strip everything Claude Code injects that
+    a one-shot classification does not use -- built-in tools (~17k tokens/call),
+    local MCP, and project/global `CLAUDE.md` + settings (~2.8k tokens/call) --
+    shrinking each request from **~66k → ~640 tokens** (rubric + diff as plain
+    input, zero `cache_creation`): ~100x less input, API-level token efficiency
+    **on the subscription path**, no new dependency. The remaining lever is
+    **output verbosity** (the model writing well past the one-or-two-sentence
+    reasoning asked for -- output bills at ~5x input); after that it is
+    diminishing returns short of a model-tier change (e.g. Haiku for the bulk
+    draft), which is a quality decision, not a free win.
 - **Ledger safety**: `build` now refuses to silently wipe a populated ledger;
   **`ledger record`** applies new/changed rules to an existing ledger
   non-destructively (append-only re-record + supersede-on-change), so a rule

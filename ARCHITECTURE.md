@@ -125,9 +125,10 @@ installed-package inventory never leaves the machine.
   `call(system, user, *, model) -> CallResult(text, usage)` boundary — the static
   rubric is the `system` prompt, the diff the variable user message. The default
   `claude -p` backend runs with `--system-prompt` + `--tools ""`
-  + `--strict-mcp-config` + `--output-format json` (no new dependency): stripping
-  the unused built-in tools/MCP shrinks each request from ~66k to ~3.4k tokens
-  (plain input, no wasteful cache writes) — API-level efficiency on subscription.
+  + `--strict-mcp-config` + `--setting-sources ""` + `--output-format json` (no
+  new dependency): stripping the unused built-in tools, MCP, and project/global
+  `CLAUDE.md`+settings shrinks each request from ~66k to ~640 tokens (plain input,
+  no wasteful cache writes) — API-level efficiency on subscription.
   The anthropic backend caches the rubric with `cache_control`. Each call's token
   usage flows to a **Cost & cache** report (tokens, cache-hit ratio, cost) so a
   run's spend is visible. Step 4c bumps the ledger to **schema v2** (a

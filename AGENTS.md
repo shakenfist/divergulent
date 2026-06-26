@@ -211,13 +211,16 @@ draft + an independent adversarial verification, routing each patch to
 thereafter (the rubric is relocated verbatim, so verdicts and the
 `(model, prompt_version)` identity are unchanged). The default `claude_cli_call`
 backend runs `claude -p --system-prompt <rubric> --tools "" --strict-mcp-config
---output-format json` (no new dependency, subscription-billed) and parses the
-token-usage block + `total_cost_usd`. **`--tools ""` + `--strict-mcp-config` are
-the cost lever**: classification uses no tools, and Claude Code's built-in tool
-definitions are ~17k tokens of context per call we would otherwise pay to
-(re)cache — stripping them shrank each request from ~66k to ~3.4k tokens (plain
-input, no wasteful cache writes), API-level efficiency on the subscription path.
-`anthropic_call` sends the rubric as a 1h-cached `cache_control` block. The driver sums each call's usage into a **Cost
+--setting-sources "" --output-format json` (no new dependency,
+subscription-billed) and parses the token-usage block + `total_cost_usd`. **Those
+three flags are the cost lever**: a one-shot classification uses none of what
+Claude Code injects by default — `--tools ""` drops the built-in tool definitions
+(~17k tokens/call), `--strict-mcp-config` ignores local MCP servers, and
+`--setting-sources ""` drops project/global `CLAUDE.md` + settings (~2.8k
+tokens/call). Together they shrink each request from ~66k to **~640 tokens**
+(rubric + diff as plain input, no wasteful cache writes) — API-level efficiency
+on the subscription path, ~100× less input. `anthropic_call` sends the rubric as
+a 1h-cached `cache_control` block. The driver sums each call's usage into a **Cost
 & cache** report section (tokens, cache-hit ratio, reported + at-rates cost per
 run and per patch). See
 `docs/plans/PLAN-patch-classification-phase-04-triage-backend.md`. Step 4c bumped the ledger to **schema v2**: a

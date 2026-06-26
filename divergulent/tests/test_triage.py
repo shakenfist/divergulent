@@ -319,11 +319,13 @@ class ClaudeCliCallTestCase(testtools.TestCase):
             out = claude_cli_call('RUBRIC', 'DIFF-TEXT', model='claude-sonnet-4-6')
         self.assertEqual('{"category": "bugfix"}', out.text)
         args, kwargs = run.call_args
-        # Tools and MCP are stripped (we use no tools; their definitions are
-        # ~17k tokens/call of overhead we would otherwise pay to cache).
+        # Tools, MCP, and settings/CLAUDE.md are all stripped: a one-shot
+        # classification uses none of them, and they are ~20k tokens/call of
+        # injected context we would otherwise pay for.
         self.assertEqual(['claude', '-p', '--model', 'claude-sonnet-4-6',
                           '--system-prompt', 'RUBRIC', '--tools', '',
-                          '--strict-mcp-config', '--output-format', 'json'], args[0])
+                          '--strict-mcp-config', '--setting-sources', '',
+                          '--output-format', 'json'], args[0])
         self.assertEqual('DIFF-TEXT', kwargs['input'])  # the diff, not the rubric
 
     def test_parses_usage_and_cost_from_the_json(self):

@@ -625,17 +625,20 @@ def claude_cli_call(system: str, user: str, *, model: str = DEFAULT_MODEL,
     returns the answer text alongside a token-usage block and a reported cost,
     which become the call's :class:`Usage`.
 
-    ``--tools ""`` disables the built-in tools and ``--strict-mcp-config`` ignores
-    any local MCP servers: classification is a one-shot prompt that uses no tools,
-    and the tool definitions are ~17k tokens of context per call we would
-    otherwise pay to (re)cache. Stripping them shrinks each request to roughly the
-    rubric + diff sent as plain input -- API-level token efficiency, on the
-    subscription path -- which measured ~3x cheaper per call than carrying the
-    tool/MCP overhead. A missing ``claude`` or a non-zero exit raises a clear,
-    actionable error. Only a curation-side triage pass uses this.
+    Three flags strip everything Claude Code would otherwise inject into the
+    context of a one-shot classification that uses none of it:
+    ``--tools ""`` (the built-in tool definitions, ~17k tokens/call),
+    ``--strict-mcp-config`` (any local MCP servers), and ``--setting-sources ""``
+    (project/global ``CLAUDE.md`` and settings, ~2.8k tokens/call). With all three
+    a request is just the rubric + diff as plain input (~600 tokens + diff), down
+    from ~66k by default -- API-level token efficiency on the subscription path,
+    measured an order of magnitude cheaper per call. A missing ``claude`` or a
+    non-zero exit raises a clear, actionable error. Only a curation-side triage
+    pass uses this.
     """
     cmd = ['claude', '-p', '--model', model, '--system-prompt', system,
-           '--tools', '', '--strict-mcp-config', '--output-format', 'json']
+           '--tools', '', '--strict-mcp-config', '--setting-sources', '',
+           '--output-format', 'json']
     try:
         result = subprocess.run(
             cmd, input=user, capture_output=True, text=True, timeout=timeout)
