@@ -57,6 +57,32 @@ negatives:
   benign build-script shell-outs, which Opus correctly rated low. Keep the two
   signals separate.
 
+### Recalibration to prompt v2 (2026-06-26)
+
+The v1 rubric above looked perfect on the bake-off because it only measured the
+two *extremes* (`security` vs `doc`/`packaging`) and never the ordinary-code
+*middle*. In use, the operator saw the head of the `risk --limit` queue come back
+~80% `elevated`. A second bake-off (v1 vs a candidate v2, same Opus model, across
+**all** strata incl. a random `unknown`/`bugfix`/`feature` middle) found:
+
+- **The skew was a *slice* artifact, not miscalibration.** With nothing scored
+  yet, the queue orders by `dangerous-construct` then occurrence, so `--limit`
+  hits the genuinely-scariest head (every item `dc=1`): ~54–58% ≥elevated under
+  *both* prompts. On a random middle the rate is only **~18%** (doc→`none`,
+  packaging→`low`) — the gate is well-calibrated there. The operator was looking
+  at the scary end of the queue, on a noisy run (v1's "round up when unsure"
+  turns model uncertainty into a pile on the `elevated` bucket).
+- **v1 keys on the *surface*, which mislabels both ways.** On the labelled
+  positives v1 scored **two real `security` patches `low`** (8/10 recall) while
+  over-using `high`. **v2 keys on what the *change does*** (alters a security
+  mechanism), not which file it sits in: recall **10/10 ≥elevated**, `high`
+  reserved (slice high 8→4), middle/negatives unchanged. Adopted as
+  `RISK_PROMPT_VERSION = 2`. The score is advisory (reorder-only), so a model/
+  prompt swap just supersedes the prior observation and re-scores.
+- **`dangerous-construct` already pre-selects the head**, so the gate earns its
+  keep mainly on the *non*-flagged bulk (separating the ~18% that touch a real
+  mechanism), not on the dangerous-construct slice where the two signals agree.
+
 ## Objective
 
 - A cheap, claim-blind **risk gate** that assigns each patch a coarse ordinal

@@ -38,7 +38,7 @@ from divergulent.classify.triage import Usage
 # RISK_PROMPT_VERSION), exactly as triage keys decisions on (model, prompt).
 # ---------------------------------------------------------------------------
 
-RISK_PROMPT_VERSION = 1
+RISK_PROMPT_VERSION = 2
 
 # The coarse ordinal scale (rank order matters; higher == more concerning).
 RISK_LEVELS = ('none', 'low', 'elevated', 'high')
@@ -85,12 +85,19 @@ class RiskScore:
 def risk_system_prompt(*, prompt_version: int = RISK_PROMPT_VERSION) -> str:
     """The static, cacheable security-risk rubric -- the system prompt.
 
-    Validated against the corpus (bake-off 2026-06): ``elevated`` fires on any
-    security-sensitive *surface* even when the change looks benign, ``high`` is
-    reserved for a *plausible* vulnerability, and the gate is recall-biased
-    ("prefer the higher level when unsure"). Constant for a fixed
-    ``prompt_version`` (no diff), so it is the cache prefix; the diff is the
-    variable user message.
+    Version 2 (recalibrated 2026-06): keys on what the CHANGE does, not which
+    file or subsystem it sits in. A mechanical change next to security-sensitive
+    code is ``low``; ``elevated`` is reserved for a change that plausibly ALTERS
+    a security mechanism (input/bounds validation, sizing, auth, crypto,
+    privilege, hardening), ``high`` for one that plausibly introduces or weakens
+    a vulnerability. v1 keyed on the *surface* ("touches a sensitive area ->
+    elevated, generously" + "round up when unsure"), which -- on a representative
+    sample -- turned model uncertainty into a pile on ``elevated`` AND still
+    missed real ``security`` patches (8/10 recall, scoring two ``low``). v2
+    restored recall (10/10 >=elevated) and reserved ``high`` (slice high 8->4)
+    without inflating the already well-calibrated middle (doc->none, packaging->
+    low, residue ~18% elevated). Constant for a fixed ``prompt_version`` (no
+    diff), so it is the cache prefix; the diff is the variable user message.
     """
     return (
         'You assess the SECURITY RISK of a single Debian patch from its DIFF '
@@ -99,24 +106,31 @@ def risk_system_prompt(*, prompt_version: int = RISK_PROMPT_VERSION) -> str:
         "You are given ONLY the diff body, never the author's description; judge "
         'only from the code the diff adds and removes.\n'
         '\n'
-        'How likely is this change to have a NEGATIVE security impact: to '
-        'introduce or worsen a vulnerability, weaken a security control or '
-        'hardening flag, or mishandle memory, input, privilege, crypto, '
-        'authentication, or untrusted data?\n'
+        'Score how likely THIS CHANGE is to have a NEGATIVE security impact. '
+        'Judge what the change DOES to the code, not merely which file or '
+        'subsystem it sits in. A change that sits in security-relevant code but '
+        'only renames, refactors, reformats, adds logging, or adjusts build '
+        'plumbing is LOW -- proximity to a sensitive area is not itself risk.\n'
         '\n'
-        'Most patches are routine (none/low). Use the upper levels deliberately:\n'
-        '  none: no security relevance (docs, comments, translations, whitespace, '
-        'changelog, metadata).\n'
-        '  low: ordinary code/build change with no security-sensitive surface.\n'
-        '  elevated: TOUCHES a security-sensitive surface (memory/buffer ops, '
-        'input/format parsing, auth, crypto, privilege, network, sandbox, or a '
-        'build-hardening flag) -- use this GENEROUSLY whenever such a surface is '
-        'involved, even if the change looks benign.\n'
-        '  high: PLAUSIBLY creates or worsens a vulnerability, or removes/weakens '
-        'a check or hardening.\n'
+        '  none: no security relevance at all (docs, comments, translations, '
+        'changelog, copyright, whitespace, metadata).\n'
+        '  low: ordinary code or build change whose behaviour has no '
+        'security-relevant effect -- INCLUDING mechanical changes (refactor, '
+        'rename, formatting, logging, version bump, portability shim, build '
+        'plumbing) even when they sit next to security-sensitive code.\n'
+        '  elevated: the change PLAUSIBLY ALTERS a security-relevant behaviour -- '
+        'it modifies input/bounds/length/format validation, allocation or buffer '
+        'sizing, integer/overflow handling, authentication or permission logic, '
+        'cryptographic parameters or routines, privilege or sandbox handling, '
+        'escaping/quoting of untrusted data, or a build-hardening flag.\n'
+        '  high: the change PLAUSIBLY INTRODUCES OR WORSENS a vulnerability, or '
+        'removes/weakens an existing check or hardening.\n'
         '\n'
-        'Bias toward the HIGHER level when uncertain (missing a risky patch is '
-        'worse than over-flagging a benign one).\n'
+        'Decide on the mechanism the change actually engages. Most patches are '
+        'low. Reserve elevated/high for a change that touches a security '
+        'MECHANISM, not just a sensitive neighbourhood. When genuinely torn '
+        'between two adjacent levels for a change that DOES engage a security '
+        'mechanism, pick the higher one.\n'
         '\n'
         'Respond with STRICT JSON only: '
         '{"risk":"none|low|elevated|high","reason":"<=20 words"}\n'
