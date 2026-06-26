@@ -200,6 +200,15 @@ installed-package inventory never leaves the machine.
   default scan/report path; the server binds **loopback only**, has no auth, and
   is a single-user local tool — never CI, never a client feature. Signing is the
   same lazy Sigstore flow, built on the first verdict so browsing needs no extra.
+- `divergulent/classify/cli.py` + `workspace.py` — `divergulent-classify`, the
+  **one curation front**. `workspace.py` resolves a **data root** (a
+  `.divergulent` marker beside `corpus/`+`cache/`, discovered git-style); `cli.py`
+  forwards each verb (`status`/`triage`/`risk`/`review`/`web`/`report`/…) to the
+  existing module main with the resolved paths spliced in, so the operator types
+  no paths. It guards a forgetful operator — clear errors for a missing ledger or
+  not-a-root cwd, and a loud nag when the published **cache looks stale** — and
+  `status` is the one-screen orientation. The old `python -m
+  divergulent.classify.<x>` forms still work.
 - `divergulent/bundle.py` — the precomputed cache **bundle** schema, a
   gzipped-JSON `write()` and `load()`. A bundle is the shareable half of
   a cold run: staleness and divergence for a whole Debian release,

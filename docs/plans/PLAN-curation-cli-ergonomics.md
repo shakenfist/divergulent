@@ -11,9 +11,12 @@ This is curation-side ergonomics, NOT a phase: phase 5 is the *client* displayin
 the published bundle. There is exactly one curation user (the cache builder), so
 the bar is **consistent + low-friction + protective**, not a polished public CLI.
 
-**Status: first cut in progress.** Data root + dispatcher + `status` + the
-cache-freshness guardrail; the old `python -m divergulent.classify.<x>` forms keep
-working during transition.
+**Status: first cut implemented (C1–C4).** Data root (`workspace.py`), the
+`divergulent-classify` dispatcher (`cli.py`), `status`, and the cache-freshness
+guardrail are built, tested, and documented; the old `python -m
+divergulent.classify.<x>` forms keep working. Deferred follow-ups: true cache
+auto-pull (needs the cache location reconciled with the data root), a guided
+`next` verb, and a corpus-staleness signal — see Open questions.
 
 ## Prompt
 

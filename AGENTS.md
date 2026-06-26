@@ -270,6 +270,19 @@ are curation-side and injected, so the whole suite is offline; the actual
 triage/review pass is the operator's budgeted step. See
 `docs/plans/PLAN-patch-classification-phase-04-llm-triage.md`.
 
+`divergulent-classify` (in `cli.py`, also `python -m divergulent.classify`) is the
+**one front** for all of the above: it resolves a **data root** (`workspace.py`:
+a `.divergulent` marker beside `corpus/`+`cache/`, discovered git-style via
+`--data`/`DIVERGULENT_DATA`/walk-up) and **forwards** to each command's existing
+module main with the ledger/corpus paths spliced in — so verbs (`status`,
+`triage`, `risk`, `review`, `web`, `report`, `requeue`, `history`, `init`) take no
+paths. It guards the forgetful operator: a missing ledger or a not-a-root cwd is a
+clear error not a crash, and a **stale published cache** is loudly flagged before
+data-consuming verbs. `status` is the one-screen orientation (residue, categories,
+risk distribution, pending review, cache age). The old `python -m
+divergulent.classify.<x>` forms still work. See
+`docs/plans/PLAN-curation-cli-ergonomics.md`.
+
 `python -m divergulent.classify.review_web` (in `review_web.py`) is a **local
 web UI over the same review machinery** — it reuses `build_review_context` and
 `record_review_verdict` verbatim, so a web verdict is **byte-identical** to a CLI
