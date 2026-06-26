@@ -143,10 +143,24 @@ installed-package inventory never leaves the machine.
   supersedable), `verified` set from the routing, and a pending `review_queue`
   item for every `needs_human` result — idempotently. `triage_driver.py` (the
   `python -m divergulent.classify.triage` CLI) triages a **bounded, prioritised**
-  slice of the residue (dangerous-construct then high-occurrence first, never the
-  whole queue by accident), surfaces **candidate deterministic rules** (clusters
-  of identical verified verdicts — for human approval, never auto-applied), and
-  reports the untriaged remainder. `review.py` (the
+  slice of the residue (**risk then** dangerous-construct then high-occurrence
+  first, never the whole queue by accident), surfaces **candidate deterministic
+  rules** (clusters of identical verified verdicts — for human approval, never
+  auto-applied), and reports the untriaged remainder. `risk.py` (the
+  `python -m divergulent.classify.risk` CLI) is a **security-risk gate**: a cheap,
+  claim-blind LLM pass that scores each residue patch's security risk on a coarse
+  ordinal (`none/low/elevated/high`) so the expensive triage pass and the human
+  reach the scariest patches **first**. It is **advisory** — it records a
+  supersedable `security-risk` **observation** (`observed_by='risk-gate:<model>'`
+  / `rule_version=RISK_PROMPT_VERSION`, the same `(model, prompt_version)`
+  provenance as the triage decisions) and feeds the work-list/`review_queue`
+  priority (risk is the top component, `risk_rank * WEIGHT + occurrence`), but
+  never the verdict precedence, so it needs no adversarial verify. A
+  **security-safe deterministic cull** scores provably-benign patches (empty/
+  whitespace/comment-only, doc-only, translation/changelog) `none` with no LLM
+  call — narrower than the packaging category, since a `debian/rules` change can
+  flip a hardening flag. Default model **Opus** (bake-off: 100% recall / 0%
+  false-alarm at the ≥elevated cut vs Sonnet 73%/3%). `review.py` (the
   `python -m divergulent.classify.review` CLI) is the local, interactive human
   tier, with three subcommands. `review` drains the queue: it shows each
   high-priority diff **in its original source context** — fetched on-demand from

@@ -27,8 +27,11 @@ from divergulent.classify import content as content_mod
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import measure
 from divergulent.classify import triage as triage_mod
-from divergulent.classify import triage_driver
 from divergulent.classify.triage import Usage
+
+# ``triage_driver`` is imported LAZILY (inside the functions that need it):
+# ``triage_driver`` imports this module for the risk-aware work-list ordering, so
+# a module-level import here would be a cycle.
 
 # ---------------------------------------------------------------------------
 # Versioned constants -- the ledger keys the observation on (model,
@@ -297,6 +300,7 @@ def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, lim
     injected ``call``. A backend failure records ``elevated`` (recall-safe) and is
     counted. ``call``/``now`` are injected so the path is offline and deterministic.
     """
+    from divergulent.classify import triage_driver  # lazy: avoids an import cycle
     work = triage_driver.build_work_list(conn, index_path)
     scored = set(risk_rank_by_fingerprint(conn))
     pending = [item for item in work if item.fingerprint not in scored]
@@ -342,9 +346,60 @@ def print_risk_summary(stats: RiskRunStats) -> None:
         for level in sorted(stats.by_level, key=lambda lvl: order.get(lvl, 99), reverse=True):
             print('  %-9s %d' % (level, stats.by_level[level]))
     if stats.scored:
+        from divergulent.classify import triage_driver  # lazy: avoids an import cycle
         ratio = triage_driver.cache_hit_ratio(stats.usage)
         reported = '' if stats.usage.cost_usd is None else ' reported=$%.4f' % stats.usage.cost_usd
         print('cost & cache: out=%d cache-hit=%s;%s est=$%.4f (~$%.4f/scored)' % (
             stats.usage.output_tokens, 'n/a' if ratio is None else '%.0f%%' % (ratio * 100),
             reported, triage_driver.derived_cost_usd(stats.usage, stats.model),
             triage_driver.derived_cost_usd(stats.usage, stats.model) / stats.scored))
+
+
+# The risk gate is cheap per call, so a larger default slice than triage's is
+# reasonable; the operator still caps it.
+RISK_DEFAULT_LIMIT = 50
+
+
+def main(argv=None) -> int:
+    """``python -m divergulent.classify.risk``: score the residue's security risk.
+
+    Runs a bounded :func:`run_risk_gate` against the REAL cost-stripped
+    ``claude -p`` backend, recording a supersedable ``security-risk`` observation
+    per fingerprint. Reads the clock ONCE (this is the only place that does) and
+    threads it down. Records no decision and rebuilds no verdict -- the score is
+    advisory and only reorders the review/triage queue (highest risk first).
+    """
+    import argparse
+    import os
+    import sys
+
+    parser = argparse.ArgumentParser(
+        prog='python -m divergulent.classify.risk',
+        description="Score the residue's security risk to prioritise triage/review.")
+    parser.add_argument('ledger', help='path to the ledger sqlite')
+    parser.add_argument('corpus_dir', help='path to the corpus directory (bodies + index)')
+    parser.add_argument('--index', default=None,
+                        help='path to fingerprints.sqlite (default: <corpus>/fingerprints.sqlite)')
+    parser.add_argument('--limit', type=int, default=RISK_DEFAULT_LIMIT,
+                        help='how many un-scored residue patches to score (default: %d)'
+                             % RISK_DEFAULT_LIMIT)
+    parser.add_argument('--model', default=DEFAULT_RISK_MODEL,
+                        help='model for the gate (default: %s)' % DEFAULT_RISK_MODEL)
+    args = parser.parse_args(argv)
+
+    index_path = args.index or os.path.join(args.corpus_dir, 'fingerprints.sqlite')
+    conn = ledger_mod.open_ledger(args.ledger)
+    try:
+        stats = run_risk_gate(
+            conn, args.corpus_dir, index_path, call=triage_mod.claude_cli_call,
+            now=triage_mod._cli_now(), limit=args.limit, model=args.model,
+            progress=lambda message: print(message, file=sys.stderr, flush=True))
+    finally:
+        conn.close()
+
+    print_risk_summary(stats)
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

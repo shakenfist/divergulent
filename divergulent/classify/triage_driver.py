@@ -79,8 +79,10 @@ class WorkItem:
 
     Built from the queue + the phase-1 index + the live observations: the
     representative ``raw_sha256`` (to load the body), the recurrence counts (for
-    priority and the report), and ``has_dangerous_construct`` (which both raises
-    priority and routes the result to a human).
+    priority and the report), ``has_dangerous_construct`` (which both raises
+    priority and routes the result to a human), and ``risk_rank`` -- the security-
+    risk gate's level (0..3) for this fingerprint, the TOP priority component so
+    the scariest carried patches are triaged and reviewed first.
     """
 
     fingerprint: str
@@ -89,6 +91,7 @@ class WorkItem:
     n_occurrences: int
     n_packages: int
     has_dangerous_construct: bool
+    risk_rank: int = 0
 
 
 def _fingerprints_with_dangerous_construct(conn: sqlite3.Connection) -> set[str]:
@@ -135,18 +138,36 @@ def _index_groups(index_path: str) -> dict[str, dict]:
     return groups
 
 
-def _priority_key(item: WorkItem) -> tuple:
-    """Sort key (higher == triaged first): dangerous-construct, then occurrence.
+# The security-risk level is the TOP priority component; scaled past any realistic
+# occurrence count so a higher risk always sorts ahead, with occurrence as the
+# tie-break within a risk level (encoded into the single stored integer priority).
+RISK_PRIORITY_WEIGHT = 1_000_000
 
-    A live dangerous-construct observation is the top signal, then a high
-    occurrence count (one recurring fingerprint stands for many carried patches),
-    then package count, with the fingerprint as a final deterministic tie-break.
+
+def _priority_key(item: WorkItem) -> tuple:
+    """Sort key (higher == triaged first): risk, dangerous-construct, occurrence.
+
+    The security-risk gate's level is the top signal -- the scariest patches are
+    triaged and reviewed first -- then a live dangerous-construct observation, then
+    a high occurrence count (one recurring fingerprint stands for many carried
+    patches), then package count, with the fingerprint as a final tie-break.
     """
     return (
+        item.risk_rank,
         1 if item.has_dangerous_construct else 0,
         item.n_occurrences,
         item.n_packages,
         item.fingerprint)
+
+
+def _stored_priority(item: WorkItem) -> int:
+    """The single integer ``review_queue.priority`` for a needs-human item.
+
+    Encodes risk-first ordering into one int (``risk_rank * WEIGHT + occurrence``)
+    so the review tool's ``ORDER BY priority DESC`` pulls the highest-risk patches
+    first, with occurrence count as the within-risk tie-break -- no schema change.
+    """
+    return item.risk_rank * RISK_PRIORITY_WEIGHT + item.n_occurrences
 
 
 def build_work_list(conn: sqlite3.Connection, index_path: str) -> list[WorkItem]:
@@ -160,8 +181,11 @@ def build_work_list(conn: sqlite3.Connection, index_path: str) -> list[WorkItem]
     (:func:`run_triage`) so the full ordered list is available for the report's
     ``untriaged_remaining``.
     """
+    from divergulent.classify import risk as risk_mod  # lazy: avoids an import cycle
+
     groups = _index_groups(index_path)
     dangerous = _fingerprints_with_dangerous_construct(conn)
+    risk_ranks = risk_mod.risk_rank_by_fingerprint(conn)
 
     items: list[WorkItem] = []
     for fingerprint in verdict_mod.queue(conn):
@@ -174,7 +198,8 @@ def build_work_list(conn: sqlite3.Connection, index_path: str) -> list[WorkItem]
             representative_patch_name=group['rep_patch_name'],
             n_occurrences=group['n_occurrences'],
             n_packages=len(group['packages']),
-            has_dangerous_construct=fingerprint in dangerous))
+            has_dangerous_construct=fingerprint in dangerous,
+            risk_rank=risk_ranks.get(fingerprint, 0)))
 
     items.sort(key=_priority_key, reverse=True)
     return items
@@ -270,7 +295,7 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
         if len(body) > MAX_DIFF_CHARS_FOR_LLM:
             reason = 'diff too large for LLM triage (%d chars); routed to a human' % len(body)
             triage_record.record_triage_to_human(
-                conn, item.fingerprint, reason, now=now, model=model, priority=_priority_key(item)[1])
+                conn, item.fingerprint, reason, now=now, model=model, priority=_stored_priority(item))
             stats.too_large += 1
             stats.needs_human += 1
             if progress is not None:
@@ -295,7 +320,7 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
             # lost, re-tried-as-LLM forever, nor allowed to crash the whole batch.
             reason = 'LLM triage failed: %s' % exc
             triage_record.record_triage_to_human(
-                conn, item.fingerprint, reason, now=now, model=model, priority=_priority_key(item)[1])
+                conn, item.fingerprint, reason, now=now, model=model, priority=_stored_priority(item))
             stats.errored += 1
             stats.needs_human += 1
             if progress is not None:
@@ -303,7 +328,7 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
             continue
 
         triage_record.record_triage_result(
-            conn, item.fingerprint, result, now=now, priority=_priority_key(item)[1])
+            conn, item.fingerprint, result, now=now, priority=_stored_priority(item))
 
         stats.triaged += 1
         stats.usage = stats.usage + result.usage

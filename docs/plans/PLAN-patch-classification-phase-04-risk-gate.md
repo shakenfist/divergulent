@@ -6,8 +6,11 @@ adds a **new axis** — an estimate of a patch's *security risk* — that **reor
 the existing pipeline so the scariest carried patches reach the expensive
 category pass and the human first. It does **not** replace the category taxonomy.
 
-**Status: planned (not started).** Backed by a real bake-off (below); this is the
-design proposal for review before any building.
+**Status: R1–R3 implemented.** The gate + recording (R1), the cascade driver +
+security-safe cull (R2), and the prioritisation wiring + CLI + docs (R3) are
+built and tested offline. **R4** (a larger hand-labelled validation to firm the
+threshold and the model default) remains, as the operator-budgeted step. Backed
+by the bake-off below.
 
 ## Why
 

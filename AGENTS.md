@@ -236,7 +236,21 @@ version), `verified` set from the routing, the draft+verification kept as JSON
 evidence, and a pending `review_queue` item for every `needs_human` result.
 `python -m divergulent.classify.triage` (in `triage_driver.py`) triages a
 bounded, prioritised slice (never the whole queue by accident) and surfaces
-candidate deterministic rules for human approval; `python -m
+candidate deterministic rules for human approval. `python -m
+divergulent.classify.risk` (in `risk.py`) is a **security-risk gate**: a cheap,
+claim-blind LLM scores each residue patch's security risk on a coarse ordinal
+(`none/low/elevated/high`), recorded as a supersedable `security-risk`
+**observation** (`observed_by='risk-gate:<model>'` / `rule_version=`, the same
+`(model, prompt_version)` provenance as triage). It is **advisory** — it feeds
+priority (risk is the top component of the work-list and `review_queue.priority`,
+so the scariest patches are triaged/reviewed first) but never the verdict, so it
+needs no verify. A **security-safe cull** scores provably-benign patches (empty/
+whitespace/comment-only, doc-only, translation/changelog) `none` with no LLM call
+— narrower than the packaging category (a `debian/rules` hardening-flag change is
+NOT culled). Default model Opus (bake-off: 100% recall / 0% false-alarm at
+≥elevated vs Sonnet 73%/3%); on the residue the cull fires ~0% (the deterministic
+tier already removed benign patches), so it is a safety net not a cost lever. See
+`docs/plans/PLAN-patch-classification-phase-04-risk-gate.md`. `python -m
 divergulent.classify.review` (in `review.py`) is the local, interactive,
 Sigstore-signed human tier. It has three subcommands: `review <ledger>
 <corpus_dir>` drains the queue (showing each diff in its sources.debian.org

@@ -206,3 +206,48 @@ class RunRiskGateTestCase(testtools.TestCase):
         again = risk.run_risk_gate(conn, corpus_dir, index_path, call=_fake_call(_risk_json()),
                                    now=LATER, limit=10)
         self.assertEqual(0, again.scored + again.culled)  # nothing left to score
+
+
+def _make_score(level, model='claude-opus-4-8'):
+    return risk.RiskScore(level=level, rank=risk.RISK_RANK[level], reason='r', model=model,
+                          prompt_version=risk.RISK_PROMPT_VERSION, raw_response=_risk_json(level))
+
+
+class PrioritisationTestCase(testtools.TestCase):
+
+    def _setup(self):
+        from divergulent.tests.test_triage_driver import _build_corpus, _seed_ledger
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        index_path, fingerprints = _build_corpus(tmp.name)
+        conn = ledger_mod.create_ledger(os.path.join(tmp.name, 'ledger.sqlite'))
+        self.addCleanup(conn.close)
+        _seed_ledger(conn, fingerprints)
+        return conn, index_path, fingerprints
+
+    def test_risk_outranks_occurrence_in_the_work_list(self):
+        from divergulent.classify import triage_driver
+        conn, index_path, fps = self._setup()
+        # bug-a has TWO occurrences (would normally outrank bug-b's one). Give
+        # bug-b a HIGH risk and bug-a NONE: risk must win.
+        risk.record_risk_observation(conn, fps['bug-b.patch'], _make_score('high'), now=WHEN)
+        risk.record_risk_observation(conn, fps['bug-a.patch'], _make_score('none'), now=WHEN)
+
+        work = triage_driver.build_work_list(conn, index_path)
+        order = [w.fingerprint for w in work]
+        self.assertLess(order.index(fps['bug-b.patch']), order.index(fps['bug-a.patch']))
+
+        by_fp = {w.fingerprint: w for w in work}
+        self.assertEqual(risk.RISK_RANK['high'], by_fp[fps['bug-b.patch']].risk_rank)
+        # ... and the stored review-queue priority is risk-first too.
+        self.assertGreater(
+            triage_driver._stored_priority(by_fp[fps['bug-b.patch']]),
+            triage_driver._stored_priority(by_fp[fps['bug-a.patch']]))
+
+    def test_unscored_residue_keeps_working_unchanged(self):
+        # With no risk scores yet (rank 0 for all), the dangerous-construct item is
+        # still first -- reorder never drops or starves the existing ordering.
+        from divergulent.classify import triage_driver
+        conn, index_path, fps = self._setup()
+        work = triage_driver.build_work_list(conn, index_path)
+        self.assertEqual(fps['danger.patch'], work[0].fingerprint)
