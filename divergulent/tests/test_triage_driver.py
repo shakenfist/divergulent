@@ -356,6 +356,45 @@ class ReportTestCase(DriverFixture, testtools.TestCase):
         self.assertIn('Candidate deterministic rules', report)
 
 
+class CostAndCacheTestCase(DriverFixture, testtools.TestCase):
+
+    def test_usage_is_summed_across_every_call(self):
+        corpus_dir, index_path, _, conn, _ = self._setup()
+        per_call = triage_mod.Usage(
+            input_tokens=10, output_tokens=5, cache_read_tokens=90, cost_usd=0.01)
+        call = _fixed_call(
+            triage_response=_triage_json(category='bugfix'),
+            verify_response=_verify_json(agrees=True), usage=per_call)
+        stats, _ = triage_driver.run_triage(
+            conn, corpus_dir, index_path, call=call, now=WHEN, limit=5)
+        calls = stats.triaged * 2  # draft + verify per patch
+        self.assertEqual(10 * calls, stats.usage.input_tokens)
+        self.assertEqual(90 * calls, stats.usage.cache_read_tokens)
+        self.assertAlmostEqual(0.01 * calls, stats.usage.cost_usd)
+
+    def test_report_has_a_cost_and_cache_section(self):
+        corpus_dir, index_path, _, conn, _ = self._setup()
+        per_call = triage_mod.Usage(input_tokens=10, cache_read_tokens=90, output_tokens=5)
+        call = _fixed_call(
+            triage_response=_triage_json(), verify_response=_verify_json(agrees=True),
+            usage=per_call)
+        stats, triaged = triage_driver.run_triage(
+            conn, corpus_dir, index_path, call=call, now=WHEN, limit=2)
+        scan = triage_driver.candidate_rules(corpus_dir, triaged, min_members=99)
+        report = triage_driver.render_run_report(stats, scan)
+        self.assertIn('### Cost & cache', report)
+        self.assertIn('Cache-hit ratio', report)
+        self.assertIn('estimated at API rates', report)
+
+    def test_cache_hit_ratio_and_derived_cost(self):
+        usage = triage_mod.Usage(input_tokens=100, cache_read_tokens=900, output_tokens=50)
+        self.assertAlmostEqual(0.9, triage_driver.cache_hit_ratio(usage))  # 900 / 1000
+        self.assertIsNone(triage_driver.cache_hit_ratio(triage_mod.Usage()))
+        cost = triage_driver.derived_cost_usd(usage, 'claude-sonnet-4-6')
+        expected = 100 / 1e6 * 3 + 900 / 1e6 * 3 * 0.1 + 50 / 1e6 * 15
+        self.assertAlmostEqual(expected, cost)
+
+
 # ---------------------------------------------------------------------------
 # CLI -- driven through triage.main with the real backend MONKEYPATCHED to the
 # injected fake, so no real LLM / claude -p subprocess ever runs.

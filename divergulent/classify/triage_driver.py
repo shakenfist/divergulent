@@ -207,6 +207,12 @@ class TriageRunStats:
     skipped_already_triaged: int = 0   # a live decision already existed (resume)
     too_large: int = 0                 # diff too big for the model -> routed to a human
     errored: int = 0                   # the backend raised -> routed to a human
+    # Token usage summed across every model call this run (draft + verify per
+    # triaged patch). The cache_read vs cache_creation split is the signal that
+    # the cached rubric prefix is landing; cost is the backend's reported figure.
+    usage: triage_mod.Usage = field(default_factory=triage_mod.Usage)
+    # The model the run used (uniform per run) -- for the at-rates cost estimate.
+    model: str = triage_mod.DEFAULT_MODEL
 
 
 @dataclass(frozen=True)
@@ -249,7 +255,7 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
     pending_work = [item for item in work_list if item.fingerprint not in done]
     selected = pending_work[:limit]
 
-    stats = TriageRunStats(queue_size=len(verdict_mod.queue(conn)))
+    stats = TriageRunStats(queue_size=len(verdict_mod.queue(conn)), model=model)
     stats.skipped_already_triaged = len(work_list) - len(pending_work)
     stats.untriaged_remaining = max(len(pending_work) - len(selected), 0)
     triaged: list[TriagedItem] = []
@@ -300,6 +306,7 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
             conn, item.fingerprint, result, now=now, priority=_priority_key(item)[1])
 
         stats.triaged += 1
+        stats.usage = stats.usage + result.usage
         category = result.draft.category
         stats.by_category[category] = stats.by_category.get(category, 0) + 1
         if result.routing == 'verified':
@@ -524,6 +531,77 @@ def _render_counts(title: str, counts: dict[str, int]) -> list[str]:
     return lines
 
 
+# ---------------------------------------------------------------------------
+# Cost & cache telemetry.
+#
+# The claude -p backend reports its own ``total_cost_usd`` (authoritative for the
+# subscription path); for the metered API path, and as a "what would this cost
+# at standard rates" estimate even on subscription, we derive a cost from a small
+# indicative rate table. Update the rates when Anthropic pricing changes.
+# ---------------------------------------------------------------------------
+
+# (input, output) US$ per million tokens. Indicative, as of 2026-06.
+_API_RATES_PER_MTOK = {
+    'claude-sonnet-4-6': (3.0, 15.0),
+    'claude-opus-4-8': (5.0, 25.0),
+    'claude-haiku-4-5-20251001': (1.0, 5.0),
+}
+_DEFAULT_RATE_PER_MTOK = (3.0, 15.0)
+_CACHE_READ_MULTIPLIER = 0.1    # cache reads bill at ~10% of input
+_CACHE_WRITE_MULTIPLIER = 2.0   # 1h ephemeral cache writes bill at ~2x input
+
+
+def derived_cost_usd(usage: triage_mod.Usage, model: str) -> float:
+    """An at-standard-rates cost estimate for one run's ``usage``.
+
+    The "what would this cost metered" figure -- shown even on subscription so the
+    prototype→pivot decision has a number. Applies the cache read/write
+    multipliers; the model is uniform per run.
+    """
+    in_rate, out_rate = _API_RATES_PER_MTOK.get(model, _DEFAULT_RATE_PER_MTOK)
+    million = 1_000_000
+    return (
+        usage.input_tokens / million * in_rate
+        + usage.cache_read_tokens / million * in_rate * _CACHE_READ_MULTIPLIER
+        + usage.cache_creation_tokens / million * in_rate * _CACHE_WRITE_MULTIPLIER
+        + usage.output_tokens / million * out_rate)
+
+
+def cache_hit_ratio(usage: triage_mod.Usage) -> float | None:
+    """Fraction of input tokens served from cache -- the caching-landed signal.
+
+    ``cache_read / (cache_read + cache_creation + input)``. ``None`` when nothing
+    ran (no input at all). Climbs toward 1 across a run as the cached rubric
+    prefix is read back instead of re-sent.
+    """
+    cacheable = usage.cache_read_tokens + usage.cache_creation_tokens + usage.input_tokens
+    if cacheable == 0:
+        return None
+    return usage.cache_read_tokens / cacheable
+
+
+def _render_cost_and_cache(stats: TriageRunStats) -> list[str]:
+    """The Cost & cache report block: tokens, cache-hit ratio, reported + derived cost."""
+    usage = stats.usage
+    lines = ['### Cost & cache', '']
+    if stats.triaged == 0:
+        lines.extend(['_(no model calls this run)_', ''])
+        return lines
+    ratio = cache_hit_ratio(usage)
+    lines.append('- Input tokens: %d (cache read %d, cache write %d)' % (
+        usage.input_tokens, usage.cache_read_tokens, usage.cache_creation_tokens))
+    lines.append('- Output tokens: %d' % usage.output_tokens)
+    lines.append('- Cache-hit ratio: %s' % ('n/a' if ratio is None else '%.1f%%' % (ratio * 100)))
+    if usage.cost_usd is not None:
+        lines.append('- Cost (backend-reported): $%.4f' % usage.cost_usd)
+    lines.append('- Cost (estimated at API rates for %s): $%.4f' % (
+        stats.model, derived_cost_usd(usage, stats.model)))
+    lines.append('- Per triaged patch (estimated): $%.4f' % (
+        derived_cost_usd(usage, stats.model) / stats.triaged))
+    lines.append('')
+    return lines
+
+
 def render_run_report(stats: TriageRunStats, scan: RuleScan) -> str:
     """Render the markdown findings note for one bounded triage run.
 
@@ -548,6 +626,7 @@ def render_run_report(stats: TriageRunStats, scan: RuleScan) -> str:
                  % stats.untriaged_remaining)
     lines.append('')
     lines.extend(_render_counts('Drafted categories', stats.by_category))
+    lines.extend(_render_cost_and_cache(stats))
 
     lines.append('### Candidate deterministic rules (for human approval, never auto-applied)')
     lines.append('')
@@ -589,6 +668,15 @@ def print_run_summary(stats: TriageRunStats, scan: RuleScan) -> None:
         print('drafted categories:')
         for category in sorted(stats.by_category, key=lambda k: (-stats.by_category[k], k)):
             print('  %-16s %d' % (category, stats.by_category[category]))
+    if stats.triaged:
+        ratio = cache_hit_ratio(stats.usage)
+        reported = ('' if stats.usage.cost_usd is None
+                    else ' reported=$%.4f' % stats.usage.cost_usd)
+        print('cost & cache: in=%d (cache-read=%d) out=%d; cache-hit=%s;%s est=$%.4f (~$%.4f/patch)' % (
+            stats.usage.input_tokens, stats.usage.cache_read_tokens, stats.usage.output_tokens,
+            'n/a' if ratio is None else '%.1f%%' % (ratio * 100), reported,
+            derived_cost_usd(stats.usage, stats.model),
+            derived_cost_usd(stats.usage, stats.model) / stats.triaged))
     if scan.candidates:
         print('candidate deterministic rules (for human approval):')
         for candidate in scan.candidates:
