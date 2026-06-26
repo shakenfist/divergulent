@@ -75,32 +75,6 @@ TRIAGE_CATEGORIES = ('packaging', 'documentation', 'bugfix', 'security', 'featur
 
 _CONFIDENCES = ('high', 'medium', 'low')
 
-# JSON Schemas for enforced structured output. Backends that can constrain the
-# model to a schema (``claude -p --json-schema``) pass these so the answer is
-# guaranteed well-formed and in-enum; the robust ``_first_json_object`` parser
-# stays the fallback for backends that only instruct JSON in the prompt.
-TRIAGE_SCHEMA = {
-    'type': 'object',
-    'properties': {
-        'category': {'type': 'string', 'enum': list(TRIAGE_CATEGORIES)},
-        'confidence': {'type': 'string', 'enum': list(_CONFIDENCES)},
-        'reasoning': {'type': 'string'},
-    },
-    'required': ['category', 'confidence', 'reasoning'],
-    'additionalProperties': False,
-}
-
-VERIFY_SCHEMA = {
-    'type': 'object',
-    'properties': {
-        'agrees': {'type': 'boolean'},
-        'confidence': {'type': 'string', 'enum': list(_CONFIDENCES)},
-        'reasoning': {'type': 'string'},
-    },
-    'required': ['agrees', 'confidence', 'reasoning'],
-    'additionalProperties': False,
-}
-
 # Extract the first JSON object from a model response that may be wrapped in
 # prose or a ```json code fence. Non-greedy, brace-balanced enough for the flat
 # object the prompt asks for.
@@ -349,7 +323,7 @@ def triage(patch_text: str, *, call, model: str = DEFAULT_MODEL,
     system = triage_system_prompt(prompt_version=prompt_version)
     user = triage_user_message(body)
 
-    result = call(system, user, model=model, schema=TRIAGE_SCHEMA)
+    result = call(system, user, model=model)
 
     category, confidence, reasoning = _parse_response(result.text)
 
@@ -524,7 +498,7 @@ def verify(patch_text: str, proposed_category: str, *, call,
     system = verify_system_prompt(prompt_version=prompt_version)
     user = verify_user_message(body, proposed_category)
 
-    result = call(system, user, model=model, schema=VERIFY_SCHEMA)
+    result = call(system, user, model=model)
 
     agrees, confidence, reasoning = _parse_verification(result.text)
 
@@ -639,27 +613,29 @@ def triage_and_verify(patch_text: str, *, call, claim_category: str | None = Non
 # ---------------------------------------------------------------------------
 
 def claude_cli_call(system: str, user: str, *, model: str = DEFAULT_MODEL,
-                    schema: dict | None = None, timeout: float = 180) -> CallResult:
+                    timeout: float = 180) -> CallResult:
     """Triage backend that shells out to the local ``claude`` CLI (print mode).
 
     The DEFAULT backend: it runs the prompt through ``claude -p`` so triage is
     billed against the operator's Claude subscription rather than separately-
     billed API calls, and it needs NO Python dependency -- only the ``claude``
-    CLI on ``PATH``. The cacheable rubric ``system`` is passed via
-    ``--system-prompt`` (replacing Claude Code's default system prompt, so our
-    rubric is the whole stable cache prefix), and the variable ``user`` diff is
-    fed on stdin (diffs are large and multi-line). ``--output-format json``
+    CLI on ``PATH``. The rubric ``system`` is passed via ``--system-prompt``
+    (replacing Claude Code's default system prompt) and the variable ``user`` diff
+    is fed on stdin (diffs are large and multi-line). ``--output-format json``
     returns the answer text alongside a token-usage block and a reported cost,
-    which become the call's :class:`Usage`. A missing ``claude`` or a non-zero
-    exit raises a clear, actionable error. Only a curation-side triage pass uses
-    this; the base install never does.
+    which become the call's :class:`Usage`.
+
+    ``--tools ""`` disables the built-in tools and ``--strict-mcp-config`` ignores
+    any local MCP servers: classification is a one-shot prompt that uses no tools,
+    and the tool definitions are ~17k tokens of context per call we would
+    otherwise pay to (re)cache. Stripping them shrinks each request to roughly the
+    rubric + diff sent as plain input -- API-level token efficiency, on the
+    subscription path -- which measured ~3x cheaper per call than carrying the
+    tool/MCP overhead. A missing ``claude`` or a non-zero exit raises a clear,
+    actionable error. Only a curation-side triage pass uses this.
     """
     cmd = ['claude', '-p', '--model', model, '--system-prompt', system,
-           '--output-format', 'json']
-    if schema is not None:
-        # Enforced structured output: the model's answer is constrained to the
-        # schema and arrives in the JSON result's ``structured_output`` field.
-        cmd += ['--json-schema', json.dumps(schema)]
+           '--tools', '', '--strict-mcp-config', '--output-format', 'json']
     try:
         result = subprocess.run(
             cmd, input=user, capture_output=True, text=True, timeout=timeout)
@@ -697,18 +673,10 @@ def _parse_claude_cli_json(stdout: str) -> CallResult:
             'claude -p did not return parseable JSON (expected --output-format '
             'json):\n  %s' % stdout[:2000]) from exc
 
-    # With --json-schema the conforming answer is in ``structured_output`` (a
-    # dict) and ``result`` is empty; re-serialise it so the shared parser handles
-    # both the schema-enforced and the plain-text paths uniformly.
-    structured = data.get('structured_output')
-    if isinstance(structured, dict) and structured:
-        text = json.dumps(structured)
-    else:
-        text = data.get('result')
+    text = data.get('result')
     if not isinstance(text, str) or not text.strip():
         raise RuntimeError(
-            'claude -p JSON had no usable answer (no structured_output or '
-            'result):\n  %s' % stdout[:2000])
+            'claude -p JSON had no usable "result" text:\n  %s' % stdout[:2000])
 
     usage_block = data.get('usage') or {}
     usage = Usage(
@@ -720,8 +688,7 @@ def _parse_claude_cli_json(stdout: str) -> CallResult:
     return CallResult(text=text, usage=usage)
 
 
-def anthropic_call(system: str, user: str, *, model: str,
-                   schema: dict | None = None) -> CallResult:
+def anthropic_call(system: str, user: str, *, model: str) -> CallResult:
     """Call the Anthropic API with the cached rubric ``system`` + ``user`` diff.
 
     The metered (API-key) backend for ``triage``'s injectable ``call``. The
@@ -736,12 +703,7 @@ def anthropic_call(system: str, user: str, *, model: str,
     ``user`` diff varies and is not cached. Returns the model text and the
     response's token ``usage`` (including the cache-read/creation split). This is
     the only function in the module that performs network I/O.
-
-    ``schema`` is accepted for boundary symmetry but not used here -- the rubric
-    already instructs strict JSON and the robust parser handles it; enforced
-    structured output is a ``claude -p`` feature.
     """
-    del schema  # accepted for a uniform call() signature; the rubric instructs JSON
     try:
         import anthropic
     except ImportError as exc:

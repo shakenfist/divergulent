@@ -80,6 +80,19 @@ Operating the pipeline for real surfaced gaps the offline suite could not:
   and per patch). We chose this over the Claude Agent SDK (which wraps the CLI we
   already use, with opaque caching/usage and an agentic shape we do not want); see
   [PLAN-patch-classification-phase-04-triage-backend.md](PLAN-patch-classification-phase-04-triage-backend.md).
+  - **Cost lever found while reading the telemetry**: an early run reported an
+    82.5% cache-hit ratio but a ~$0.14/patch at-rates cost, dominated by
+    `cache_creation`. Measuring showed `claude -p` was caching the *whole* prompt
+    -- including ~17k tokens of built-in **tool definitions** we never use, plus
+    the per-patch diff and (briefly) the `--json-schema` scaffolding -- and
+    re-*writing* the volatile parts (at ~2x) every call, never recouping them.
+    Fix: run with **`--tools "" --strict-mcp-config`** and **drop `--json-schema`**
+    (the robust parser already degrades malformed output safely to needs_human).
+    That shrinks each request from **~66k → ~3.4k tokens** (plain input, zero
+    `cache_creation`) -- API-level token efficiency **on the subscription path**,
+    measured ~3-5x cheaper per call, no new dependency. Output verbosity (the
+    model writing more than the one-or-two-sentence reasoning asked for) is the
+    next, backend-independent, cost lever.
 - **Ledger safety**: `build` now refuses to silently wipe a populated ledger;
   **`ledger record`** applies new/changed rules to an existing ledger
   non-destructively (append-only re-record + supersede-on-change), so a rule

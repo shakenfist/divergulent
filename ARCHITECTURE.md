@@ -122,13 +122,15 @@ installed-package inventory never leaves the machine.
   current verdict is never stored, so it cannot drift, and retiring a rule
   re-queues exactly its fingerprints. Phase 4 fills the llm/human seats:
   `triage.py` runs the claim-blind LLM draft + adversarial verification over a
-  `call(system, user, *, model, schema=None) -> CallResult(text, usage)` boundary
-  — the static rubric is the **cacheable system prompt**, the diff the variable
-  user message, so the rubric is billed once per run (the default `claude -p`
-  backend uses `--system-prompt` + `--json-schema` + `--output-format json`, no
-  new dependency; the anthropic backend caches it with `cache_control`). Each
-  call's token usage flows to a **Cost & cache** report (tokens, cache-hit ratio,
-  cost) so a run's spend is visible. Step 4c bumps the ledger to **schema v2** (a
+  `call(system, user, *, model) -> CallResult(text, usage)` boundary — the static
+  rubric is the `system` prompt, the diff the variable user message. The default
+  `claude -p` backend runs with `--system-prompt` + `--tools ""`
+  + `--strict-mcp-config` + `--output-format json` (no new dependency): stripping
+  the unused built-in tools/MCP shrinks each request from ~66k to ~3.4k tokens
+  (plain input, no wasteful cache writes) — API-level efficiency on subscription.
+  The anthropic backend caches the rubric with `cache_control`. Each call's token
+  usage flows to a **Cost & cache** report (tokens, cache-hit ratio, cost) so a
+  run's spend is visible. Step 4c bumps the ledger to **schema v2** (a
   `verified` flag on `decision`,
   reserved `signature`/`signed_by` columns for signed human ManualDecisions, and
   a `review_queue` table) and refines the precedence to `human > verified-llm >
