@@ -1,6 +1,9 @@
 import contextlib
 import io
 import json
+import os
+import shutil
+import tempfile
 from unittest import mock
 
 import testtools
@@ -73,6 +76,13 @@ class StalenessCommandTestCase(testtools.TestCase):
 
     def setUp(self):
         super().setUp()
+        # Isolate the cache dir so a real stored bundle on the operator's machine
+        # is never auto-discovered by cli.main (default args -> default_cache_dir).
+        cache_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, cache_dir, ignore_errors=True)
+        patcher = mock.patch.dict(os.environ, {'DIVERGULENT_CACHE_DIR': cache_dir})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.packages = [_pkg('bash', 'bash', '5.2-1'), _pkg('libc6', 'glibc', '2.36-9')]
         self.source = FakeSource({
             'bash': _result('bash', '5.2-1', '5.3', StalenessState.BEHIND),
