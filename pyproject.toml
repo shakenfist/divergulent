@@ -36,6 +36,8 @@ dependencies = [
 
 [project.scripts]
 divergulent = "divergulent.cli:main"
+# Curation-side dispatcher (cache builder / classifier operator only).
+divergulent-classify = "divergulent.classify.cli:main"
 
 [project.optional-dependencies]
 # Optional, opt-in Sigstore signature verification of a downloaded cache
