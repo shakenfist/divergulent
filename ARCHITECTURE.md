@@ -121,8 +121,15 @@ installed-package inventory never leaves the machine.
   decision per fingerprint — plus the phase-4 residue queue and a report). The
   current verdict is never stored, so it cannot drift, and retiring a rule
   re-queues exactly its fingerprints. Phase 4 fills the llm/human seats:
-  `triage.py` runs the claim-blind LLM draft + adversarial verification, and
-  step 4c bumps the ledger to **schema v2** (a `verified` flag on `decision`,
+  `triage.py` runs the claim-blind LLM draft + adversarial verification over a
+  `call(system, user, *, model, schema=None) -> CallResult(text, usage)` boundary
+  — the static rubric is the **cacheable system prompt**, the diff the variable
+  user message, so the rubric is billed once per run (the default `claude -p`
+  backend uses `--system-prompt` + `--json-schema` + `--output-format json`, no
+  new dependency; the anthropic backend caches it with `cache_control`). Each
+  call's token usage flows to a **Cost & cache** report (tokens, cache-hit ratio,
+  cost) so a run's spend is visible. Step 4c bumps the ledger to **schema v2** (a
+  `verified` flag on `decision`,
   reserved `signature`/`signed_by` columns for signed human ManualDecisions, and
   a `review_queue` table) and refines the precedence to `human > verified-llm >
   heuristic > unverified-llm` via `verdict.decision_rank` — an unverified LLM

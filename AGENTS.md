@@ -204,7 +204,19 @@ distribution exactly with a 42,907-fingerprint derived queue. See
 
 Phase 4 fills the reserved llm/human seats. `triage.py` does the claim-blind LLM
 draft + an independent adversarial verification, routing each patch to
-`verified` or `needs_human`. Step 4c bumped the ledger to **schema v2**: a
+`verified` or `needs_human`. The model-call boundary is
+`call(system, user, *, model, schema=None) -> CallResult(text, usage)`: the
+**static rubric is the cacheable `system` prompt** and the per-patch diff is the
+`user` message, so the rubric is billed once per run and read from cache
+thereafter (the rubric is relocated verbatim, so verdicts and the
+`(model, prompt_version)` identity are unchanged). The default `claude_cli_call`
+backend runs `claude -p --system-prompt <rubric> --json-schema <shape>
+--output-format json` (no new dependency, subscription-billed) and parses the
+token-usage block + `total_cost_usd`; `anthropic_call` sends the rubric as a
+1h-cached `cache_control` block. The driver sums each call's usage into a **Cost
+& cache** report section (tokens, cache-hit ratio, reported + at-rates cost per
+run and per patch). See
+`docs/plans/PLAN-patch-classification-phase-04-triage-backend.md`. Step 4c bumped the ledger to **schema v2**: a
 `verified` flag on `decision`, reserved `signature`/`signed_by` columns for
 signed human ManualDecisions (4e), and a `review_queue` worklist table. The
 precedence is now `human > verified-llm > heuristic > unverified-llm`

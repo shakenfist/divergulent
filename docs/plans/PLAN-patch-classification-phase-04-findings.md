@@ -67,6 +67,19 @@ Operating the pipeline for real surfaced gaps the offline suite could not:
   decision). Flask + Jinja2 live behind a new `review` extra (off the default
   scan/report path). Specced + built in
   [PLAN-patch-classification-phase-04-review-web.md](PLAN-patch-classification-phase-04-review-web.md).
+- **Triage backend caching + cost telemetry** (`triage.py`/`triage_driver.py`):
+  the model-call boundary is now `call(system, user, *, model, schema) ->
+  CallResult(text, usage)` -- the static rubric is a **cached system prompt**
+  (relocated verbatim, so verdicts and `prompt_version` are unchanged) and the
+  diff is the variable user message, so the rubric is billed once per run instead
+  of on every one of the ~2N calls. The default `claude -p` backend uses
+  `--system-prompt` + `--json-schema` (enforced structured output) +
+  `--output-format json`, capturing the token-usage block and `total_cost_usd` --
+  **no new dependency, still subscription-billed**. Each run now reports a **Cost
+  & cache** section (tokens, cache-hit ratio, reported + at-API-rates cost per run
+  and per patch). We chose this over the Claude Agent SDK (which wraps the CLI we
+  already use, with opaque caching/usage and an agentic shape we do not want); see
+  [PLAN-patch-classification-phase-04-triage-backend.md](PLAN-patch-classification-phase-04-triage-backend.md).
 - **Ledger safety**: `build` now refuses to silently wipe a populated ledger;
   **`ledger record`** applies new/changed rules to an existing ledger
   non-destructively (append-only re-record + supersede-on-change), so a rule

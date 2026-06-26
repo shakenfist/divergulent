@@ -6,7 +6,12 @@ backend (steps 4a–4c). The triage *logic* — claim-blind draft, adversarial
 verify, trust-but-verify routing — is unchanged. What changes is the **transport**:
 how the prompt is sent and billed, and what we measure.
 
-**Status: planned (not started).** This document is the proposal for review.
+**Status: implemented.** Shipped across the boundary+backends commit (cached
+rubric + usage), the telemetry commit (Cost & cache report), and the
+`--json-schema` hardening + docs. Verdicts and `prompt_version` are unchanged
+(rubric relocated verbatim); a live `claude -p` call confirmed the end-to-end
+chain (enforced structured output parsed, usage + cost captured, cache active).
+Kept as the design record.
 
 ## Why
 

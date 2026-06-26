@@ -70,7 +70,7 @@ def _routing_call(*, triage_response, verify_response, recorder=None):
     injected ``call`` serves both passes of ``triage_and_verify``. Records
     (system, user, model) when asked.
     """
-    def call(system, user, *, model):
+    def call(system, user, *, model, schema=None):
         if recorder is not None:
             recorder.append((system, user, model))
         if _VERIFY_MARKER in system:
@@ -123,7 +123,7 @@ class VerifyPromptTestCase(testtools.TestCase):
 class VerifyTestCase(testtools.TestCase):
 
     def _fake_call(self, response, *, recorder=None):
-        def call(system, user, *, model):
+        def call(system, user, *, model, schema=None):
             if recorder is not None:
                 recorder.append((system, user, model))
             return CallResult(text=response)
@@ -179,7 +179,7 @@ class VerifyTestCase(testtools.TestCase):
         self.assertIn('char buf[64]', user)
 
     def test_verification_carries_the_call_usage(self):
-        def call(system, user, *, model):
+        def call(system, user, *, model, schema=None):
             return CallResult(text=_verify_json(), usage=Usage(input_tokens=80, output_tokens=12))
         v = verify(_patch_with_description(), 'bugfix', call=call)
         self.assertEqual(80, v.usage.input_tokens)

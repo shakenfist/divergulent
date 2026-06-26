@@ -182,7 +182,7 @@ def _fixed_call(*, triage_response, verify_response, recorder=None, usage=None):
     assert which fingerprint was triaged first.  ``usage`` is attached to every
     CallResult so the per-run telemetry can be exercised.
     """
-    def call(system, user, *, model):
+    def call(system, user, *, model, schema=None):
         if recorder is not None:
             recorder.append(user)
         text = verify_response if _VERIFY_MARKER in system else triage_response

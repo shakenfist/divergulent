@@ -17,9 +17,9 @@ import subprocess
 from unittest import mock
 
 from divergulent.classify.triage import (
-    DEFAULT_MODEL, CallResult, LlmVerdict, PROMPT_VERSION, TRIAGE_CATEGORIES, Usage,
-    anthropic_call, claude_cli_call, diff_body, triage, triage_system_prompt,
-    triage_user_message)
+    DEFAULT_MODEL, CallResult, LlmVerdict, PROMPT_VERSION, TRIAGE_CATEGORIES,
+    TRIAGE_SCHEMA, Usage, anthropic_call, claude_cli_call, diff_body, triage,
+    triage_system_prompt, triage_user_message)
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ def _patch_with_subject(subject=_SUBJECT, diff=_DIFF):
 
 def _fake_call(response, *, recorder=None, usage=None):
     """A fake ``call`` returning a canned ``response``; records (system, user, model)."""
-    def call(system, user, *, model):
+    def call(system, user, *, model, schema=None):
         if recorder is not None:
             recorder.append((system, user, model))
         return CallResult(text=response, usage=usage or Usage())
@@ -337,6 +337,24 @@ class ClaudeCliCallTestCase(testtools.TestCase):
         self.assertEqual(17283, out.usage.cache_read_tokens)
         self.assertEqual(9384, out.usage.cache_creation_tokens)
         self.assertEqual(0.0207, out.usage.cost_usd)
+
+    def test_json_schema_answer_is_read_from_structured_output(self):
+        # With a schema, claude returns the conforming answer in structured_output
+        # (result is empty); it must be read from there and re-serialised.
+        payload = json.dumps({
+            'result': '',
+            'structured_output': {'category': 'bugfix', 'confidence': 'high', 'reasoning': 'x'},
+            'usage': {'input_tokens': 5, 'output_tokens': 9,
+                      'cache_creation_input_tokens': 0, 'cache_read_input_tokens': 100},
+            'total_cost_usd': 0.001})
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout=payload, stderr='')
+        with mock.patch('divergulent.classify.triage.subprocess.run',
+                        return_value=completed) as run:
+            out = claude_cli_call('RUBRIC', 'DIFF', model=DEFAULT_MODEL, schema=TRIAGE_SCHEMA)
+        self.assertEqual(
+            {'category': 'bugfix', 'confidence': 'high', 'reasoning': 'x'}, json.loads(out.text))
+        self.assertEqual(100, out.usage.cache_read_tokens)
+        self.assertIn('--json-schema', run.call_args[0][0])  # the flag was passed
 
     def test_non_json_stdout_on_zero_exit_raises(self):
         completed = subprocess.CompletedProcess(
