@@ -21,10 +21,13 @@ Curation-side only: no client command imports ``classify/``.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from divergulent.classify import content as content_mod
 from divergulent.classify import ledger as ledger_mod
+from divergulent.classify import measure
 from divergulent.classify import triage as triage_mod
+from divergulent.classify import triage_driver
 from divergulent.classify.triage import Usage
 
 # ---------------------------------------------------------------------------
@@ -41,6 +44,11 @@ RISK_RANK = {level: rank for rank, level in enumerate(RISK_LEVELS)}
 # The observation kind and the source-id prefix recorded on the ledger row.
 RISK_KIND = 'security-risk'
 RISK_OBSERVED_BY_PREFIX = 'risk-gate:'
+
+# The deterministic cull source (provably-benign patches scored 'none' without
+# spending an LLM call), versioned independently of the LLM prompt.
+RISK_CULL_OBSERVED_BY = 'risk-cull'
+RISK_CULL_VERSION = 1
 
 # Opus was the bake-off pick: 100% recall / 0% false-alarm at the >=elevated cut
 # vs Sonnet's 73%/3%. For a security gate, recall is the metric you cannot trade
@@ -194,3 +202,149 @@ def risk_rank_by_fingerprint(conn) -> dict[str, int]:
         if obs['kind'] == RISK_KIND and obs['detail'] in RISK_RANK:
             ranks[obs['fingerprint']] = RISK_RANK[obs['detail']]
     return ranks
+
+
+# ---------------------------------------------------------------------------
+# The security-safe deterministic cull.
+#
+# Patches a deterministic, conservative check can prove carry no security risk
+# are scored 'none' WITHOUT spending an LLM call. The predicate must NEVER cull
+# something risky -- it is narrower than the packaging category (a debian/rules
+# change can flip a build-hardening flag), and every sub-check is conservative
+# (false whenever unsure).
+# ---------------------------------------------------------------------------
+
+# Non-code data files that are provably benign by path: translation catalogues
+# and changelog/copyright metadata.
+_BENIGN_DATA_SUFFIXES = ('.po', '.pot')
+_BENIGN_DATA_BASENAMES = ('changelog', 'copyright')
+
+
+def _benign_data_path(path: str) -> bool:
+    lowered = path.lower()
+    if lowered.endswith(_BENIGN_DATA_SUFFIXES):
+        return True
+    return lowered.rsplit('/', 1)[-1] in _BENIGN_DATA_BASENAMES
+
+
+def provably_benign(patch_text: str) -> str | None:
+    """A short reason if the patch is provably security-irrelevant, else ``None``.
+
+    Uses the phase-2 :func:`content.profile` (built from the diff, never the
+    claim). Every check is conservative -- a change that does not execute
+    (empty/whitespace/comment-only) or touches only documentation or
+    translation/changelog/copyright metadata. Anything that touches code, build
+    files, or other data is NOT culled -- it goes to the LLM gate.
+    """
+    profile = content_mod.profile(patch_text)
+    if profile.is_empty:
+        return 'empty / mode-only change (no executable content)'
+    if profile.whitespace_only:
+        return 'whitespace-only change'
+    if profile.comment_only:
+        return 'comment-only change'
+    if not profile.touches_code:
+        if set(profile.file_types) <= {'doc'}:
+            return 'documentation-only change'
+        if profile.files and all(_benign_data_path(path) for path, _ in profile.files):
+            return 'translation/changelog/copyright-only change'
+    return None
+
+
+def record_cull(conn, fingerprint: str, reason: str, *, now: str, commit: bool = True) -> int:
+    """Record a deterministic ``none`` risk for a provably-benign patch.
+
+    Mirrors :func:`record_risk_observation` (supersede any prior live risk row,
+    then append) but keyed to the deterministic cull source
+    ``observed_by='risk-cull'`` / ``rule_version=RISK_CULL_VERSION`` -- so a
+    culled 'none' is distinguishable from an LLM 'none' in the audit trail.
+    """
+    ledger_mod.supersede_observations_for_fingerprint(
+        conn, fingerprint=fingerprint, kind=RISK_KIND, superseded_at=now, commit=False)
+    evidence = json.dumps({'level': 'none', 'reason': reason, 'culled': True}, sort_keys=True)
+    return ledger_mod.append_observation(
+        conn, fingerprint=fingerprint, kind=RISK_KIND, detail='none', evidence=evidence,
+        observed_by=RISK_CULL_OBSERVED_BY, rule_version=RISK_CULL_VERSION,
+        observed_at=now, commit=commit)
+
+
+# ---------------------------------------------------------------------------
+# The bounded cascade driver.
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RiskRunStats:
+    """What one bounded :func:`run_risk_gate` pass did, honest about the cap."""
+
+    queue_size: int = 0
+    scored: int = 0       # went through the LLM gate
+    culled: int = 0       # provably-benign, scored 'none' deterministically
+    errored: int = 0      # the backend raised -> recorded 'elevated' (recall-safe)
+    by_level: dict[str, int] = field(default_factory=dict)
+    unscored_remaining: int = 0
+    usage: Usage = field(default_factory=Usage)
+    model: str = DEFAULT_RISK_MODEL
+
+
+def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, limit: int,
+                  model: str = DEFAULT_RISK_MODEL, progress=None) -> RiskRunStats:
+    """Score a BOUNDED slice of the residue's security risk; record each result.
+
+    Builds the prioritised residue work-list (:func:`triage_driver.build_work_list`),
+    skips fingerprints that already carry a live ``security-risk`` observation,
+    takes the first ``limit``, and for each: applies the **security-safe cull**
+    (provably-benign -> ``none`` deterministically, no LLM) or scores it via the
+    injected ``call``. A backend failure records ``elevated`` (recall-safe) and is
+    counted. ``call``/``now`` are injected so the path is offline and deterministic.
+    """
+    work = triage_driver.build_work_list(conn, index_path)
+    scored = set(risk_rank_by_fingerprint(conn))
+    pending = [item for item in work if item.fingerprint not in scored]
+    selected = pending[:limit]
+
+    stats = RiskRunStats(queue_size=len(work), model=model)
+    stats.unscored_remaining = max(len(pending) - len(selected), 0)
+
+    for position, item in enumerate(selected, start=1):
+        body = measure.read_body(corpus_dir, item.representative_sha)
+        cull_reason = provably_benign(body)
+        if cull_reason is not None:
+            record_cull(conn, item.fingerprint, cull_reason, now=now, commit=False)
+            stats.culled += 1
+            level = 'none'
+        else:
+            try:
+                score = score_risk(body, call=call, model=model)
+            except Exception as exc:  # noqa: BLE001 -- one bad patch must not abort the run
+                score = RiskScore(
+                    level='elevated', rank=RISK_RANK['elevated'],
+                    reason='risk gate failed: %s' % exc, model=model,
+                    prompt_version=RISK_PROMPT_VERSION, raw_response='')
+                stats.errored += 1
+            record_risk_observation(conn, item.fingerprint, score, now=now, commit=False)
+            stats.usage = stats.usage + score.usage
+            stats.scored += 1
+            level = score.level
+        stats.by_level[level] = stats.by_level.get(level, 0) + 1
+        if progress is not None:
+            progress('[%d/%d] %s -> %s' % (position, len(selected), item.fingerprint[:12], level))
+
+    conn.commit()
+    return stats
+
+
+def print_risk_summary(stats: RiskRunStats) -> None:
+    """Print a lean, honest summary of one risk-gate run (the cap is loud)."""
+    print('risk gate: scored %d, culled %d (provably benign), errored %d; %d residue, %d un-scored remain' % (
+        stats.scored, stats.culled, stats.errored, stats.queue_size, stats.unscored_remaining))
+    if stats.by_level:
+        order = {level: rank for rank, level in enumerate(RISK_LEVELS)}
+        for level in sorted(stats.by_level, key=lambda lvl: order.get(lvl, 99), reverse=True):
+            print('  %-9s %d' % (level, stats.by_level[level]))
+    if stats.scored:
+        ratio = triage_driver.cache_hit_ratio(stats.usage)
+        reported = '' if stats.usage.cost_usd is None else ' reported=$%.4f' % stats.usage.cost_usd
+        print('cost & cache: out=%d cache-hit=%s;%s est=$%.4f (~$%.4f/scored)' % (
+            stats.usage.output_tokens, 'n/a' if ratio is None else '%.0f%%' % (ratio * 100),
+            reported, triage_driver.derived_cost_usd(stats.usage, stats.model),
+            triage_driver.derived_cost_usd(stats.usage, stats.model) / stats.scored))

@@ -133,3 +133,76 @@ class RecordRiskObservationTestCase(testtools.TestCase):
         self.assertEqual(risk.RISK_RANK['high'], ranks['fp-high'])
         self.assertEqual(risk.RISK_RANK['none'], ranks['fp-none'])
         self.assertNotIn('fp-unscored', ranks)
+
+
+def _diff(old, new, a='src/x.c', b=None):
+    b = b or a
+    return '--- a/%s\n+++ b/%s\n@@ -1 +1 @@\n-%s\n+%s\n' % (a, b, old, new)
+
+
+class ProvablyBenignTestCase(testtools.TestCase):
+
+    def test_documentation_only_is_culled(self):
+        self.assertIsNotNone(risk.provably_benign(_diff('old text', 'new text', a='doc/guide.md')))
+
+    def test_whitespace_only_is_culled(self):
+        # Re-indentation of a code line -- no behaviour change, safe to cull.
+        ws = ('--- a/src/x.c\n+++ b/src/x.c\n@@ -1,2 +1,2 @@\n'
+              ' int main(){\n-return 0;\n+  return 0;\n')
+        self.assertIsNotNone(risk.provably_benign(ws))
+
+    def test_translation_is_culled(self):
+        self.assertIsNotNone(risk.provably_benign(
+            _diff('msgstr "a"', 'msgstr "b"', a='po/de.po')))
+
+    def test_changelog_is_culled(self):
+        self.assertIsNotNone(risk.provably_benign(
+            _diff('old entry', 'new entry', a='debian/changelog')))
+
+    def test_real_code_change_is_not_culled(self):
+        self.assertIsNone(risk.provably_benign(_diff('do_thing();', 'do_other();', a='src/x.c')))
+
+    def test_debian_rules_hardening_change_is_not_culled(self):
+        # The security-critical case: a build-flag change must reach the gate.
+        self.assertIsNone(risk.provably_benign(
+            _diff('CFLAGS = -O2', 'CFLAGS = -O2 -fstack-protector', a='debian/rules')))
+
+
+class RunRiskGateTestCase(testtools.TestCase):
+
+    def _setup(self):
+        from divergulent.tests.test_triage_driver import _build_corpus, _seed_ledger
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        index_path, fingerprints = _build_corpus(tmp.name)
+        conn = ledger_mod.create_ledger(os.path.join(tmp.name, 'ledger.sqlite'))
+        self.addCleanup(conn.close)
+        _seed_ledger(conn, fingerprints)
+        return conn, tmp.name, index_path, fingerprints
+
+    def test_culls_the_doc_patch_and_scores_the_code_patches(self):
+        conn, corpus_dir, index_path, fingerprints = self._setup()
+        stats = risk.run_risk_gate(
+            conn, corpus_dir, index_path, call=_fake_call(_risk_json('elevated')),
+            now=WHEN, limit=10, model='claude-sonnet-4-6')
+        # The doc-only patch is culled (deterministic none); the others scored.
+        self.assertGreaterEqual(stats.culled, 1)
+        self.assertGreaterEqual(stats.scored, 1)
+        # The doc fingerprint carries a culled 'none' from the deterministic source.
+        doc = [o for o in ledger_mod.observations_for(conn, fingerprints['doc.patch'])
+               if o['kind'] == risk.RISK_KIND][-1]
+        self.assertEqual('none', doc['detail'])
+        self.assertEqual(risk.RISK_CULL_OBSERVED_BY, doc['observed_by'])
+        # A code fingerprint carries an LLM 'elevated' from the gate.
+        bug = [o for o in ledger_mod.observations_for(conn, fingerprints['bug-a.patch'])
+               if o['kind'] == risk.RISK_KIND][-1]
+        self.assertEqual('elevated', bug['detail'])
+        self.assertTrue(bug['observed_by'].startswith(risk.RISK_OBSERVED_BY_PREFIX))
+
+    def test_rerun_skips_already_scored(self):
+        conn, corpus_dir, index_path, _ = self._setup()
+        risk.run_risk_gate(conn, corpus_dir, index_path, call=_fake_call(_risk_json()),
+                           now=WHEN, limit=10)
+        again = risk.run_risk_gate(conn, corpus_dir, index_path, call=_fake_call(_risk_json()),
+                                   now=LATER, limit=10)
+        self.assertEqual(0, again.scored + again.culled)  # nothing left to score
