@@ -371,8 +371,12 @@ _HEAD = '''<!doctype html>
  .claim-desc { white-space: pre-wrap; margin: 0.3rem 0; color: #e0e3e8; }
  pre.diff { background: #0f1115; border: 1px solid #2a2f38; padding: 0.6rem;
             overflow-x: auto; font: 12px/1.4 ui-monospace, monospace; }
+ pre.diff span { display: block; min-width: 100%; width: fit-content; min-height: 1.4em; }
  pre.diff .add { color: #5fd17a; } pre.diff .del { color: #ff7b72; }
  pre.diff .hunk { color: #9aa0aa; background: #232730; } pre.diff .meta { color: #6b7280; }
+ /* Upstream context (lines not part of the patch) gets a faint purple wash so the
+    added/removed lines, left on the base background, read as the changed regions. */
+ pre.diff .ctx { background: #1a1228; }
  .mono { font-family: ui-monospace, monospace; }
  .muted { color: #8a909a; } .error { color: #ff7b72; font-weight: bold; }
  fieldset.verdict { border: 1px solid #2a2f38; border-radius: 0.3rem; }
@@ -528,8 +532,7 @@ document.addEventListener('keydown', function(e) {
 </script>
 {% endif %}
 <h2>Diff in upstream context</h2>
-<pre class="diff">{% for line in diff %}<span class="{{ line.cls }}">{{ line.text }}</span>
-{% endfor %}</pre>
+<pre class="diff">{% for line in diff %}<span class="{{ line.cls }}">{{ line.text }}</span>{% endfor %}</pre>
 ''' + _FOOT
 
 ERROR_TEMPLATE = _HEAD.replace('{{ title }}', 'error') + '''
