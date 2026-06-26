@@ -238,8 +238,10 @@ evidence, and a pending `review_queue` item for every `needs_human` result.
 bounded, prioritised slice (never the whole queue by accident) and surfaces
 candidate deterministic rules for human approval. `python -m
 divergulent.classify.risk` (in `risk.py`) is a **security-risk gate**: a cheap,
-claim-blind LLM scores each residue patch's security risk on a coarse ordinal
-(`none/low/elevated/high`), recorded as a supersedable `security-risk`
+claim-blind LLM scores **every** carried patch's security risk on a coarse ordinal
+(`none/low/elevated/high`) — the whole corpus, not just the residue, since a
+settled `packaging` patch (a `debian/rules` hardening change) can still be
+security-relevant — recorded as a supersedable `security-risk`
 **observation** (`observed_by='risk-gate:<model>'` / `rule_version=`, the same
 `(model, prompt_version)` provenance as triage). It is **advisory** — it feeds
 priority (risk is the top component of the work-list and `review_queue.priority`,
@@ -248,8 +250,9 @@ needs no verify. A **security-safe cull** scores provably-benign patches (empty/
 whitespace/comment-only, doc-only, translation/changelog) `none` with no LLM call
 — narrower than the packaging category (a `debian/rules` hardening-flag change is
 NOT culled). Default model Opus (bake-off: 100% recall / 0% false-alarm at
-≥elevated vs Sonnet 73%/3%); on the residue the cull fires ~0% (the deterministic
-tier already removed benign patches), so it is a safety net not a cost lever. See
+≥elevated vs Sonnet 73%/3%); the cull fires ~7% of the full corpus (mostly
+doc-only), so ~93% of ~60k fingerprints get an LLM call — ~$340 Opus / ~$170
+Sonnet at-rates/quota, one-time. See
 `docs/plans/PLAN-patch-classification-phase-04-risk-gate.md`. `python -m
 divergulent.classify.review` (in `review.py`) is the local, interactive,
 Sigstore-signed human tier. It has three subcommands: `review <ledger>

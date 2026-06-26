@@ -291,17 +291,21 @@ class RiskRunStats:
 
 def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, limit: int,
                   model: str = DEFAULT_RISK_MODEL, progress=None) -> RiskRunStats:
-    """Score a BOUNDED slice of the residue's security risk; record each result.
+    """Score a BOUNDED slice of the WHOLE corpus's security risk; record each.
 
-    Builds the prioritised residue work-list (:func:`triage_driver.build_work_list`),
-    skips fingerprints that already carry a live ``security-risk`` observation,
-    takes the first ``limit``, and for each: applies the **security-safe cull**
-    (provably-benign -> ``none`` deterministically, no LLM) or scores it via the
-    injected ``call``. A backend failure records ``elevated`` (recall-safe) and is
-    counted. ``call``/``now`` are injected so the path is offline and deterministic.
+    Scores EVERY fingerprint (``scope='all'``), not just the residue: a patch the
+    deterministic tier settled as ``packaging``/``documentation`` can still be
+    security-relevant (a ``debian/rules`` hardening-flag change is the classic
+    case), so the security axis is independent of the category. Skips fingerprints
+    that already carry a live ``security-risk`` observation, takes the first
+    ``limit``, and for each: applies the **security-safe cull** (provably-benign ->
+    ``none`` deterministically, no LLM -- which does real work here on the settled-
+    benign bulk, ~7% of the corpus) or scores it via the injected ``call``. A
+    backend failure records ``elevated`` (recall-safe) and is counted.
+    ``call``/``now`` are injected so the path is offline and deterministic.
     """
     from divergulent.classify import triage_driver  # lazy: avoids an import cycle
-    work = triage_driver.build_work_list(conn, index_path)
+    work = triage_driver.build_work_list(conn, index_path, scope='all')
     scored = set(risk_rank_by_fingerprint(conn))
     pending = [item for item in work if item.fingerprint not in scored]
     selected = pending[:limit]
@@ -339,7 +343,7 @@ def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, lim
 
 def print_risk_summary(stats: RiskRunStats) -> None:
     """Print a lean, honest summary of one risk-gate run (the cap is loud)."""
-    print('risk gate: scored %d, culled %d (provably benign), errored %d; %d residue, %d un-scored remain' % (
+    print('risk gate: scored %d, culled %d (provably benign), errored %d; %d corpus, %d un-scored remain' % (
         stats.scored, stats.culled, stats.errored, stats.queue_size, stats.unscored_remaining))
     if stats.by_level:
         order = {level: rank for rank, level in enumerate(RISK_LEVELS)}

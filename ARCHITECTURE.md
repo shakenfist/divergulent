@@ -148,9 +148,11 @@ installed-package inventory never leaves the machine.
   rules** (clusters of identical verified verdicts — for human approval, never
   auto-applied), and reports the untriaged remainder. `risk.py` (the
   `python -m divergulent.classify.risk` CLI) is a **security-risk gate**: a cheap,
-  claim-blind LLM pass that scores each residue patch's security risk on a coarse
-  ordinal (`none/low/elevated/high`) so the expensive triage pass and the human
-  reach the scariest patches **first**. It is **advisory** — it records a
+  claim-blind LLM pass that scores **every** carried patch's security risk on a
+  coarse ordinal (`none/low/elevated/high`) — the whole corpus, not just the
+  residue, because a patch the deterministic tier settled as `packaging` can still
+  be security-relevant (a `debian/rules` hardening-flag change) — so the expensive
+  triage pass and the human reach the scariest patches **first**. It is **advisory** — it records a
   supersedable `security-risk` **observation** (`observed_by='risk-gate:<model>'`
   / `rule_version=RISK_PROMPT_VERSION`, the same `(model, prompt_version)`
   provenance as the triage decisions) and feeds the work-list/`review_queue`

@@ -199,6 +199,23 @@ class RunRiskGateTestCase(testtools.TestCase):
         self.assertEqual('elevated', bug['detail'])
         self.assertTrue(bug['observed_by'].startswith(risk.RISK_OBSERVED_BY_PREFIX))
 
+    def test_scores_settled_patches_not_just_the_residue(self):
+        from divergulent.classify import triage_driver
+        conn, corpus_dir, index_path, fps = self._setup()
+        # Settle bug-a as a verified verdict -> it leaves the residue queue.
+        ledger_mod.append_decision(
+            conn, fingerprint=fps['bug-a.patch'], category='documentation', confidence='high',
+            decided_by='llm-triage:m', rule_version=1, kind='llm', verified=True,
+            evidence='', decided_at=WHEN, commit=True)
+        residue = {w.fingerprint for w in triage_driver.build_work_list(conn, index_path)}
+        every = {w.fingerprint for w in triage_driver.build_work_list(conn, index_path, scope='all')}
+        self.assertNotIn(fps['bug-a.patch'], residue)   # settled -> not in the residue
+        self.assertIn(fps['bug-a.patch'], every)        # ... but in 'all'
+        # The gate scores it anyway (it runs on the whole corpus).
+        risk.run_risk_gate(conn, corpus_dir, index_path, call=_fake_call(_risk_json('low')),
+                           now=WHEN, limit=20)
+        self.assertIn(fps['bug-a.patch'], risk.risk_rank_by_fingerprint(conn))
+
     def test_rerun_skips_already_scored(self):
         conn, corpus_dir, index_path, _ = self._setup()
         risk.run_risk_gate(conn, corpus_dir, index_path, call=_fake_call(_risk_json()),

@@ -48,9 +48,11 @@ negatives:
   ~40), making it 3× Sonnet's cost *and* less reliable (over-flagged a benign
   build script). Sonnet/Opus respected the "≤20 words" instruction (~30–76 out).
 - **Cost is affordable, one-time.** At the stripped-down sizes a gate call is
-  ~$0.003–0.03 (clean-sequential vs concurrent/large-diff); gating all ~34k is
-  **low hundreds of dollars at API rates** — i.e. *quota, not cash* on the
-  subscription path. Opus ≈ 2× Sonnet.
+  ~$0.003–0.03 (clean-sequential vs concurrent/large-diff). The gate scores the
+  **whole corpus** (~60k unique fingerprints), not just the residue, because a
+  settled `packaging` patch can still be security-relevant; the deterministic cull
+  carves off ~7% (mostly doc-only), leaving ~56k LLM calls -- **~$340 Opus / ~$170
+  Sonnet at API rates**, i.e. *quota, not cash* on subscription, one-time.
 - **`dangerous-construct` is NOT a risk proxy.** Many flagged constructs are
   benign build-script shell-outs, which Opus correctly rated low. Keep the two
   signals separate.

@@ -170,25 +170,31 @@ def _stored_priority(item: WorkItem) -> int:
     return item.risk_rank * RISK_PRIORITY_WEIGHT + item.n_occurrences
 
 
-def build_work_list(conn: sqlite3.Connection, index_path: str) -> list[WorkItem]:
-    """The prioritised residue work-list (the full queue, ordered, NOT capped).
+def build_work_list(conn: sqlite3.Connection, index_path: str, *,
+                    scope: str = 'residue') -> list[WorkItem]:
+    """A prioritised work-list (ordered, NOT capped).
 
-    Joins the ``verdict.queue`` residue against the phase-1 index (for the
-    representative body + recurrence counts) and the live dangerous-construct
-    observations (for priority + routing), and returns it sorted highest-value
-    first.  A queued fingerprint absent from the index (no provenance row) is
-    skipped -- it has no body to triage.  The cap is applied by the caller
-    (:func:`run_triage`) so the full ordered list is available for the report's
-    ``untriaged_remaining``.
+    ``scope='residue'`` (default) is the ``verdict.queue`` residue -- the patches
+    triage works on. ``scope='all'`` is EVERY fingerprint in the phase-1 index --
+    used by the security-risk gate, which scores the whole corpus (a settled
+    ``packaging`` patch can still be security-relevant, e.g. a ``debian/rules``
+    hardening-flag change), not just the residue.
+
+    Joins the source against the index (for the representative body + recurrence
+    counts), the live dangerous-construct observations, and the live security-risk
+    levels, and returns it sorted highest-value first (risk, then dangerous, then
+    occurrence). The cap is applied by the caller so the full ordered list is
+    available for the report's remainder count.
     """
     from divergulent.classify import risk as risk_mod  # lazy: avoids an import cycle
 
     groups = _index_groups(index_path)
     dangerous = _fingerprints_with_dangerous_construct(conn)
     risk_ranks = risk_mod.risk_rank_by_fingerprint(conn)
+    fingerprints = groups.keys() if scope == 'all' else verdict_mod.queue(conn)
 
     items: list[WorkItem] = []
-    for fingerprint in verdict_mod.queue(conn):
+    for fingerprint in fingerprints:
         group = groups.get(fingerprint)
         if group is None:
             continue
