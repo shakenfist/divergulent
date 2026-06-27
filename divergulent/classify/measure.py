@@ -367,6 +367,23 @@ def write_index(corpus_dir: str, index_path: str) -> int:
               NORMALISATION_VERSION, sha_to_fp[row['raw_sha256']]) for row in patch_rows])
         connection.execute('CREATE INDEX idx_patch_fingerprint ON patch (fingerprint)')
         connection.execute('CREATE INDEX idx_patch_source_package ON patch (source_package)')
+
+        # A `package` table carries per-package metadata the `patch` table does not
+        # -- notably the changelog (last-upload) date -- so the review UI can show
+        # package age with one indexed lookup. ``changelog_date`` is None for a
+        # native/non-quilt package or a corpus built before it was captured.
+        package_rows = _latest_package_rows(
+            _read_jsonl(os.path.join(corpus_dir, 'packages.jsonl')))
+        connection.execute(
+            'CREATE TABLE package ('
+            'source_package TEXT NOT NULL, '
+            'version TEXT NOT NULL, '
+            'changelog_date TEXT)')
+        connection.executemany(
+            'INSERT INTO package (source_package, version, changelog_date) VALUES (?, ?, ?)',
+            [(row['source_package'], row['version'], row.get('changelog_date'))
+             for row in package_rows])
+        connection.execute('CREATE INDEX idx_package_source_package ON package (source_package)')
         connection.commit()
     finally:
         connection.close()

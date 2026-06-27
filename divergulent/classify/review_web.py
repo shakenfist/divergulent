@@ -26,6 +26,7 @@ from urllib.parse import urlencode
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import review as review_mod
 from divergulent.classify import reviewability as reviewability_mod
+from divergulent.classify import risk as risk_mod
 from divergulent.classify import verdict as verdict_mod
 
 # The handlers reuse review.py's fingerprint-keyed read helpers directly rather
@@ -53,13 +54,18 @@ def require_loopback(host: str) -> str:
 
 
 def diff_lines(text: str) -> list[dict]:
-    """Split a rendered diff-in-context into ``{cls, text}`` rows for coloring.
+    """Split a rendered diff-in-context into ``{cls, text, block_start}`` rows.
 
     Classifies each line so the template can colour additions, deletions, hunk
     headers and file markers distinctly from upstream context -- the diff reads
-    nicer than the CLI pager without any highlighter dependency.
+    nicer than the CLI pager without any highlighter dependency. ``block_start``
+    marks the FIRST line of each contiguous changed (add/del) run -- the anchors
+    the review page's keyboard navigation jumps between, so a reviewer can skip
+    from change to change instead of scrolling through the expanded context. A
+    delete-then-add modification is one block (both lines are "changed").
     """
     rows = []
+    prev_changed = False
     for line in text.splitlines():
         if line.startswith('@@'):
             cls = 'hunk'
@@ -71,7 +77,12 @@ def diff_lines(text: str) -> list[dict]:
             cls = 'del'
         else:
             cls = 'ctx'
-        rows.append({'cls': cls, 'text': line})
+        changed = cls in ('add', 'del')
+        block_start = changed and not prev_changed
+        rows.append({
+            'cls': cls, 'text': line, 'block_start': block_start,
+            'css': cls + (' block-start' if block_start else '')})
+        prev_changed = changed
     return rows
 
 
@@ -104,6 +115,9 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
     from flask import Flask, abort, redirect, render_template_string, request, url_for
 
     app = Flask('divergulent.review_web')
+    # Reviewer notes are an optional, additive table; backfill it so a ledger
+    # built before notes existed gains it with no rebuild.
+    ledger_mod.ensure_note_table(conn)
     clock = clock or review_mod._cli_now
     categories = review_mod._assignable_categories()
     valid_choices = set(categories) | {review_mod.CHOICE_ACCEPT, review_mod.CHOICE_DEFER}
@@ -115,7 +129,7 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
                 return item
         return None
 
-    def _worklist_row(item, level) -> dict:
+    def _worklist_row(item, level, risk_level, note_count) -> dict:
         fingerprint = item['fingerprint']
         packages = review_mod._carrying_packages(index_path, fingerprint)
         return {
@@ -127,6 +141,10 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             'n_packages': len(packages),
             # 'normal' is rendered as no badge; only large/oversized show.
             'reviewability': None if level == 'normal' else level,
+            # The security-risk level (none if un-scored); shown as a badge.
+            'risk': risk_level,
+            # How many reviewer notes this fingerprint carries (0 -> no indicator).
+            'notes': note_count,
         }
 
     def _worklist_category_chips() -> list[dict]:
@@ -181,7 +199,19 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
         if reviewability:
             items = [item for item in items
                      if levels.get(item['fingerprint'], 'normal') == reviewability]
-        rows = [_worklist_row(item, levels.get(item['fingerprint'], 'normal')) for item in items]
+        # Order by the LIVE security-risk level first, then the stored priority --
+        # so a patch scored scary AFTER it was queued surfaces immediately, even if
+        # its frozen stored priority has not been re-stamped yet.
+        risk_levels = risk_mod.risk_level_by_fingerprint(conn)
+        items = sorted(
+            items,
+            key=lambda it: (risk_mod.RISK_RANK.get(risk_levels.get(it['fingerprint']), 0),
+                            it['priority']),
+            reverse=True)
+        note_counts = ledger_mod.note_counts_by_fingerprint(conn)
+        rows = [_worklist_row(item, levels.get(item['fingerprint'], 'normal'),
+                              risk_levels.get(item['fingerprint']),
+                              note_counts.get(item['fingerprint'], 0)) for item in items]
         top = items[0]['fingerprint'] if items else None
         # The category/package filters, as a query string, so the reviewability
         # chips can preserve them (and "all sizes" can reset only reviewability).
@@ -217,7 +247,9 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             can_verdict=signer is not None, categories=categories,
             verdict=verdict, can_requeue=signer is not None and not queued,
             reviewability=None if level == 'normal' else level,
+            risk=risk_mod.risk_level_by_fingerprint(conn).get(resolved),
             oversized_lines=reviewability_mod.REVIEWABILITY_OVERSIZED_LINES,
+            notes=ledger_mod.notes_for(conn, resolved), can_note=signer is not None,
             package_lines=review_mod._format_package_lines(context),
             diff=diff_lines(context.context_view))
 
@@ -244,6 +276,7 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             return render_template_string(
                 REVIEW_TEMPLATE, ctx=context, queued=True, can_verdict=True,
                 categories=categories,
+                notes=ledger_mod.notes_for(conn, resolved), can_note=True,
                 package_lines=review_mod._format_package_lines(context),
                 diff=diff_lines(context.context_view),
                 error='pick a verdict: accept the draft, a category, or defer'), 400
@@ -316,6 +349,25 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
         conn.commit()
         verdict_mod.rebuild_current_verdict(conn)
         return redirect(url_for('audit'))
+
+    @app.route('/note/<fingerprint>', methods=['POST'])
+    def add_note(fingerprint):
+        if signer is None:
+            abort(405)  # read-only instance: notes are signed, so need a signer
+        resolved, matches = review_mod.resolve_fingerprint(conn, fingerprint)
+        if resolved is None:
+            return render_template_string(
+                SEARCH_TEMPLATE, query=fingerprint, matches=matches), 404
+        body = request.form.get('body', '').strip()
+        if not body:
+            return redirect(url_for('review', fingerprint=resolved))  # empty -> no-op
+        try:
+            review_mod.record_note(conn, resolved, body, signer=signer, now=clock())
+        except Exception as exc:  # noqa: BLE001 -- a signing/auth failure is a page, not a 500
+            # record_note signs BEFORE it writes, so a signer failure leaves the
+            # ledger untouched; surface it as an actionable page.
+            return render_template_string(ERROR_TEMPLATE, fingerprint=resolved, error=str(exc)), 502
+        return redirect(url_for('review', fingerprint=resolved))
 
     return app
 
@@ -405,17 +457,33 @@ _HEAD = '''<!doctype html>
         font-size: 0.8rem; font-weight: bold; }
  .rev.large { background: #3a2f12; color: #e3c878; }
  .rev.oversized { background: #4a1c1c; color: #ff9a92; }
+ .risk { display: inline-block; padding: 0 0.4rem; border-radius: 0.2rem;
+         font-size: 0.8rem; font-weight: bold; }
+ .risk.high { background: #5a1212; color: #ff8a82; }
+ .risk.elevated { background: #4a3212; color: #f0b860; }
+ .risk.low { color: #8a909a; }
+ .risk.none { color: #5a606a; }
  .next { display: inline-block; margin: 0.5rem 0; padding: 0.4rem 0.8rem;
          background: #2563eb; color: #fff; border-radius: 0.3rem; text-decoration: none; }
  .meta-block { background: #232730; padding: 0.6rem 0.8rem; border-radius: 0.3rem; }
  .claim-block { background: #1e2128; border-left: 3px solid #b8860b;
                 padding: 0.5rem 0.8rem; border-radius: 0.3rem; margin: 0.6rem 0; }
  .claim-desc { white-space: pre-wrap; margin: 0.3rem 0; color: #e0e3e8; }
+ .notes .note { background: #1b1f26; border-left: 3px solid #3a4150;
+                padding: 0.4rem 0.6rem; margin: 0.4rem 0; border-radius: 0.2rem; }
+ .note-body { white-space: pre-wrap; color: #e0e3e8; }
+ .notes details summary { cursor: pointer; }
+ pre.sig { white-space: pre-wrap; word-break: break-all; max-height: 12rem; overflow: auto;
+           background: #0f1115; padding: 0.4rem; font-size: 11px; color: #8a909a; }
+ textarea { width: 100%; background: #232730; color: #ccd0d6; border: 1px solid #3a4150;
+            border-radius: 0.3rem; padding: 0.4rem; font: inherit; box-sizing: border-box; }
+ .note-badge { font-size: 0.85rem; color: #b0b6c0; }
  pre.diff { background: #0f1115; border: 1px solid #2a2f38; padding: 0.6rem;
             overflow-x: auto; font: 12px/1.4 ui-monospace, monospace; }
  pre.diff span { display: block; min-width: 100%; width: fit-content; min-height: 1.4em; }
  pre.diff .add { color: #5fd17a; } pre.diff .del { color: #ff7b72; }
  pre.diff .hunk { color: #9aa0aa; background: #232730; } pre.diff .meta { color: #6b7280; }
+ pre.diff .block-current { box-shadow: inset 3px 0 0 #6cb6ff; }
  /* Upstream context (lines not part of the patch) gets a faint purple wash so the
     added/removed lines, left on the base background, read as the changed regions. */
  pre.diff .ctx { background: #1a1228; }
@@ -481,7 +549,8 @@ WORKLIST_TEMPLATE = _HEAD.replace('{{ title }}', 'worklist') + '''
   if package %} carried by <b>{{ package }}</b>{% endif %}.</p>
 <script>
 document.addEventListener('keydown', function(e) {
-  if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'
+      || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'j' || e.key === 'n') {
     var a = document.querySelector('a.next');
     if (a) location.href = a.getAttribute('href');
@@ -489,15 +558,17 @@ document.addEventListener('keydown', function(e) {
 });
 </script>
 <table>
-  <tr><th>priority</th><th>draft</th><th>size</th><th>pkgs</th><th>fingerprint</th><th>reason</th></tr>
+  <tr><th>risk</th><th>draft</th><th>size</th><th>pkgs</th><th>fingerprint</th><th>reason</th></tr>
   {% for row in rows %}
   <tr>
-    <td>{{ row.priority }}</td>
+    <td>{% if row.risk %}<span class="risk {{ row.risk }}">{{ row.risk }}</span>{% else %}
+        <span class="muted">-</span>{% endif %}</td>
     <td>{{ row.draft_category or '-' }}</td>
     <td>{% if row.reviewability %}<span class="rev {{ row.reviewability }}"
         >{{ row.reviewability }}</span>{% endif %}</td>
     <td>{{ row.n_packages }}</td>
-    <td class="mono"><a href="/review/{{ row.fingerprint }}">{{ row.short }}</a></td>
+    <td class="mono"><a href="/review/{{ row.fingerprint }}">{{ row.short }}</a>{% if row.notes %}
+        <span class="note-badge" title="{{ row.notes }} note(s)">&#128221;{{ row.notes }}</span>{% endif %}</td>
     <td class="muted">{{ row.reason or '' }}</td>
   </tr>
   {% endfor %}
@@ -505,8 +576,9 @@ document.addEventListener('keydown', function(e) {
 ''' + _FOOT
 
 REVIEW_TEMPLATE = _HEAD.replace('{{ title }}', 'review') + '''
-<p><a href="/">&larr; worklist</a></p>
+<p id="top"><a href="/">&larr; worklist</a></p>
 <h1 class="mono">{{ ctx.fingerprint[:16] }}<span class="muted">{{ ctx.fingerprint[16:] }}</span>
+{% if risk %} <span class="risk {{ risk }}">risk: {{ risk }}</span>{% endif %}
 {% if reviewability %} <span class="rev {{ reviewability }}">{{ reviewability }}</span>{% endif %}</h1>
 {% if reviewability == 'oversized' %}
 <p class="rev oversized" style="padding: 0.4rem 0.6rem;">This diff is oversized (&gt;{{ oversized_lines }}
@@ -540,6 +612,7 @@ than a line-by-line read.</p>
   {% endif %}
   <div class="muted">claimed category: <b>{{ ctx.claim_category }}</b>
     &middot; forwarding: {{ ctx.claim_forwarded }}
+    &middot; last updated: <b>{{ ctx.claim_date or 'no date in header' }}</b>
     {% if ctx.claim_bugs %}&middot; bugs:
       {% for b in ctx.claim_bugs %}{%
         if b.ref.startswith('http') %}<a href="{{ b.ref }}">{{ b.tracker }}</a>{%
@@ -555,7 +628,7 @@ than a line-by-line read.</p>
 </form>
 {% endif %}
 {% if queued and can_verdict %}
-<h2>Your verdict</h2>
+<h2 id="verdict">Your verdict</h2>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 <form method="post" action="/review/{{ ctx.fingerprint }}">
   <fieldset class="verdict">
@@ -580,7 +653,8 @@ than a line-by-line read.</p>
 </form>
 <script>
 document.addEventListener('keydown', function(e) {
-  if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'
+      || e.metaKey || e.ctrlKey || e.altKey) return;
   var radios = Array.prototype.slice.call(document.querySelectorAll('input[name=choice]'));
   if (!radios.length) return;
   var pick = null;
@@ -592,8 +666,60 @@ document.addEventListener('keydown', function(e) {
 });
 </script>
 {% endif %}
+<h2 id="notes">Notes</h2>
+<div class="notes">
+  {% for note in notes %}
+    <div class="note">
+      <div class="note-body">{{ note.body }}</div>
+      <div class="muted">&mdash; <b>{{ note.signed_by or '(unsigned)' }}</b> at {{ note.created_at }}
+        <details><summary>signature</summary><pre class="sig">{{ note.signature }}</pre></details>
+      </div>
+    </div>
+  {% else %}
+    <p class="muted">No notes yet.</p>
+  {% endfor %}
+  {% if can_note %}
+    <form method="post" action="/note/{{ ctx.fingerprint }}">
+      <textarea name="body" rows="2"
+        placeholder="Leave a signed note (e.g. unsafe sprintf() near a privilege boundary)..."></textarea>
+      <button type="submit">Add note &amp; sign</button>
+    </form>
+  {% else %}
+    <p class="muted">(read-only instance: notes need a signer)</p>
+  {% endif %}
+</div>
 <h2>Diff in upstream context</h2>
-<pre class="diff">{% for line in diff %}<span class="{{ line.cls }}">{{ line.text }}</span>{% endfor %}</pre>
+<pre class="diff">{% for line in diff %}<span class="{{ line.css }}">{{ line.text }}</span>{% endfor %}</pre>
+<p class="muted">diff: <span class="key">[</span> previous change &middot;
+  <span class="key">]</span> next change
+  {% if queued and can_verdict %}&middot; <span class="key">v</span> jump to verdict
+  (the <span class="key">1</span>-<span class="key">9</span>/<span class="key">a</span>/<span
+  class="key">d</span> + <span class="key">Enter</span> verdict keys also work from here)
+  &middot; <a href="#verdict">enter verdict &uarr;</a>{% endif %}
+  &middot; <a href="#top">back to top</a></p>
+<script>
+(function () {
+  var blocks = Array.prototype.slice.call(document.querySelectorAll('pre.diff .block-start'));
+  var idx = -1;
+  function jump(delta) {
+    if (!blocks.length) return;
+    idx = Math.max(0, Math.min(blocks.length - 1, (idx < 0 ? 0 : idx + delta)));
+    blocks.forEach(function (b) { b.classList.remove('block-current'); });
+    blocks[idx].classList.add('block-current');
+    blocks[idx].scrollIntoView({block: 'center'});
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'
+      || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === ']') { e.preventDefault(); jump(1); }
+    else if (e.key === '[') { e.preventDefault(); jump(-1); }
+    else if (e.key === 'v') {
+      var f = document.querySelector('fieldset.verdict');
+      if (f) { e.preventDefault(); f.scrollIntoView({block: 'center'}); }
+    }
+  });
+})();
+</script>
 ''' + _FOOT
 
 ERROR_TEMPLATE = _HEAD.replace('{{ title }}', 'error') + '''

@@ -11,9 +11,11 @@ lets callers degrade clearly when they are absent.
 '''
 from __future__ import annotations
 
+import email.utils
 import glob
 import http.client
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -270,6 +272,60 @@ def _extract_patches(dest_dir: str) -> dict[str, str] | None:
     return texts
 
 
+_CHANGELOG_TRAILER = re.compile(r'^ -- .+?  +(.+?)\s*$', re.MULTILINE)
+
+
+def _changelog_date(text: str) -> str | None:
+    '''The ISO ``YYYY-MM-DD`` date of the TOP ``debian/changelog`` entry, or None.
+
+    Reads only the first ``" -- maintainer  <RFC2822 date>"`` trailer (the most
+    recent entry's upload date) and normalises it -- no full-history parse. A
+    missing or unparseable date yields ``None``.
+    '''
+    match = _CHANGELOG_TRAILER.search(text)
+    if match is None:
+        return None
+    try:
+        when = email.utils.parsedate_to_datetime(match.group(1))
+    except (TypeError, ValueError):
+        return None
+    return when.date().isoformat() if when is not None else None
+
+
+def _extract_changelog_date(dest_dir: str) -> str | None:
+    '''The package's last-upload date from ``debian/changelog`` in the debian tar.
+
+    The same ``.debian.tar.*`` ``_extract_patches`` reads, so no extra download.
+    ``None`` when there is no debian tar (native / non-quilt) or no changelog.
+    '''
+    debian_tars = glob.glob(os.path.join(dest_dir, '*.debian.tar.*'))
+    if not debian_tars:
+        return None
+    with tarfile.open(debian_tars[0], 'r:*') as tar:
+        member = _member(tar, 'debian/changelog')
+        if member is None:
+            return None
+        return _changelog_date(_read(tar, member))
+
+
+def _fetch_source(source_package: str, version: str, *, download: Callable[..., bool]
+                  ) -> tuple[str | None, dict[str, str] | None, str | None]:
+    '''Download once; return ``(source_format, texts, changelog_date)``.
+
+    The shared core of :func:`fetch_patch_texts` (texts only) and
+    :func:`fetch_source_details` (texts + the package's changelog date), so both
+    cost a single ``.dsc`` + ``.debian.tar.*`` download.
+    '''
+    with tempfile.TemporaryDirectory() as dest:
+        if not download(source_package, version, dest):
+            return None, None, None
+        source_format = _read_format(dest)
+        changelog_date = _extract_changelog_date(dest)
+        if 'native' in (source_format or '').lower():
+            return source_format, None, changelog_date
+        return source_format, _extract_patches(dest), changelog_date
+
+
 def fetch_patch_texts(source_package: str, version: str, *,
                       download: Callable[..., bool] = _download_source) -> tuple[str | None, dict[str, str] | None]:
     '''Fetch a source version and return ``(source_format, {patch_name: raw_text})``.
@@ -290,13 +346,20 @@ def fetch_patch_texts(source_package: str, version: str, *,
     any other format (e.g. ``1.0``) means a non-quilt source. This mirrors the
     distinctions ``details()`` draws today.
     '''
-    with tempfile.TemporaryDirectory() as dest:
-        if not download(source_package, version, dest):
-            return None, None
-        source_format = _read_format(dest)
-        if 'native' in (source_format or '').lower():
-            return source_format, None
-        return source_format, _extract_patches(dest)
+    source_format, texts, _date = _fetch_source(source_package, version, download=download)
+    return source_format, texts
+
+
+def fetch_source_details(source_package: str, version: str, *,
+                         download: Callable[..., bool] = _download_source
+                         ) -> tuple[str | None, dict[str, str] | None, str | None]:
+    '''Like :func:`fetch_patch_texts` but also returns the package's changelog date.
+
+    The curation-side corpus builder uses this to record the package's last-upload
+    date alongside its patches, from the SAME download. The client divergence path
+    stays on :func:`fetch_patch_texts` (it needs no date).
+    '''
+    return _fetch_source(source_package, version, download=download)
 
 
 class AptSourcePatches:

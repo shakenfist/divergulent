@@ -513,6 +513,25 @@ def canonical_record(fingerprint: str, category: str, decided_at: str, *,
     return json.dumps(record, sort_keys=True, separators=(',', ':')).encode('utf-8')
 
 
+def canonical_note(fingerprint: str, body: str, created_at: str) -> bytes:
+    """The canonical, deterministic bytes a reviewer NOTE's signature covers.
+
+    A stable JSON serialisation of exactly what the reviewer attests to: the
+    ``fingerprint`` annotated, the note ``body``, the ``created_at`` timestamp, and
+    the ``rule_version`` (record shape).  Mirrors :func:`canonical_record` --
+    ``sort_keys`` + ``separators`` make the bytes deterministic so phase 5 can
+    reconstruct exactly these bytes and re-verify the Sigstore signature.
+    """
+    record = {
+        'body': body,
+        'created_at': created_at,
+        'fingerprint': fingerprint,
+        'kind': 'note',
+        'rule_version': REVIEW_RULE_VERSION,
+    }
+    return json.dumps(record, sort_keys=True, separators=(',', ':')).encode('utf-8')
+
+
 def sign_decision(record_bytes: bytes, *, signer) -> tuple[str, str]:
     """Sign the canonical ``record_bytes`` and return ``(signature, signed_by)``.
 
@@ -625,7 +644,7 @@ class ReviewContext:
     Assembled by :func:`build_review_context`: the representative diff body, the
     LLM draft (category + confidence + reasoning), the author's CLAIM (its derived
     category plus the raw, author-written DEP-3 story -- ``claim_description``,
-    ``claim_forwarded``, ``claim_bugs``, ``claim_cves``), the routing flags/reason
+    ``claim_forwarded``, ``claim_bugs``, ``claim_cves``, ``claim_date``), the routing flags/reason
     that sent the item to review, the diff rendered in the context of the original
     upstream file, and the package(s) that carry this fingerprint
     (``source_package``/``version``/``patch_name`` are the representative instance;
@@ -649,11 +668,13 @@ class ReviewContext:
     claim_forwarded: str
     claim_bugs: tuple[BugRef, ...]
     claim_cves: tuple[str, ...]
+    claim_date: str | None
     reason: str | None
     source_package: str
     version: str
     patch_name: str
     packages: tuple[str, ...]
+    package_date: str | None
 
 
 @dataclass(frozen=True)
@@ -732,13 +753,15 @@ def build_review_context(conn: sqlite3.Connection, corpus_dir: str, index_path: 
         claim_category=claim.claimed_category,
         claim_description=claim.description,
         claim_forwarded=claim.forwarded,
+        claim_date=claim.date,
         claim_bugs=tuple(claim.bugs),
         claim_cves=tuple(claim.cves),
         reason=item['reason'] if item is not None else None,
         source_package=source_package,
         version=version,
         patch_name=patch_name,
-        packages=_carrying_packages(index_path, fingerprint))
+        packages=_carrying_packages(index_path, fingerprint),
+        package_date=_package_date(index_path, source_package))
 
 
 def record_review_verdict(conn: sqlite3.Connection, item: sqlite3.Row,
@@ -787,6 +810,22 @@ def record_review_verdict(conn: sqlite3.Connection, item: sqlite3.Row,
     ledger_mod.mark_reviewed(conn, item_id=item['id'], reviewed_at=now)
 
     return ReviewOutcome(fingerprint, True, False, category, decision_id)
+
+
+def record_note(conn: sqlite3.Connection, fingerprint: str, body: str, *, signer, now) -> int:
+    """Sign and append a reviewer note on ``fingerprint``; returns the new note id.
+
+    Builds the canonical note bytes, signs them with the injected ``signer`` (the
+    same Sigstore signer the verdicts use -- so identity + non-repudiation come for
+    free and the once-per-session prompt is shared), and appends an immutable
+    ``note`` row carrying the signature bundle + identity.  Signs BEFORE it writes,
+    so a signer failure leaves the ledger untouched.  ``signer``/``now`` are
+    injected so this is pure given a fake signer; ``now`` is caller-supplied.
+    """
+    signature, signed_by = signer(canonical_note(fingerprint, body, now))
+    return ledger_mod.append_note(
+        conn, fingerprint=fingerprint, body=body, signed_by=signed_by,
+        signature=signature, created_at=now, commit=True)
 
 
 def review_one(conn: sqlite3.Connection, corpus_dir: str, index_path: str,
@@ -863,6 +902,27 @@ def _carrying_packages(index_path: str, fingerprint: str) -> tuple[str, ...]:
     finally:
         connection.close()
     return tuple(row[0] for row in rows)
+
+
+def _package_date(index_path: str, source_package: str) -> str | None:
+    """The most recent changelog (last-upload) date for ``source_package``, or None.
+
+    Reads the index's ``package`` table (``measure`` writes it from the corpus's
+    captured changelog dates). ``MAX`` over the ISO ``YYYY-MM-DD`` dates is the most
+    recent upload. Returns ``None`` when the package has no recorded date OR when
+    the index predates the ``package`` table (an older corpus not yet re-measured),
+    so the age signal is simply absent rather than an error.
+    """
+    connection = sqlite3.connect(index_path)
+    try:
+        row = connection.execute(
+            'SELECT MAX(changelog_date) FROM package WHERE source_package = ?',
+            (source_package,)).fetchone()
+        return row[0] if row else None
+    except sqlite3.OperationalError:
+        return None  # index built before the package table existed
+    finally:
+        connection.close()
 
 
 def fingerprints_for_package(index_path: str, query: str) -> set[str]:
@@ -1037,7 +1097,8 @@ def _format_package_lines(context: ReviewContext, *, limit: int = MAX_PACKAGES_S
     reviewer sees how widely the identical patch is carried without flooding the
     screen for a fingerprint that spans dozens.
     """
-    lines = ['package: %s (%s)' % (context.source_package, context.version)]
+    age = ' — last upload %s' % context.package_date if context.package_date else ''
+    lines = ['package: %s (%s)%s' % (context.source_package, context.version, age)]
     others = context.packages
     if len(others) > 1:
         shown = ', '.join(others[:limit])
@@ -1079,6 +1140,7 @@ def _interactive_ask(context: ReviewContext) -> str:
         view.append('routed to review because: %s' % context.reason)
     view.append('author claim category: %s (forwarding: %s)' % (
         context.claim_category, context.claim_forwarded))
+    view.append('author says last updated: %s' % (context.claim_date or 'no date in header'))
     if context.claim_description:
         view.append('author says: %s' % context.claim_description)
     if context.claim_bugs:

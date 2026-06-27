@@ -444,3 +444,25 @@ class PrecedenceTestCase(testtools.TestCase):
         text = _patch('Description: fix CVE-2024-0001 in Debian build\nForwarded: no\n')
         claim = extract_claim('deb-fix.patch', text)
         self.assertEqual('security', claim.claimed_category)
+
+
+class PatchDateTestCase(testtools.TestCase):
+
+    def test_dep3_last_update_is_captured(self):
+        text = ('Description: a fix\nLast-Update: 2020-05-20\n'
+                '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n')
+        self.assertEqual('2020-05-20', extract_claim('p.patch', text).date)
+
+    def test_git_date_header_is_the_fallback(self):
+        text = ('From abc\nDate: Tue, 3 Jan 2023 10:00:00 +0000\nSubject: x\n'
+                '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n')
+        self.assertEqual('Tue, 3 Jan 2023 10:00:00 +0000', extract_claim('p.patch', text).date)
+
+    def test_last_update_wins_over_date(self):
+        text = ('Last-Update: 2021-06-01\nDate: Tue, 3 Jan 2023 10:00:00 +0000\n'
+                '--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n')
+        self.assertEqual('2021-06-01', extract_claim('p.patch', text).date)
+
+    def test_no_date_is_none(self):
+        text = 'Description: a fix\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n'
+        self.assertIsNone(extract_claim('p.patch', text).date)

@@ -356,8 +356,64 @@ def create_ledger(path: str) -> sqlite3.Connection:
         'superseded_at TEXT)')
     conn.execute('CREATE INDEX idx_observation_fingerprint ON observation (fingerprint)')
 
+    ensure_note_table(conn)
+
     conn.commit()
     return conn
+
+
+def ensure_note_table(conn: sqlite3.Connection) -> None:
+    """Create the OPTIONAL ``note`` table + its index if absent; idempotent.
+
+    Reviewer notes are append-only, human-signed, free-text annotations on a
+    fingerprint -- a third kind of ledger entry, neither a decision nor a rule
+    observation.  The table is deliberately NOT in :data:`REQUIRED_TABLES`, so a
+    ledger built before notes existed still opens; this is called by
+    :func:`create_ledger` and by the web app at startup so such a ledger gains the
+    table with no rebuild.  ``CREATE TABLE IF NOT EXISTS`` makes it safe to call on
+    every open.
+    """
+    conn.execute(
+        'CREATE TABLE IF NOT EXISTS note ('
+        'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+        'fingerprint TEXT NOT NULL, '
+        'body TEXT NOT NULL, '
+        'signed_by TEXT, '
+        'signature TEXT, '
+        'created_at TEXT NOT NULL)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_note_fingerprint ON note (fingerprint)')
+
+
+def append_note(conn: sqlite3.Connection, *, fingerprint: str, body: str,
+                signed_by: str | None, signature: str | None, created_at: str,
+                commit: bool = True) -> int:
+    """Append one immutable reviewer ``note`` row; returns its new id.
+
+    INSERT only -- notes accumulate and are never edited or deleted (a correction
+    is just another note).  ``signed_by``/``signature`` are the Sigstore identity +
+    bundle from the injected signer.  ``created_at`` is caller-supplied; this module
+    reads no clock.
+    """
+    cursor = conn.execute(
+        'INSERT INTO note (fingerprint, body, signed_by, signature, created_at) '
+        'VALUES (?, ?, ?, ?, ?)',
+        (fingerprint, body, signed_by, signature, created_at))
+    if commit:
+        conn.commit()
+    return int(cursor.lastrowid)
+
+
+def notes_for(conn: sqlite3.Connection, fingerprint: str) -> list[sqlite3.Row]:
+    """Every note on ``fingerprint``, oldest first (the annotation thread)."""
+    conn.row_factory = sqlite3.Row
+    return conn.execute(
+        'SELECT * FROM note WHERE fingerprint = ? ORDER BY id', (fingerprint,)).fetchall()
+
+
+def note_counts_by_fingerprint(conn: sqlite3.Connection) -> dict[str, int]:
+    """``{fingerprint: count}`` of notes -- the worklist indicator input."""
+    return {row[0]: row[1] for row in conn.execute(
+        'SELECT fingerprint, COUNT(*) FROM note GROUP BY fingerprint')}
 
 
 def register_rules(conn: sqlite3.Connection, rules: list[RegisteredRule]) -> int:
@@ -728,6 +784,24 @@ def mark_reviewed(conn: sqlite3.Connection, *, item_id: int, reviewed_at: str) -
         'WHERE id = ? AND reviewed_at IS NULL',
         (reviewed_at, item_id))
     conn.commit()
+    return cursor.rowcount
+
+
+def reprioritise_review_item(conn: sqlite3.Connection, *, item_id: int, priority: int,
+                             commit: bool = True) -> int:
+    """Re-stamp one PENDING review item's ``priority``; returns the count touched.
+
+    The stored priority is otherwise frozen at enqueue time; this lets a later
+    signal (a risk score that landed after the patch was queued) reach the queue
+    order. The review_queue is a derived work list, not part of the append-only
+    decision/observation audit trail, so its ``priority`` is mutable (as
+    ``reviewed_at`` already is). Touches only a currently-pending item.
+    """
+    cursor = conn.execute(
+        'UPDATE review_queue SET priority = ? WHERE id = ? AND reviewed_at IS NULL',
+        (priority, item_id))
+    if commit:
+        conn.commit()
     return cursor.rowcount
 
 

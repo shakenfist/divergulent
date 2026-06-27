@@ -240,6 +240,20 @@ def risk_rank_by_fingerprint(conn) -> dict[str, int]:
     return ranks
 
 
+def risk_level_by_fingerprint(conn) -> dict[str, str]:
+    """``{fingerprint: level}`` from the live ``security-risk`` observations.
+
+    The level string (``none``/``low``/``elevated``/``high``) per fingerprint --
+    the human-facing form of :func:`risk_rank_by_fingerprint`, for display (e.g.
+    the review-UI badge). A fingerprint with no live score is absent.
+    """
+    levels: dict[str, str] = {}
+    for obs in ledger_mod.live_observations(conn):
+        if obs['kind'] == RISK_KIND and obs['detail'] in RISK_RANK:
+            levels[obs['fingerprint']] = obs['detail']
+    return levels
+
+
 # ---------------------------------------------------------------------------
 # The security-safe deterministic cull.
 #
@@ -318,6 +332,7 @@ class RiskRunStats:
     errored: int = 0      # the backend raised -> recorded 'elevated' (recall-safe)
     truncated: int = 0    # diff capped before the call (head-only read)
     skipped_oversized: int = 0  # not line-reviewable -> never sent to the LLM
+    reprioritised: int = 0      # pending review items re-stamped from current risk
     by_level: dict[str, int] = field(default_factory=dict)
     unscored_remaining: int = 0
     usage: Usage = field(default_factory=Usage)
@@ -382,6 +397,11 @@ def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, lim
             progress('[%d/%d] %s -> %s' % (position, len(selected), item.fingerprint[:12], level))
 
     conn.commit()
+    # Re-stamp the review queue from the now-updated risk scores: a patch scored
+    # after it was already queued must reach the queue order, not stay frozen at
+    # its enqueue-time (risk_rank 0) priority.  Heals the whole pending queue, not
+    # just the items scored this run.
+    stats.reprioritised = triage_driver.reprioritise_review_queue(conn, index_path)
     return stats
 
 
@@ -394,6 +414,8 @@ def print_risk_summary(stats: RiskRunStats) -> None:
               % stats.skipped_oversized)
     if stats.truncated:
         print('  (%d scored on a truncated diff -- head only, capped for cost)' % stats.truncated)
+    if stats.reprioritised:
+        print('  (%d pending review items re-prioritised from current risk)' % stats.reprioritised)
     if stats.by_level:
         order = {level: rank for rank, level in enumerate(RISK_LEVELS)}
         for level in sorted(stats.by_level, key=lambda lvl: order.get(lvl, 99), reverse=True):

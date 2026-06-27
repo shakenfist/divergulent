@@ -24,7 +24,8 @@ def _fake_fetch(table):
         value = table[(source_package, version)]
         if value == 'raise':
             raise RuntimeError('boom')
-        return value
+        # Accept legacy 2-tuples (format, texts) and append a None changelog date.
+        return value if len(value) == 3 else (value[0], value[1], None)
     return fetch
 
 
@@ -218,6 +219,11 @@ class EndToEndExtractTestCase(testtools.TestCase):
     def test_synthesised_debian_tar_is_extracted_and_stored(self):
         from divergulent.classify.corpus import _process
 
+        changelog = (
+            'real-pkg (3-1) unstable; urgency=medium\n\n'
+            '  * Something.\n\n'
+            ' -- Maint <m@e.org>  Wed, 20 May 2020 21:00:00 +0200\n')
+
         def download(source_package, version, dest):
             with open(os.path.join(dest, 'pkg.dsc'), 'w') as handle:
                 handle.write('Format: 3.0 (quilt)\n')
@@ -225,10 +231,11 @@ class EndToEndExtractTestCase(testtools.TestCase):
                 _add(tar, 'debian/patches/series', 'first.patch\nsecond.patch\n')
                 _add(tar, 'debian/patches/first.patch', PATCH_A)
                 _add(tar, 'debian/patches/second.patch', PATCH_B)
+                _add(tar, 'debian/changelog', changelog)
             return True
 
         def fetch(source_package, version):
-            return corpus.fetch_patch_texts(source_package, version, download=download)
+            return corpus.fetch_source_details(source_package, version, download=download)
 
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -238,6 +245,7 @@ class EndToEndExtractTestCase(testtools.TestCase):
         self.assertEqual('patched', package_row['state'])
         self.assertEqual('3.0 (quilt)', package_row['source_format'])
         self.assertEqual(2, package_row['n_patches'])
+        self.assertEqual('2020-05-20', package_row['changelog_date'])  # top entry's date
         self.assertEqual(2, distinct_new)
         shas = {row['patch_name']: row['raw_sha256'] for row in patch_rows}
         self.assertEqual(body_sha256(PATCH_A), shas['first.patch'])

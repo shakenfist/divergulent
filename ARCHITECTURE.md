@@ -90,10 +90,13 @@ installed-package inventory never leaves the machine.
 - `divergulent/classify/` — **curation-side only** (the central builder runs
   it; no client command imports it). `corpus.py` crawls the archive's
   patched packages (reusing `apt_patches`' uncapped fetch) into a resumable
-  content-addressed corpus of raw patch bodies; `fingerprint.py` is the pure,
+  content-addressed corpus of raw patch bodies (and, from the same
+  `.debian.tar.*`, each package's `debian/changelog` last-upload date, for
+  review-time package-age display); `fingerprint.py` is the pure,
   versioned `normalise()`/`fingerprint()` (canonical v1 = `strip_path`,
   `keep_context`); `measure.py` deduplicates, writes a sqlite fingerprint
-  index, and reports the distinct-patch count. Phase 1 of the patch-
+  index (a `patch` table plus a `package` table carrying the changelog
+  date), and reports the distinct-patch count. Phase 1 of the patch-
   classification plan; it measured ≈61.5k carried patches → 60,640 distinct
   (dedup 1.02x — carried patches are overwhelmingly bespoke). Phase 2 adds the
   deterministic extractors: `claim.py` reads the author's (untrusted) claim
@@ -157,7 +160,12 @@ installed-package inventory never leaves the machine.
   / `rule_version=RISK_PROMPT_VERSION`, the same `(model, prompt_version)`
   provenance as the triage decisions) and feeds the work-list/`review_queue`
   priority (risk is the top component, `risk_rank * WEIGHT + occurrence`), but
-  never the verdict precedence, so it needs no adversarial verify. A
+  never the verdict precedence, so it needs no adversarial verify. Because the
+  stored `review_queue.priority` is frozen at enqueue time, a risk run re-stamps
+  every pending item from the current score (`reprioritise_review_queue`) so a
+  patch scored scary AFTER it was queued reaches the queue order; the web review
+  worklist also sorts by the LIVE risk level (and shows it as a badge), so it is
+  correct even before a re-stamp. A
   **security-safe deterministic cull** scores provably-benign patches (empty/
   whitespace/comment-only, doc-only, translation/changelog) `none` with no LLM
   call — narrower than the packaging category, since a `debian/rules` change can
@@ -205,7 +213,13 @@ installed-package inventory never leaves the machine.
   human verdict is signed). The queue worklist filters on the **LLM draft**
   category; the audit view filters on the **derived verdict** — which for a
   rule-classified fingerprint is the rule's category, so "the rule defines the
-  category when a patch never reached the LLM" needs no special case. Flask +
+  category when a patch never reached the LLM" needs no special case. The web UI
+  also carries **signed reviewer notes** — append-only, free-text human
+  annotations on a fingerprint (a third ledger entry type beside decisions and rule
+  observations, in an OPTIONAL `note` table existing ledgers gain via
+  `ensure_note_table`), signed with the same session signer as verdicts
+  (`record_note`/`canonical_note`), shown with their identity + signature, badged
+  on the worklist, and never published. Flask +
   Jinja2 (autoescaping HTML) live behind the optional **`review` extra**
   (`pip install divergulent[review]`, or `[review,verify]` to sign), off the
   default scan/report path; the server binds **loopback only**, has no auth, and

@@ -256,6 +256,29 @@ class RunRiskGateTestCase(testtools.TestCase):
                                    now=LATER, limit=10)
         self.assertEqual(0, again.scored + again.culled)  # nothing left to score
 
+    def test_risk_level_by_fingerprint_reports_levels(self):
+        conn, corpus_dir, index_path, fps = self._setup()
+        risk.run_risk_gate(conn, corpus_dir, index_path,
+                           call=_fake_call(_risk_json('elevated')), now=WHEN, limit=20)
+        self.assertEqual('elevated', risk.risk_level_by_fingerprint(conn)[fps['bug-a.patch']])
+
+    def test_reprioritises_the_review_queue_from_new_risk(self):
+        from divergulent.classify import triage_driver
+        conn, corpus_dir, index_path, fps = self._setup()
+        # Queue bug-a at occurrence-only priority (risk_rank 0), as triage would
+        # have done before bug-a was ever risk-scored.
+        ledger_mod.append_review_item(
+            conn, fingerprint=fps['bug-a.patch'], reason='r', draft_category='unknown',
+            draft_confidence='low', enqueued_at=WHEN, priority=1)
+        conn.commit()
+        stats = risk.run_risk_gate(conn, corpus_dir, index_path,
+                                   call=_fake_call(_risk_json('high')), now=WHEN, limit=20)
+        self.assertGreaterEqual(stats.reprioritised, 1)
+        item = next(i for i in ledger_mod.pending_review_items(conn)
+                    if i['fingerprint'] == fps['bug-a.patch'])
+        # The new 'high' score now dominates the stored priority (was 1).
+        self.assertGreaterEqual(item['priority'], triage_driver.RISK_PRIORITY_WEIGHT)
+
 
 def _make_score(level, model='claude-opus-4-8'):
     return risk.RiskScore(level=level, rank=risk.RISK_RANK[level], reason='r', model=model,

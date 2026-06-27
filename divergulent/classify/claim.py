@@ -165,6 +165,16 @@ class Claim:
     re-extract.
     """
 
+    date: str | None = None
+    """The author's stated patch date: the DEP-3 ``Last-Update`` field, falling
+    back to a git-format ``Date`` header, or ``None`` when neither is present.
+
+    A CLAIM like the rest -- it says when the author last touched the patch, not
+    when the code it carries was written (a ``debian-old-changes`` blob can be
+    ``Last-Update`` recent yet vendor 1990s code). Informational, for the human
+    reviewer to weigh "is this ancient and unloved, or written this century?".
+    """
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -278,6 +288,9 @@ def extract_claim(name: str, text: str) -> Claim:
 
     claimed_category: str = _classify_category(description, name, cves)
 
+    # The author's stated patch date: DEP-3 Last-Update, else a git-format Date.
+    date: str | None = fields.get('last-update') or fields.get('date') or None
+
     return Claim(
         claimed_category=claimed_category,
         forwarded=forwarded,
@@ -285,4 +298,5 @@ def extract_claim(name: str, text: str) -> Claim:
         bugs=bugs,
         cves=cves,
         rule_version=CLAIM_RULE_VERSION,
+        date=date,
     )

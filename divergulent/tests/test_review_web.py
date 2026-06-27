@@ -16,6 +16,7 @@ from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import review as review_mod
 from divergulent.classify import review_web
 from divergulent.classify import reviewability
+from divergulent.classify import risk
 from divergulent.classify import verdict as verdict_mod
 from divergulent.tests.test_review import ORIGINAL, SOURCE_PACKAGE, WHEN, _build_corpus
 
@@ -217,6 +218,30 @@ class ReviewPageTestCase(ReviewWebFixture, testtools.TestCase):
         # The DEP-3 Description from the PATCH fixture.
         self.assertIn('enlarge the read buffer to avoid truncation', body)
         self.assertIn('claimed category', body)
+
+    def test_surfaces_the_patch_date(self):
+        # The age signal (DEP-3 Last-Update / git Date) is shown in the claim block.
+        # The fixture patch carries no date, so it reads "no date in header".
+        client, _conn, fp_hex = self._client()
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn('last updated', body)
+
+    def test_diff_has_changed_block_anchors_and_nav(self):
+        client, _conn, fp_hex = self._client()
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn('block-start', body)               # the change run is anchored
+        self.assertIn("e.key === ']'", body)             # next-change shortcut wired
+        self.assertIn("e.key === '['", body)             # previous-change shortcut
+
+    def test_offers_a_jump_back_to_the_verdict(self):
+        # With a signer the verdict form is present, so the diff footer offers a way
+        # back to it (link + `v` shortcut) and the form has the #verdict anchor.
+        signer, _ = _recording_signer()
+        client, _conn, fp_hex = self._client(signer=signer)
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn('id="verdict"', body)
+        self.assertIn('href="#verdict"', body)
+        self.assertIn("e.key === 'v'", body)
 
     def test_review_page_resolves_a_prefix(self):
         client, _conn, fp_hex = self._client()
@@ -441,6 +466,15 @@ class DiffLinesTestCase(testtools.TestCase):
             [('hunk', '@@ -1 +1 @@'), ('del', '-old'), ('add', '+new'), ('ctx', ' unchanged')],
             [(r['cls'], r['text']) for r in rows])
 
+    def test_marks_the_first_line_of_each_changed_block(self):
+        rows = review_web.diff_lines('@@\n ctx\n-old\n+new\n ctx2\n+added\n ctx3')
+        # '-old'+'+new' is one modification block (anchored at '-old'); '+added' a
+        # second. Context/hunk lines never start a block.
+        self.assertEqual(['-old', '+added'], [r['text'] for r in rows if r['block_start']])
+        # The anchor carries the block-start marker class for the JS to collect.
+        delete = next(r for r in rows if r['text'] == '-old')
+        self.assertEqual('del block-start', delete['css'])
+
 
 class ReviewabilityWebTestCase(ReviewWebFixture, testtools.TestCase):
     """The size axis surfaced in the UI: a row badge, a size filter, a warning."""
@@ -474,3 +508,92 @@ class ReviewabilityWebTestCase(ReviewWebFixture, testtools.TestCase):
         body = client.get('/review/%s' % fp_hex).get_data(as_text=True)
         self.assertIn('not realistically line-reviewable', body)
         self.assertIn('rev oversized', body)
+
+
+class RiskWebTestCase(ReviewWebFixture, testtools.TestCase):
+    """The security-risk score surfaced in the UI: a badge and live ordering."""
+
+    def _seed_risk(self, conn, fingerprint, level):
+        ledger_mod.append_observation(
+            conn, fingerprint=fingerprint, kind=risk.RISK_KIND, detail=level,
+            evidence='{}', observed_by=risk.RISK_OBSERVED_BY_PREFIX + 'm',
+            rule_version=1, observed_at=WHEN)
+        conn.commit()
+
+    def test_worklist_badges_risk_and_orders_by_it_over_stored_priority(self):
+        # The main fp has the LOWER stored priority (5) but is scored 'high'; the
+        # extra item has a higher stored priority (9) but no risk. Risk must win.
+        client, conn, fp_hex = self._client(extra_items=[dict(
+            fingerprint='b' * 64, draft_category='bugfix', priority=9)])
+        self._seed_risk(conn, fp_hex, 'high')
+        body = client.get('/').get_data(as_text=True)
+        self.assertIn('risk high', body)   # the badge (class="risk high")
+        # The high-risk item leads despite its lower stored priority.
+        self.assertLess(body.index(fp_hex[:16]), body.index(('b' * 64)[:16]))
+
+    def test_review_page_shows_the_risk_badge(self):
+        client, conn, fp_hex = self._client()
+        self._seed_risk(conn, fp_hex, 'elevated')
+        body = client.get('/review/%s' % fp_hex).get_data(as_text=True)
+        self.assertIn('risk: elevated', body)
+
+
+class NotesWebTestCase(ReviewWebFixture, testtools.TestCase):
+    """Signed reviewer notes: shown with provenance, added via POST, indicated."""
+
+    def test_review_page_shows_a_note_with_signer_and_signature(self):
+        client, conn, fp_hex = self._client()
+        ledger_mod.append_note(conn, fingerprint=fp_hex, body='unsafe sprintf here',
+                               signed_by='rev@example.org', signature='SIGBUNDLE-XYZ',
+                               created_at=WHEN)
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn('id="notes"', body)
+        self.assertIn('unsafe sprintf here', body)   # the note body
+        self.assertIn('rev@example.org', body)        # the signer identity
+        self.assertIn('SIGBUNDLE-XYZ', body)          # the signature is shown
+
+    def test_post_note_records_a_signed_note_and_redirects(self):
+        signer, seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        resp = client.post('/note/' + fp_hex, data={'body': 'looks risky'})
+        self.assertEqual(302, resp.status_code)
+        self.assertIn('record_bytes', seen)           # it was signed
+        rows = ledger_mod.notes_for(conn, fp_hex)
+        self.assertEqual(1, len(rows))
+        self.assertEqual('looks risky', rows[0]['body'])
+        self.assertEqual('reviewer@example.org', rows[0]['signed_by'])
+        self.assertEqual('FAKE-SIG', rows[0]['signature'])
+
+    def test_empty_note_is_a_noop(self):
+        signer, _ = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        client.post('/note/' + fp_hex, data={'body': '   '})
+        self.assertEqual([], ledger_mod.notes_for(conn, fp_hex))
+
+    def test_post_note_without_a_signer_is_rejected(self):
+        client, _conn, fp_hex = self._client()        # no signer -> read-only
+        resp = client.post('/note/' + fp_hex, data={'body': 'x'})
+        self.assertEqual(405, resp.status_code)
+
+    def test_signer_failure_is_a_page_and_records_nothing(self):
+        client, conn, fp_hex = self._client(signer=_failing_signer())
+        resp = client.post('/note/' + fp_hex, data={'body': 'x'})
+        self.assertEqual(502, resp.status_code)
+        self.assertEqual([], ledger_mod.notes_for(conn, fp_hex))
+
+    def test_keyboard_shortcuts_ignore_the_notes_textarea(self):
+        # Typing [ ] v 1-9 a d in the notes box must insert characters, not fire
+        # the diff/verdict shortcuts -- the keydown guards must skip a TEXTAREA.
+        signer, _ = _recording_signer()
+        client, _conn, fp_hex = self._client(signer=signer)
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn("e.target.tagName === 'TEXTAREA'", body)
+
+    def test_worklist_shows_a_note_count_badge(self):
+        client, conn, fp_hex = self._client()
+        for body in ('n1', 'n2'):
+            ledger_mod.append_note(conn, fingerprint=fp_hex, body=body, signed_by='a',
+                                   signature='s', created_at=WHEN)
+        body = client.get('/').get_data(as_text=True)
+        self.assertIn('note-badge', body)
+        self.assertIn('2 note(s)', body)

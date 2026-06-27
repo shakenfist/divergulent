@@ -129,3 +129,24 @@ class DebSrcAvailableTestCase(testtools.TestCase):
 
     def test_unavailable_on_error(self):
         self.assertFalse(deb_src_available(run=self._run(100, '')))
+
+
+class ChangelogDateTestCase(testtools.TestCase):
+
+    def test_top_entry_date_is_normalised_to_iso(self):
+        from divergulent.sources.apt_patches import _changelog_date
+        text = (
+            'pkg (3-1) unstable; urgency=medium\n\n  * x\n\n'
+            ' -- Maint <m@e.org>  Wed, 20 May 2020 21:00:00 +0200\n\n'
+            'pkg (2-1) unstable; urgency=low\n\n  * y\n\n'
+            ' -- Maint <m@e.org>  Mon, 01 Jan 2018 00:00:00 +0000\n')
+        # The FIRST (most recent) trailer wins.
+        self.assertEqual('2020-05-20', _changelog_date(text))
+
+    def test_no_trailer_is_none(self):
+        from divergulent.sources.apt_patches import _changelog_date
+        self.assertIsNone(_changelog_date('pkg (3-1) unstable; urgency=medium\n\n  * x\n'))
+
+    def test_unparseable_date_is_none(self):
+        from divergulent.sources.apt_patches import _changelog_date
+        self.assertIsNone(_changelog_date(' -- Maint <m@e.org>  not-a-date\n'))

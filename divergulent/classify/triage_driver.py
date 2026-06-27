@@ -45,6 +45,7 @@ from divergulent.classify import measure
 from divergulent.classify import triage as triage_mod
 from divergulent.classify import triage_record
 from divergulent.classify import verdict as verdict_mod
+from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import reviewability as reviewability_mod
 from divergulent.classify.claim import extract_claim
 from divergulent.classify.ledger import live_observations
@@ -169,6 +170,37 @@ def _stored_priority(item: WorkItem) -> int:
     first, with occurrence count as the within-risk tie-break -- no schema change.
     """
     return item.risk_rank * RISK_PRIORITY_WEIGHT + item.n_occurrences
+
+
+def reprioritise_review_queue(conn, index_path: str) -> int:
+    """Re-stamp pending review items' priority from CURRENT risk + occurrence.
+
+    ``review_queue.priority`` is frozen at enqueue (triage) time, so a risk score
+    that lands AFTER a patch was queued never reaches the queue order -- the
+    worklist's "review next" walks ``priority`` DESC and would otherwise stay in
+    occurrence order even as scary patches get scored. This recomputes
+    ``risk_rank * WEIGHT + n_occurrences`` (the same formula as
+    :func:`_stored_priority`) from the live risk observations + the index for every
+    pending item, updates those that changed, and returns the count changed. Run at
+    the tail of a risk-gate pass so the queue self-heals as scores land; safe to run
+    standalone.
+    """
+    from divergulent.classify import risk as risk_mod  # lazy: avoids an import cycle
+
+    risk_ranks = risk_mod.risk_rank_by_fingerprint(conn)
+    groups = _index_groups(index_path)
+    changed = 0
+    for item in ledger_mod.pending_review_items(conn):
+        fingerprint = item['fingerprint']
+        rank = risk_ranks.get(fingerprint, 0)
+        occurrences = groups.get(fingerprint, {}).get('n_occurrences', 0)
+        new_priority = rank * RISK_PRIORITY_WEIGHT + occurrences
+        if new_priority != item['priority']:
+            ledger_mod.reprioritise_review_item(
+                conn, item_id=item['id'], priority=new_priority, commit=False)
+            changed += 1
+    conn.commit()
+    return changed
 
 
 def build_work_list(conn: sqlite3.Connection, index_path: str, *,

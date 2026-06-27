@@ -401,6 +401,29 @@ class RecordReviewVerdictTestCase(ReviewFixture, testtools.TestCase):
         self.assertEqual(1, len(ledger_mod.pending_review_items(conn)))
 
 
+class RecordNoteTestCase(ReviewFixture, testtools.TestCase):
+    """A reviewer note is signed over its canonical bytes and stored append-only."""
+
+    def test_signs_canonical_note_bytes_and_appends(self):
+        conn, _corpus, _index, fp_hex = self._setup()
+        signer, signer_seen = _fake_signer()
+        body = 'unsafe sprintf near a privilege boundary'
+        note_id = review.record_note(conn, fp_hex, body, signer=signer, now=WHEN)
+        self.assertGreater(note_id, 0)
+        # The signer saw exactly the canonical note bytes.
+        self.assertEqual(review.canonical_note(fp_hex, body, WHEN), signer_seen['record_bytes'])
+        rows = ledger_mod.notes_for(conn, fp_hex)
+        self.assertEqual(1, len(rows))
+        self.assertEqual(body, rows[0]['body'])
+        self.assertEqual('reviewer@example.org', rows[0]['signed_by'])
+        self.assertEqual('FAKE-SIG', rows[0]['signature'])
+
+    def test_canonical_note_is_deterministic(self):
+        first = review.canonical_note('fp', 'body', WHEN)
+        self.assertEqual(first, review.canonical_note('fp', 'body', WHEN))
+        self.assertIn(b'"kind":"note"', first)
+
+
 class FetchSourceFileTestCase(testtools.TestCase):
 
     def test_builds_sources_debian_org_url(self):
@@ -464,15 +487,15 @@ class RenderInContextTestCase(testtools.TestCase):
         self.assertIn('+y', rendered)
 
 
-def _context(*, packages, source_package='reader', version='1.2-3'):
+def _context(*, packages, source_package='reader', version='1.2-3', package_date=None):
     """A minimal ReviewContext for exercising the package-line formatter."""
     return review.ReviewContext(
         fingerprint='f' * 64, diff_body='', context_view='',
         draft_category=None, draft_confidence=None, draft_reasoning=None,
         claim_category='unknown', claim_description=None, claim_forwarded='unknown',
-        claim_bugs=(), claim_cves=(), reason=None,
+        claim_bugs=(), claim_cves=(), claim_date=None, reason=None,
         source_package=source_package, version=version, patch_name='fix.patch',
-        packages=tuple(packages))
+        packages=tuple(packages), package_date=package_date)
 
 
 class _FakeExpired(Exception):
@@ -548,6 +571,15 @@ class FormatPackageLinesTestCase(testtools.TestCase):
 
     def test_single_package_shows_only_the_representative(self):
         lines = review._format_package_lines(_context(packages=['reader']))
+        self.assertEqual(['package: reader (1.2-3)'], lines)
+
+    def test_package_age_is_shown_when_known(self):
+        lines = review._format_package_lines(
+            _context(packages=['reader'], package_date='2020-05-20'))
+        self.assertEqual(['package: reader (1.2-3) — last upload 2020-05-20'], lines)
+
+    def test_package_age_omitted_when_absent(self):
+        lines = review._format_package_lines(_context(packages=['reader'], package_date=None))
         self.assertEqual(['package: reader (1.2-3)'], lines)
 
     def test_multiple_packages_listed(self):
@@ -923,3 +955,34 @@ class RequeueCommandTestCase(ReviewFixture, testtools.TestCase):
             rc = review.main(['requeue', ledger_path, 'ffffffffffff'])
         self.assertEqual(1, rc)
         self.assertIn('no fingerprint matches', buf.getvalue())
+
+
+class PackageDateTestCase(testtools.TestCase):
+    """`_package_date` reads the index `package` table; absent -> None, not an error."""
+
+    def _index(self, rows, *, with_table=True):
+        import sqlite3
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = os.path.join(tmp.name, 'fingerprints.sqlite')
+        conn = sqlite3.connect(path)
+        if with_table:
+            conn.execute('CREATE TABLE package (source_package TEXT, version TEXT, changelog_date TEXT)')
+            conn.executemany('INSERT INTO package VALUES (?, ?, ?)', rows)
+        else:
+            conn.execute('CREATE TABLE patch (fingerprint TEXT)')   # an index predating the table
+        conn.commit()
+        conn.close()
+        return path
+
+    def test_returns_the_most_recent_changelog_date(self):
+        path = self._index([('rman', '3.2-9', '2018-01-01'), ('rman', '3.2-10', '2020-05-20')])
+        self.assertEqual('2020-05-20', review._package_date(path, 'rman'))
+
+    def test_unknown_package_is_none(self):
+        path = self._index([('rman', '3.2-10', '2020-05-20')])
+        self.assertIsNone(review._package_date(path, 'other'))
+
+    def test_missing_package_table_is_none(self):
+        path = self._index([], with_table=False)
+        self.assertIsNone(review._package_date(path, 'rman'))

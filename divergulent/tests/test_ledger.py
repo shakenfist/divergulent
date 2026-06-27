@@ -486,3 +486,39 @@ class AppendOnlyInvariantTestCase(testtools.TestCase):
         for name in ('append_decision', 'append_observation',
                      'supersede_decisions', 'supersede_observations'):
             self.assertTrue(callable(getattr(ledger, name)))
+
+
+class NotesTestCase(LedgerFixture, testtools.TestCase):
+
+    def test_append_and_read_back_oldest_first(self):
+        conn, _ = self._ledger()
+        ledger.append_note(conn, fingerprint='fp1', body='first', signed_by='a@b',
+                           signature='SIG1', created_at='2026-06-27T00:00:00Z')
+        ledger.append_note(conn, fingerprint='fp1', body='second', signed_by='a@b',
+                           signature='SIG2', created_at='2026-06-27T00:01:00Z')
+        ledger.append_note(conn, fingerprint='fp2', body='other', signed_by='c@d',
+                           signature='SIG3', created_at='2026-06-27T00:02:00Z')
+        rows = ledger.notes_for(conn, 'fp1')
+        self.assertEqual(['first', 'second'], [r['body'] for r in rows])
+        self.assertEqual('a@b', rows[0]['signed_by'])
+        self.assertEqual('SIG1', rows[0]['signature'])
+        self.assertEqual([], ledger.notes_for(conn, 'no-such-fp'))
+
+    def test_note_counts_by_fingerprint(self):
+        conn, _ = self._ledger()
+        for body in ('a', 'b'):
+            ledger.append_note(conn, fingerprint='fp1', body=body, signed_by='a@b',
+                               signature='S', created_at='2026-06-27T00:00:00Z')
+        ledger.append_note(conn, fingerprint='fp2', body='c', signed_by='a@b',
+                           signature='S', created_at='2026-06-27T00:00:00Z')
+        self.assertEqual({'fp1': 2, 'fp2': 1}, ledger.note_counts_by_fingerprint(conn))
+
+    def test_ensure_note_table_is_idempotent_and_backfills(self):
+        conn, _ = self._ledger()
+        # Simulate a ledger built before notes existed.
+        conn.execute('DROP TABLE note')
+        ledger.ensure_note_table(conn)
+        ledger.ensure_note_table(conn)  # idempotent: a second call is a no-op
+        ledger.append_note(conn, fingerprint='fp1', body='back', signed_by='a@b',
+                           signature='S', created_at='2026-06-27T00:00:00Z')
+        self.assertEqual(['back'], [r['body'] for r in ledger.notes_for(conn, 'fp1')])
