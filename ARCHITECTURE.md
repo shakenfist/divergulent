@@ -90,10 +90,13 @@ installed-package inventory never leaves the machine.
 - `divergulent/classify/` — **curation-side only** (the central builder runs
   it; no client command imports it). `corpus.py` crawls the archive's
   patched packages (reusing `apt_patches`' uncapped fetch) into a resumable
-  content-addressed corpus of raw patch bodies; `fingerprint.py` is the pure,
+  content-addressed corpus of raw patch bodies (and, from the same
+  `.debian.tar.*`, each package's `debian/changelog` last-upload date, for
+  review-time package-age display); `fingerprint.py` is the pure,
   versioned `normalise()`/`fingerprint()` (canonical v1 = `strip_path`,
   `keep_context`); `measure.py` deduplicates, writes a sqlite fingerprint
-  index, and reports the distinct-patch count. Phase 1 of the patch-
+  index (a `patch` table plus a `package` table carrying the changelog
+  date), and reports the distinct-patch count. Phase 1 of the patch-
   classification plan; it measured ≈61.5k carried patches → 60,640 distinct
   (dedup 1.02x — carried patches are overwhelmingly bespoke). Phase 2 adds the
   deterministic extractors: `claim.py` reads the author's (untrusted) claim

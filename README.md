@@ -251,8 +251,11 @@ cherry-picking, and an audit view for spot-checking that the deterministic
 rules classify correctly. The web UI also lets a reviewer attach **signed,
 append-only notes** to a patch — ad hoc observations ("introduces
 `sprintf()` near a privilege boundary") that don't fit a verdict — shown
-with their signer identity and signature. Both front-ends record
-byte-identical verdicts against one ledger. See
+with their signer identity and signature, and surfaces **age** signals
+(the patch's DEP-3 `Last-Update` and the package's last-upload date) so a
+scary construct in ancient, unloved code reads differently from a recent
+one. Both front-ends record byte-identical verdicts against one ledger.
+See
 [docs/plans/PLAN-patch-classification.md](docs/plans/PLAN-patch-classification.md).
 
 ## Development

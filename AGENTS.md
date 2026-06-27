@@ -161,8 +161,10 @@ the builder, never on a client — and is phase 1 of the patch-classification
 plan (`docs/plans/PLAN-patch-classification.md`). `corpus.py` crawls the
 archive's patched packages into a resumable, content-addressed corpus of raw
 patch bodies (reusing `apt_patches`' uncapped fetch with per-worker keep-alive
-connection reuse so a bulk crawl resolves DNS ~once per worker, not per file);
-`fingerprint.py`/`measure.py` deduplicate and count. The first crawl measured
+connection reuse so a bulk crawl resolves DNS ~once per worker, not per file; it
+also records each package's `debian/changelog` last-upload date from the same
+`.debian.tar.*`, surfaced as package age in review); `fingerprint.py`/`measure.py`
+deduplicate and count (the index gains a `package` table carrying that date). The first crawl measured
 ≈61.5k carried patches → 60,640 distinct (dedup 1.02x): carried patches are
 overwhelmingly bespoke, so classification leverage must come from category
 rules, not deduplication. See

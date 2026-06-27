@@ -5,7 +5,10 @@ not "is the *package* itself ancient and unloved". The package's last-upload dat
 (the top `debian/changelog` entry) is the missing half — and it is already in the
 `.debian.tar.*` the corpus fetch downloads, so capturing it costs no extra network.
 
-**Status: planned.** Populated only on the NEXT corpus rebuild; shown "if available".
+**Status: implemented (P1–P4).** Captured during the corpus crawl, written to the
+index `package` table by `measure`, shown in the review UI via
+`_format_package_lines`. Populated only on the NEXT corpus rebuild + re-measure;
+shown "if available" (absent on the current ledger until then).
 
 ## Design
 
