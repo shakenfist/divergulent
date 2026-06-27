@@ -10,7 +10,10 @@ a real cost, especially for security.
 This adds **signed reviewer notes**: append-only, attributed, free-text annotations
 on a fingerprint, independent of any verdict.
 
-**Status: planned.**
+**Status: implemented (N1–N3).** Signed append-only notes in an optional `note`
+table (existing ledgers backfilled via `ensure_note_table`), `record_note` over
+the verdict signer, and the web review page section + worklist badge are built and
+offline-tested. Deferred: notes in the CLI `review` tool, structured notes.
 
 ## Design decisions
 

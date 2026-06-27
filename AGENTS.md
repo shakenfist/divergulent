@@ -306,7 +306,13 @@ queue (the derived `current_verdict`, filtered by category and provenance) to
 check a deterministic rule and **re-queue** a misfire via `requeue_one` (records
 no decision). The queue worklist keys category off the **LLM draft**; the audit
 view keys it off the **derived verdict** (the rule's category for rule-classified
-patches). Flask + Jinja2 (autoescaping) are behind the optional **`review`
+patches). It also adds **signed reviewer notes** — append-only, free-text human
+annotations on a fingerprint (a third ledger entry type, neither decision nor rule
+observation, in an OPTIONAL `note` table that existing ledgers gain via
+`ensure_note_table` with no rebuild). A note is signed with the SAME session signer
+the verdicts use (`record_note` over `canonical_note`), shown WITH its signer
+identity + signature, indicated by a worklist count badge, and never enters the
+published bundle. Flask + Jinja2 (autoescaping) are behind the optional **`review`
 extra** — `pip install divergulent[review]`, or `[review,verify]` to sign — off
 the default scan/report install; it binds **loopback only**, has no auth, is
 single-user, and is never run in CI or by clients. Handlers test offline through

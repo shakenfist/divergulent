@@ -210,7 +210,13 @@ installed-package inventory never leaves the machine.
   human verdict is signed). The queue worklist filters on the **LLM draft**
   category; the audit view filters on the **derived verdict** — which for a
   rule-classified fingerprint is the rule's category, so "the rule defines the
-  category when a patch never reached the LLM" needs no special case. Flask +
+  category when a patch never reached the LLM" needs no special case. The web UI
+  also carries **signed reviewer notes** — append-only, free-text human
+  annotations on a fingerprint (a third ledger entry type beside decisions and rule
+  observations, in an OPTIONAL `note` table existing ledgers gain via
+  `ensure_note_table`), signed with the same session signer as verdicts
+  (`record_note`/`canonical_note`), shown with their identity + signature, badged
+  on the worklist, and never published. Flask +
   Jinja2 (autoescaping HTML) live behind the optional **`review` extra**
   (`pip install divergulent[review]`, or `[review,verify]` to sign), off the
   default scan/report path; the server binds **loopback only**, has no auth, and
