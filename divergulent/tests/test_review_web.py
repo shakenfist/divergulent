@@ -219,6 +219,13 @@ class ReviewPageTestCase(ReviewWebFixture, testtools.TestCase):
         self.assertIn('enlarge the read buffer to avoid truncation', body)
         self.assertIn('claimed category', body)
 
+    def test_surfaces_the_patch_date(self):
+        # The age signal (DEP-3 Last-Update / git Date) is shown in the claim block.
+        # The fixture patch carries no date, so it reads "no date in header".
+        client, _conn, fp_hex = self._client()
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn('last updated', body)
+
     def test_diff_has_changed_block_anchors_and_nav(self):
         client, _conn, fp_hex = self._client()
         body = client.get('/review/' + fp_hex).get_data(as_text=True)

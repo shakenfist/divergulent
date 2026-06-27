@@ -644,7 +644,7 @@ class ReviewContext:
     Assembled by :func:`build_review_context`: the representative diff body, the
     LLM draft (category + confidence + reasoning), the author's CLAIM (its derived
     category plus the raw, author-written DEP-3 story -- ``claim_description``,
-    ``claim_forwarded``, ``claim_bugs``, ``claim_cves``), the routing flags/reason
+    ``claim_forwarded``, ``claim_bugs``, ``claim_cves``, ``claim_date``), the routing flags/reason
     that sent the item to review, the diff rendered in the context of the original
     upstream file, and the package(s) that carry this fingerprint
     (``source_package``/``version``/``patch_name`` are the representative instance;
@@ -668,6 +668,7 @@ class ReviewContext:
     claim_forwarded: str
     claim_bugs: tuple[BugRef, ...]
     claim_cves: tuple[str, ...]
+    claim_date: str | None
     reason: str | None
     source_package: str
     version: str
@@ -751,6 +752,7 @@ def build_review_context(conn: sqlite3.Connection, corpus_dir: str, index_path: 
         claim_category=claim.claimed_category,
         claim_description=claim.description,
         claim_forwarded=claim.forwarded,
+        claim_date=claim.date,
         claim_bugs=tuple(claim.bugs),
         claim_cves=tuple(claim.cves),
         reason=item['reason'] if item is not None else None,
@@ -1114,6 +1116,7 @@ def _interactive_ask(context: ReviewContext) -> str:
         view.append('routed to review because: %s' % context.reason)
     view.append('author claim category: %s (forwarding: %s)' % (
         context.claim_category, context.claim_forwarded))
+    view.append('author says last updated: %s' % (context.claim_date or 'no date in header'))
     if context.claim_description:
         view.append('author says: %s' % context.claim_description)
     if context.claim_bugs:

@@ -493,7 +493,7 @@ def _context(*, packages, source_package='reader', version='1.2-3'):
         fingerprint='f' * 64, diff_body='', context_view='',
         draft_category=None, draft_confidence=None, draft_reasoning=None,
         claim_category='unknown', claim_description=None, claim_forwarded='unknown',
-        claim_bugs=(), claim_cves=(), reason=None,
+        claim_bugs=(), claim_cves=(), claim_date=None, reason=None,
         source_package=source_package, version=version, patch_name='fix.patch',
         packages=tuple(packages))
 

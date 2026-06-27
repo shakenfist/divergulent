@@ -611,6 +611,7 @@ than a line-by-line read.</p>
   {% endif %}
   <div class="muted">claimed category: <b>{{ ctx.claim_category }}</b>
     &middot; forwarding: {{ ctx.claim_forwarded }}
+    &middot; last updated: <b>{{ ctx.claim_date or 'no date in header' }}</b>
     {% if ctx.claim_bugs %}&middot; bugs:
       {% for b in ctx.claim_bugs %}{%
         if b.ref.startswith('http') %}<a href="{{ b.ref }}">{{ b.tracker }}</a>{%
