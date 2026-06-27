@@ -37,6 +37,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from divergulent.classify import ledger as ledger_mod
+from divergulent.classify import reviewability as reviewability_mod
 from divergulent.classify.classify import iter_classified
 from divergulent.classify.rules import RULES_VERSION
 
@@ -52,8 +53,9 @@ class RecordStats:
     ``*_appended`` rows were newly written; ``*_skipped`` rows already existed
     live and were left untouched (idempotency).  ``decisions_superseded`` counts
     heuristic decisions a ``reconcile`` run retired because the winning rule for
-    that fingerprint changed.  ``fingerprints`` is the number of distinct
-    fingerprints classified.
+    that fingerprint changed.  ``reviewability_*`` counts the deterministic size
+    (reviewability) observation, one per fingerprint.  ``fingerprints`` is the
+    number of distinct fingerprints classified.
     """
 
     decisions_appended: int = 0
@@ -61,6 +63,8 @@ class RecordStats:
     decisions_superseded: int = 0
     observations_appended: int = 0
     observations_skipped: int = 0
+    reviewability_appended: int = 0
+    reviewability_skipped: int = 0
     fingerprints: int = 0
 
 
@@ -160,6 +164,30 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
                     observed_by=_SCAN_RULE_ID, rule_version=RULES_VERSION,
                     observed_at=now, commit=False)
                 stats.observations_appended += 1
+
+        # The deterministic reviewability (size) observation -- its own rule
+        # identity, recorded once per fingerprint. The level is stable (the body
+        # is content-addressed), so an unchanged re-record skips; a threshold
+        # (version) change supersedes the prior level before appending the new.
+        level = reviewability_mod.classify(record.profile)
+        review_evidence = reviewability_mod.evidence_for(record.profile)
+        if ledger_mod.live_observation_exists(
+                conn, fingerprint=record.fingerprint,
+                observed_by=reviewability_mod.REVIEWABILITY_OBSERVED_BY,
+                rule_version=reviewability_mod.REVIEWABILITY_VERSION,
+                detail=level, evidence=review_evidence):
+            stats.reviewability_skipped += 1
+        else:
+            ledger_mod.supersede_observations_for_fingerprint(
+                conn, fingerprint=record.fingerprint,
+                kind=reviewability_mod.REVIEWABILITY_KIND, superseded_at=now, commit=False)
+            ledger_mod.append_observation(
+                conn, fingerprint=record.fingerprint,
+                kind=reviewability_mod.REVIEWABILITY_KIND, detail=level, evidence=review_evidence,
+                observed_by=reviewability_mod.REVIEWABILITY_OBSERVED_BY,
+                rule_version=reviewability_mod.REVIEWABILITY_VERSION,
+                observed_at=now, commit=False)
+            stats.reviewability_appended += 1
 
     if progress is not None:
         progress.finish()

@@ -47,12 +47,19 @@ negatives:
 - **Avoid Haiku.** It emitted ~1,600 hidden *thinking* tokens/call (visible answer
   ~40), making it 3× Sonnet's cost *and* less reliable (over-flagged a benign
   build script). Sonnet/Opus respected the "≤20 words" instruction (~30–76 out).
-- **Cost is affordable, one-time.** At the stripped-down sizes a gate call is
-  ~$0.003–0.03 (clean-sequential vs concurrent/large-diff). The gate scores the
-  **whole corpus** (~60k unique fingerprints), not just the residue, because a
-  settled `packaging` patch can still be security-relevant; the deterministic cull
-  carves off ~7% (mostly doc-only), leaving ~56k LLM calls -- **~$340 Opus / ~$170
-  Sonnet at API rates**, i.e. *quota, not cash* on subscription, one-time.
+- **Cost, corrected by the first real run (2026-06-27).** The early
+  ~$0.003–0.03/call estimate was optimistic — it sampled small patches and missed
+  both the per-call floor and the giant-diff tail. Measured on 25 random typical
+  patches: **~$0.02/Opus call**, almost pure token pricing (~600-token rubric +
+  small diff + ~90 output), with **`cache-hit 0%`** — the rubric is re-sent
+  uncached every call. The gate scores the **whole corpus** (~60k fingerprints);
+  the cull carves off ~7%, leaving ~56k LLM calls → **~$1.0–1.2k of subscription
+  quota, one-time**, dominated by call-count, NOT diff size. The diff cap and the
+  `oversized` skip (the reviewability axis) remove the giant-diff spikes and the
+  context-overflow error but not this floor. The real cost dial is separate:
+  **model** (Sonnet ≈5× cheaper, ~$245), **scope** (residue-only ~$871), and
+  **rubric caching** (the subscription `claude -p` path does not cache
+  `--system-prompt`; the API `anthropic_call` backend's `cache_control` would).
 - **`dangerous-construct` is NOT a risk proxy.** Many flagged constructs are
   benign build-script shell-outs, which Opus correctly rated low. Keep the two
   signals separate.

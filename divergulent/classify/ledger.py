@@ -970,9 +970,10 @@ def _cmd_build(args: argparse.Namespace) -> int:
         print(verdict.render_report(verdict.summarise_ledger(conn)))
         print('built ledger: %s' % out_path)
         print('decisions appended=%d skipped=%d; observations appended=%d skipped=%d; '
-              'fingerprints=%d; current verdicts=%d' % (
+              'reviewability appended=%d skipped=%d; fingerprints=%d; current verdicts=%d' % (
                   stats.decisions_appended, stats.decisions_skipped,
                   stats.observations_appended, stats.observations_skipped,
+                  stats.reviewability_appended, stats.reviewability_skipped,
                   stats.fingerprints, rows))
     finally:
         conn.close()
@@ -1030,10 +1031,12 @@ def _cmd_record(args: argparse.Namespace) -> int:
         print('recorded into ledger: %s' % args.ledger)
         print('dequeued %d now-settled review items' % dequeued)
         print('decisions appended=%d skipped=%d superseded=%d; observations appended=%d '
-              'skipped=%d; fingerprints=%d; current verdicts=%d' % (
+              'skipped=%d; reviewability appended=%d skipped=%d; fingerprints=%d; '
+              'current verdicts=%d' % (
                   stats.decisions_appended, stats.decisions_skipped,
                   stats.decisions_superseded, stats.observations_appended,
-                  stats.observations_skipped, stats.fingerprints, rows))
+                  stats.observations_skipped, stats.reviewability_appended,
+                  stats.reviewability_skipped, stats.fingerprints, rows))
     finally:
         conn.close()
     return 0

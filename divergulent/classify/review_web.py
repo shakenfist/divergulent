@@ -21,9 +21,11 @@ from __future__ import annotations
 import argparse
 import os
 import sqlite3
+from urllib.parse import urlencode
 
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import review as review_mod
+from divergulent.classify import reviewability as reviewability_mod
 from divergulent.classify import verdict as verdict_mod
 
 # The handlers reuse review.py's fingerprint-keyed read helpers directly rather
@@ -113,7 +115,7 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
                 return item
         return None
 
-    def _worklist_row(item) -> dict:
+    def _worklist_row(item, level) -> dict:
         fingerprint = item['fingerprint']
         packages = review_mod._carrying_packages(index_path, fingerprint)
         return {
@@ -123,6 +125,8 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             'draft_category': item['draft_category'],
             'reason': item['reason'],
             'n_packages': len(packages),
+            # 'normal' is rendered as no badge; only large/oversized show.
+            'reviewability': None if level == 'normal' else level,
         }
 
     def _worklist_category_chips() -> list[dict]:
@@ -133,6 +137,21 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             if category:
                 counts[category] = counts.get(category, 0) + 1
         return category_chips(counts)
+
+    def _worklist_reviewability_chips(levels: dict) -> list[dict]:
+        """Filter chips for the non-normal reviewability tiers, with pending counts.
+
+        Only ``large`` / ``oversized`` are surfaced (``normal`` is the unbadged
+        bulk); the ``oversized`` chip is the "not line-reviewable" bucket the
+        operator handles deliberately.
+        """
+        counts: dict[str, int] = {}
+        for item in ledger_mod.pending_review_items(conn):
+            level = levels.get(item['fingerprint'], 'normal')
+            if level != 'normal':
+                counts[level] = counts.get(level, 0) + 1
+        return [{'name': name, 'count': counts[name]}
+                for name in ('large', 'oversized') if name in counts]
 
     @app.route('/')
     def index():
@@ -155,11 +174,27 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
         if package:
             fps = review_mod.fingerprints_for_package(index_path, package)
             items = [item for item in items if item['fingerprint'] in fps]
-        rows = [_worklist_row(item) for item in items]
+        # Reviewability filter: the size axis (e.g. the oversized, not-line-
+        # reviewable bucket). Composes with the category/package filters.
+        levels = reviewability_mod.reviewability_by_fingerprint(conn)
+        reviewability = request.args.get('reviewability', '').strip() or None
+        if reviewability:
+            items = [item for item in items
+                     if levels.get(item['fingerprint'], 'normal') == reviewability]
+        rows = [_worklist_row(item, levels.get(item['fingerprint'], 'normal')) for item in items]
         top = items[0]['fingerprint'] if items else None
+        # The category/package filters, as a query string, so the reviewability
+        # chips can preserve them (and "all sizes" can reset only reviewability).
+        base_params = {}
+        if category:
+            base_params['category'] = category
+        if package:
+            base_params['package'] = package
         return render_template_string(
             WORKLIST_TEMPLATE, rows=rows, category=category, package=package,
-            categories=_worklist_category_chips(), top=top, total=len(items))
+            categories=_worklist_category_chips(), top=top, total=len(items),
+            reviewability=reviewability, reviewabilities=_worklist_reviewability_chips(levels),
+            base_qs=urlencode(base_params))
 
     @app.route('/review/<fingerprint>')
     def review(fingerprint):
@@ -176,10 +211,13 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
         # A settled, non-queued item (reached from /audit) shows its current
         # derived verdict and a re-queue action instead of the verdict form.
         verdict = None if queued else verdict_mod.current_verdict(conn).get(resolved)
+        level = reviewability_mod.reviewability_by_fingerprint(conn).get(resolved, 'normal')
         return render_template_string(
             REVIEW_TEMPLATE, ctx=context, queued=queued,
             can_verdict=signer is not None, categories=categories,
             verdict=verdict, can_requeue=signer is not None and not queued,
+            reviewability=None if level == 'normal' else level,
+            oversized_lines=reviewability_mod.REVIEWABILITY_OVERSIZED_LINES,
             package_lines=review_mod._format_package_lines(context),
             diff=diff_lines(context.context_view))
 
@@ -363,6 +401,10 @@ _HEAD = '''<!doctype html>
          border: 1px solid #3a4150; border-radius: 1rem; text-decoration: none; }
  .chip.on { background: #2563eb; color: #fff; border-color: #2563eb; }
  .chip.empty { opacity: 0.45; }
+ .rev { display: inline-block; padding: 0 0.4rem; border-radius: 0.2rem;
+        font-size: 0.8rem; font-weight: bold; }
+ .rev.large { background: #3a2f12; color: #e3c878; }
+ .rev.oversized { background: #4a1c1c; color: #ff9a92; }
  .next { display: inline-block; margin: 0.5rem 0; padding: 0.4rem 0.8rem;
          background: #2563eb; color: #fff; border-radius: 0.3rem; text-decoration: none; }
  .meta-block { background: #232730; padding: 0.6rem 0.8rem; border-radius: 0.3rem; }
@@ -371,8 +413,12 @@ _HEAD = '''<!doctype html>
  .claim-desc { white-space: pre-wrap; margin: 0.3rem 0; color: #e0e3e8; }
  pre.diff { background: #0f1115; border: 1px solid #2a2f38; padding: 0.6rem;
             overflow-x: auto; font: 12px/1.4 ui-monospace, monospace; }
+ pre.diff span { display: block; min-width: 100%; width: fit-content; min-height: 1.4em; }
  pre.diff .add { color: #5fd17a; } pre.diff .del { color: #ff7b72; }
  pre.diff .hunk { color: #9aa0aa; background: #232730; } pre.diff .meta { color: #6b7280; }
+ /* Upstream context (lines not part of the patch) gets a faint purple wash so the
+    added/removed lines, left on the base background, read as the changed regions. */
+ pre.diff .ctx { background: #1a1228; }
  .mono { font-family: ui-monospace, monospace; }
  .muted { color: #8a909a; } .error { color: #ff7b72; font-weight: bold; }
  fieldset.verdict { border: 1px solid #2a2f38; border-radius: 0.3rem; }
@@ -416,6 +462,17 @@ WORKLIST_TEMPLATE = _HEAD.replace('{{ title }}', 'worklist') + '''
        >{{ cat.name }} <span class="muted">({{ cat.count }})</span></a>
   {% endfor %}
 </p>
+{% if reviewabilities or reviewability %}
+<p>
+  <span class="muted">size:</span>
+  <a class="chip {{ 'on' if not reviewability }}" href="/{{ '?' + base_qs if base_qs }}">all sizes</a>
+  {% for r in reviewabilities %}
+    <a class="chip {{ 'on' if reviewability == r.name }}"
+       href="/?reviewability={{ r.name }}{{ '&' + base_qs if base_qs }}"
+       >{{ r.name }} <span class="muted">({{ r.count }})</span></a>
+  {% endfor %}
+</p>
+{% endif %}
 {% if top %}
   <a class="next" href="/review/{{ top }}">Review next most important &rarr;</a>
   <span class="muted">(press <span class="key">j</span>)</span>
@@ -432,11 +489,13 @@ document.addEventListener('keydown', function(e) {
 });
 </script>
 <table>
-  <tr><th>priority</th><th>draft</th><th>pkgs</th><th>fingerprint</th><th>reason</th></tr>
+  <tr><th>priority</th><th>draft</th><th>size</th><th>pkgs</th><th>fingerprint</th><th>reason</th></tr>
   {% for row in rows %}
   <tr>
     <td>{{ row.priority }}</td>
     <td>{{ row.draft_category or '-' }}</td>
+    <td>{% if row.reviewability %}<span class="rev {{ row.reviewability }}"
+        >{{ row.reviewability }}</span>{% endif %}</td>
     <td>{{ row.n_packages }}</td>
     <td class="mono"><a href="/review/{{ row.fingerprint }}">{{ row.short }}</a></td>
     <td class="muted">{{ row.reason or '' }}</td>
@@ -447,7 +506,13 @@ document.addEventListener('keydown', function(e) {
 
 REVIEW_TEMPLATE = _HEAD.replace('{{ title }}', 'review') + '''
 <p><a href="/">&larr; worklist</a></p>
-<h1 class="mono">{{ ctx.fingerprint[:16] }}<span class="muted">{{ ctx.fingerprint[16:] }}</span></h1>
+<h1 class="mono">{{ ctx.fingerprint[:16] }}<span class="muted">{{ ctx.fingerprint[16:] }}</span>
+{% if reviewability %} <span class="rev {{ reviewability }}">{{ reviewability }}</span>{% endif %}</h1>
+{% if reviewability == 'oversized' %}
+<p class="rev oversized" style="padding: 0.4rem 0.6rem;">This diff is oversized (&gt;{{ oversized_lines }}
+changed lines) and is not realistically line-reviewable. Treat it as trust-upstream / spot-check rather
+than a line-by-line read.</p>
+{% endif %}
 <div class="meta-block">
   {% for line in package_lines %}<div>{{ line }}</div>{% endfor %}
   {% if ctx.reason %}<div>routed to review because: {{ ctx.reason }}</div>{% endif %}
@@ -528,8 +593,7 @@ document.addEventListener('keydown', function(e) {
 </script>
 {% endif %}
 <h2>Diff in upstream context</h2>
-<pre class="diff">{% for line in diff %}<span class="{{ line.cls }}">{{ line.text }}</span>
-{% endfor %}</pre>
+<pre class="diff">{% for line in diff %}<span class="{{ line.cls }}">{{ line.text }}</span>{% endfor %}</pre>
 ''' + _FOOT
 
 ERROR_TEMPLATE = _HEAD.replace('{{ title }}', 'error') + '''

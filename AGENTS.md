@@ -251,9 +251,20 @@ whitespace/comment-only, doc-only, translation/changelog) `none` with no LLM cal
 — narrower than the packaging category (a `debian/rules` hardening-flag change is
 NOT culled). Default model Opus (bake-off: 100% recall / 0% false-alarm at
 ≥elevated vs Sonnet 73%/3%); the cull fires ~7% of the full corpus (mostly
-doc-only), so ~93% of ~60k fingerprints get an LLM call — ~$340 Opus / ~$170
-Sonnet at-rates/quota, one-time. See
-`docs/plans/PLAN-patch-classification-phase-04-risk-gate.md`. `python -m
+doc-only). Diffs are **capped** before the gate (`RISK_MAX_DIFF_CHARS`, head only,
+truncation recorded) and `oversized` patches are skipped entirely, so neither the
+context-overflow error nor the giant-diff cost spikes recur. Measured cost is
+~$0.02/Opus call (the ~600-token rubric is re-sent uncached every call), so the
+whole-corpus pass is **~$1.0–1.2k of subscription quota, one-time** — dominated by
+call-count, NOT diff size; the model (Sonnet ≈5× cheaper) / scope / rubric-caching
+levers are the real cost dial. A third, **deterministic** axis —
+`reviewability.py` — records each fingerprint's size tier
+(`normal`/`large`/`oversized`, by changed-line count) as a `reviewability`
+observation (`observed_by='size-rule'`) at `ledger build`/`record`; an `oversized`
+patch (>5,000 changed lines) is not line-reviewable, so both LLM passes skip it and
+the review UI buckets it. See
+`docs/plans/PLAN-patch-classification-phase-04-risk-gate.md` and
+`docs/plans/PLAN-patch-classification-phase-04-reviewability-axis.md`. `python -m
 divergulent.classify.review` (in `review.py`) is the local, interactive,
 Sigstore-signed human tier. It has three subcommands: `review <ledger>
 <corpus_dir>` drains the queue (showing each diff in its sources.debian.org
@@ -275,8 +286,10 @@ triage/review pass is the operator's budgeted step. See
 a `.divergulent` marker beside `corpus/`+`cache/`, discovered git-style via
 `--data`/`DIVERGULENT_DATA`/walk-up) and **forwards** to each command's existing
 module main with the ledger/corpus paths spliced in — so verbs (`status`,
-`triage`, `risk`, `review`, `web`, `report`, `requeue`, `history`, `init`) take no
-paths. It guards the forgetful operator: a missing ledger or a not-a-root cwd is a
+`record`, `triage`, `risk`, `review`, `web`, `report`, `requeue`, `history`,
+`init`) take no paths (`record` re-applies the deterministic rules to the existing
+ledger — the recurring "I changed a rule, re-apply it" pass; the one-time
+corpus/`build` steps stay longhand, as they create the root's contents). It guards the forgetful operator: a missing ledger or a not-a-root cwd is a
 clear error not a crash, and a **stale published cache** is loudly flagged before
 data-consuming verbs. `status` is the one-screen orientation (residue, categories,
 risk distribution, pending review, cache age). The old `python -m

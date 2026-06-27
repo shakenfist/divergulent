@@ -190,6 +190,23 @@ def diff_body(patch_text: str) -> str:
     return '\n'.join(lines[start:])
 
 
+def cap_diff(text: str, max_chars: int) -> tuple[str, bool, int]:
+    """Cap a diff body to ``max_chars`` for an LLM call; report whether it cut.
+
+    Returns ``(capped_text, was_truncated, original_len)``. When the body exceeds
+    the limit it is cut to ``max_chars`` and an explicit marker is appended, so the
+    model knows it is seeing only the head of a larger diff -- never a silent cap.
+    A non-positive ``max_chars`` disables the cap. Suited to a COARSE read (the
+    risk gate) where the head is representative; category triage deliberately
+    routes oversized diffs to a human instead of truncating (see the driver).
+    """
+    original_len = len(text)
+    if max_chars <= 0 or original_len <= max_chars:
+        return text, False, original_len
+    marker = '\n[... diff truncated for scoring: %d of %d chars shown ...]\n' % (max_chars, original_len)
+    return text[:max_chars] + marker, True, original_len
+
+
 # ---------------------------------------------------------------------------
 # Prompt construction -- deterministic given (diff_body, prompt_version)
 # ---------------------------------------------------------------------------

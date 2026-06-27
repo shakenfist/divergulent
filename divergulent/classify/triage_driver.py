@@ -45,6 +45,7 @@ from divergulent.classify import measure
 from divergulent.classify import triage as triage_mod
 from divergulent.classify import triage_record
 from divergulent.classify import verdict as verdict_mod
+from divergulent.classify import reviewability as reviewability_mod
 from divergulent.classify.claim import extract_claim
 from divergulent.classify.ledger import live_observations
 from divergulent.classify.triage import DEFAULT_MODEL, triage_and_verify
@@ -236,6 +237,7 @@ class TriageRunStats:
     untriaged_remaining: int = 0
     # Items in the slice that did NOT go through the model this run.
     skipped_already_triaged: int = 0   # a live decision already existed (resume)
+    skipped_oversized: int = 0         # not line-reviewable (reviewability axis) -> human
     too_large: int = 0                 # diff too big for the model -> routed to a human
     errored: int = 0                   # the backend raised -> routed to a human
     # Token usage summed across every model call this run (draft + verify per
@@ -285,6 +287,7 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
     done = triage_record.triaged_fingerprints(conn, model=model)
     pending_work = [item for item in work_list if item.fingerprint not in done]
     selected = pending_work[:limit]
+    oversized_fps = reviewability_mod.oversized_fingerprints(conn)
 
     stats = TriageRunStats(queue_size=len(verdict_mod.queue(conn)), model=model)
     stats.skipped_already_triaged = len(work_list) - len(pending_work)
@@ -295,6 +298,21 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
     for position, item in enumerate(selected, start=1):
         body = measure.read_body(corpus_dir, item.representative_sha)
         claim_category = extract_claim(item.representative_patch_name, body).claimed_category
+
+        # Oversized by changed-line count (the reviewability axis): not
+        # line-reviewable, so route to a human disposition without an LLM call --
+        # its full diff is in review. The principled, changed-line-based superset
+        # of the raw-char backstop below.
+        if item.fingerprint in oversized_fps:
+            reason = ('oversized: not line-reviewable (>%d changed lines); routed to a human'
+                      % reviewability_mod.REVIEWABILITY_OVERSIZED_LINES)
+            triage_record.record_triage_to_human(
+                conn, item.fingerprint, reason, now=now, model=model, priority=_stored_priority(item))
+            stats.skipped_oversized += 1
+            stats.needs_human += 1
+            if progress is not None:
+                progress('[%d/%d]   -> oversized (not line-reviewable) -> needs_human' % (position, total))
+            continue
 
         # A giant diff overflows the model; route it to a human (full diff in
         # review) rather than truncate to a misleading partial classification.
@@ -651,6 +669,7 @@ def render_run_report(stats: TriageRunStats, scan: RuleScan) -> str:
     lines.append('- Needs human review: %d' % stats.needs_human)
     lines.append('- Claim/content mismatches: %d' % stats.claim_mismatches)
     lines.append('- Skipped (already triaged on a prior run): %d' % stats.skipped_already_triaged)
+    lines.append('- Routed to human, oversized (not line-reviewable): %d' % stats.skipped_oversized)
     lines.append('- Routed to human, too large for the model: %d' % stats.too_large)
     lines.append('- Routed to human, triage error: %d' % stats.errored)
     lines.append('- **Untriaged remaining (budget did not cover): %d**'
@@ -692,9 +711,9 @@ def print_run_summary(stats: TriageRunStats, scan: RuleScan) -> None:
     print('triaged %d of %d queued; verified=%d needs_human=%d claim_mismatches=%d' % (
         stats.triaged, stats.queue_size, stats.verified, stats.needs_human,
         stats.claim_mismatches))
-    if stats.skipped_already_triaged or stats.too_large or stats.errored:
-        print('skipped (already triaged)=%d; routed-to-human too-large=%d, errored=%d' % (
-            stats.skipped_already_triaged, stats.too_large, stats.errored))
+    if stats.skipped_already_triaged or stats.skipped_oversized or stats.too_large or stats.errored:
+        print('skipped (already triaged)=%d; routed-to-human oversized=%d, too-large=%d, errored=%d' % (
+            stats.skipped_already_triaged, stats.skipped_oversized, stats.too_large, stats.errored))
     if stats.by_category:
         print('drafted categories:')
         for category in sorted(stats.by_category, key=lambda k: (-stats.by_category[k], k)):
