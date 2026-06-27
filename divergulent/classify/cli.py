@@ -76,6 +76,33 @@ def _cache_report(*, now=None) -> tuple[str, bool]:
         return ('cache: (unavailable: %s)' % exc, False)
 
 
+def _record_due_reasons(conn, verdicts) -> list[str]:
+    """Why a ``record`` run is due, or ``[]`` if the ledger reflects current rules.
+
+    Two signals that the live ledger no longer matches what the deterministic pass
+    would now produce: a COVERAGE gap (a fingerprint with a verdict but no live
+    reviewability observation -- e.g. a ledger built before the size axis existed),
+    and rule-VERSION drift (the code's registry carries a rule id/version the
+    ledger has not registered -- a bumped or newly-added rule since the last
+    build/record). Either is the forgetful operator's cue to re-run ``record``.
+    """
+    from divergulent.classify import ledger as ledger_mod
+    from divergulent.classify import reviewability as reviewability_mod
+
+    reasons: list[str] = []
+    review_levels = reviewability_mod.reviewability_by_fingerprint(conn)
+    missing = sum(1 for fingerprint in verdicts if fingerprint not in review_levels)
+    if missing:
+        reasons.append('%d fingerprints have no size tier (reviewability not recorded)' % missing)
+
+    registered = {(r['rule_id'], r['version']) for r in ledger_mod.registered_rules(conn)}
+    current = {(rule.rule_id, rule.version) for rule in ledger_mod.default_registry()}
+    drifted = sorted(rid for (rid, ver) in current if (rid, ver) not in registered)
+    if drifted:
+        reasons.append('rules changed since the last record: %s' % ', '.join(drifted))
+    return reasons
+
+
 def _status(ws: workspace.Workspace) -> int:
     """Print a one-screen orientation for the data root before a session."""
     from collections import Counter
@@ -86,10 +113,12 @@ def _status(ws: workspace.Workspace) -> int:
 
     conn = ledger_mod.open_ledger(str(ws.ledger))
     try:
+        verdicts = verdict_mod.current_verdict(conn)
         residue = set(verdict_mod.queue(conn))
-        by_category = Counter(v.category for v in verdict_mod.current_verdict(conn).values())
+        by_category = Counter(v.category for v in verdicts.values())
         ranks = risk_mod.risk_rank_by_fingerprint(conn)
         pending = len(ledger_mod.pending_review_items(conn))
+        record_due = _record_due_reasons(conn, verdicts)
     finally:
         conn.close()
 
@@ -107,6 +136,12 @@ def _status(ws: workspace.Workspace) -> int:
               if rank >= risk_mod.RISK_RANK['elevated'] and fp in residue)
     print('elevated+ still in the residue (review these first): %d' % hot)
     print('pending human review: %d' % pending)
+    if record_due:
+        print()
+        print('a `record` run is due (the ledger is behind the current rules):')
+        for reason in record_due:
+            print('  - %s' % reason)
+        print('  run: divergulent-classify record')
     print(_cache_report()[0])
     return 0
 

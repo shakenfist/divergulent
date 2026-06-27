@@ -148,6 +148,38 @@ class StatusTestCase(DispatcherFixture, testtools.TestCase):
         self.assertIn('pending human review: 1', out)
         self.assertIn('cache:', out)                                  # best-effort cache line
 
+    def test_status_nudges_when_a_record_run_is_due(self):
+        # _seeded_root never recorded reviewability (nor registered the rules), so
+        # status must flag that a `record` run is due, and say how to run it.
+        ws = self._seeded_root()
+        _rc, out = self._run(['--data', str(ws.root), 'status'])
+        self.assertIn('a `record` run is due', out)
+        self.assertIn('no size tier', out)                 # the coverage-gap reason
+        self.assertIn('divergulent-classify record', out)  # the actionable fix
+
+    def test_status_quiet_when_up_to_date(self):
+        from divergulent.classify import ledger as ledger_mod
+        from divergulent.classify import reviewability
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        ws = workspace.init(tmp.name)
+        conn = ledger_mod.create_ledger(str(ws.ledger))
+        self.addCleanup(conn.close)
+        # Rules registered AND every verdict has a reviewability tier -> no drift,
+        # no coverage gap, so status stays silent about `record`.
+        ledger_mod.register_rules(conn, ledger_mod.default_registry())
+        ledger_mod.append_decision(
+            conn, fingerprint='fp1', category='bugfix', confidence='high',
+            decided_by='substantive', rule_version=1, kind='heuristic', evidence=None,
+            decided_at='2026-06-26T00:00:00Z', commit=False)
+        ledger_mod.append_observation(
+            conn, fingerprint='fp1', kind=reviewability.REVIEWABILITY_KIND, detail='normal',
+            evidence='{}', observed_by=reviewability.REVIEWABILITY_OBSERVED_BY,
+            rule_version=reviewability.REVIEWABILITY_VERSION, observed_at='2026-06-26T00:00:00Z')
+        conn.commit()
+        _rc, out = self._run(['--data', str(ws.root), 'status'])
+        self.assertNotIn('a `record` run is due', out)
+
 
 class CacheAgeTestCase(testtools.TestCase):
 
