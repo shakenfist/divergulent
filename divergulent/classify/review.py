@@ -674,6 +674,7 @@ class ReviewContext:
     version: str
     patch_name: str
     packages: tuple[str, ...]
+    package_date: str | None
 
 
 @dataclass(frozen=True)
@@ -759,7 +760,8 @@ def build_review_context(conn: sqlite3.Connection, corpus_dir: str, index_path: 
         source_package=source_package,
         version=version,
         patch_name=patch_name,
-        packages=_carrying_packages(index_path, fingerprint))
+        packages=_carrying_packages(index_path, fingerprint),
+        package_date=_package_date(index_path, source_package))
 
 
 def record_review_verdict(conn: sqlite3.Connection, item: sqlite3.Row,
@@ -900,6 +902,27 @@ def _carrying_packages(index_path: str, fingerprint: str) -> tuple[str, ...]:
     finally:
         connection.close()
     return tuple(row[0] for row in rows)
+
+
+def _package_date(index_path: str, source_package: str) -> str | None:
+    """The most recent changelog (last-upload) date for ``source_package``, or None.
+
+    Reads the index's ``package`` table (``measure`` writes it from the corpus's
+    captured changelog dates). ``MAX`` over the ISO ``YYYY-MM-DD`` dates is the most
+    recent upload. Returns ``None`` when the package has no recorded date OR when
+    the index predates the ``package`` table (an older corpus not yet re-measured),
+    so the age signal is simply absent rather than an error.
+    """
+    connection = sqlite3.connect(index_path)
+    try:
+        row = connection.execute(
+            'SELECT MAX(changelog_date) FROM package WHERE source_package = ?',
+            (source_package,)).fetchone()
+        return row[0] if row else None
+    except sqlite3.OperationalError:
+        return None  # index built before the package table existed
+    finally:
+        connection.close()
 
 
 def fingerprints_for_package(index_path: str, query: str) -> set[str]:
@@ -1074,7 +1097,8 @@ def _format_package_lines(context: ReviewContext, *, limit: int = MAX_PACKAGES_S
     reviewer sees how widely the identical patch is carried without flooding the
     screen for a fingerprint that spans dozens.
     """
-    lines = ['package: %s (%s)' % (context.source_package, context.version)]
+    age = ' — last upload %s' % context.package_date if context.package_date else ''
+    lines = ['package: %s (%s)%s' % (context.source_package, context.version, age)]
     others = context.packages
     if len(others) > 1:
         shown = ', '.join(others[:limit])

@@ -61,7 +61,8 @@ def _build_synthetic_corpus(corpus_dir):
 
     package_rows = [
         {'source_package': 'pkg-a', 'version': '1-1', 'state': 'patched',
-         'source_format': '3.0 (quilt)', 'n_patches': 1, 'error': None},
+         'source_format': '3.0 (quilt)', 'n_patches': 1, 'changelog_date': '2020-05-20',
+         'error': None},
         {'source_package': 'pkg-b', 'version': '1-1', 'state': 'patched',
          'source_format': '3.0 (quilt)', 'n_patches': 1, 'error': None},
         {'source_package': 'pkg-c', 'version': '1-1', 'state': 'patched',
@@ -226,6 +227,16 @@ class WriteIndexTestCase(testtools.TestCase):
             "SELECT name FROM sqlite_master WHERE type = 'index'")}
         self.assertIn('idx_patch_fingerprint', names)
         self.assertIn('idx_patch_source_package', names)
+
+    def test_index_has_a_package_table_with_changelog_dates(self):
+        corpus_dir = self._corpus()
+        index_path = os.path.join(corpus_dir, 'fingerprints.sqlite')
+        measure.write_index(corpus_dir, index_path)
+        connection = sqlite3.connect(index_path)
+        self.addCleanup(connection.close)
+        dates = dict(connection.execute('SELECT source_package, changelog_date FROM package'))
+        self.assertEqual('2020-05-20', dates['pkg-a'])   # captured changelog date
+        self.assertIsNone(dates['pkg-b'])                # no date in its row -> NULL
 
 
 class FindingsNoteTestCase(testtools.TestCase):
