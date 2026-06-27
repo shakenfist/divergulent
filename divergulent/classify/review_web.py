@@ -549,7 +549,8 @@ WORKLIST_TEMPLATE = _HEAD.replace('{{ title }}', 'worklist') + '''
   if package %} carried by <b>{{ package }}</b>{% endif %}.</p>
 <script>
 document.addEventListener('keydown', function(e) {
-  if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'
+      || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'j' || e.key === 'n') {
     var a = document.querySelector('a.next');
     if (a) location.href = a.getAttribute('href');
@@ -652,7 +653,8 @@ than a line-by-line read.</p>
 </form>
 <script>
 document.addEventListener('keydown', function(e) {
-  if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'
+      || e.metaKey || e.ctrlKey || e.altKey) return;
   var radios = Array.prototype.slice.call(document.querySelectorAll('input[name=choice]'));
   if (!radios.length) return;
   var pick = null;
@@ -707,7 +709,8 @@ document.addEventListener('keydown', function(e) {
     blocks[idx].scrollIntoView({block: 'center'});
   }
   document.addEventListener('keydown', function (e) {
-    if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'
+      || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === ']') { e.preventDefault(); jump(1); }
     else if (e.key === '[') { e.preventDefault(); jump(-1); }
     else if (e.key === 'v') {

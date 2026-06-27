@@ -581,6 +581,14 @@ class NotesWebTestCase(ReviewWebFixture, testtools.TestCase):
         self.assertEqual(502, resp.status_code)
         self.assertEqual([], ledger_mod.notes_for(conn, fp_hex))
 
+    def test_keyboard_shortcuts_ignore_the_notes_textarea(self):
+        # Typing [ ] v 1-9 a d in the notes box must insert characters, not fire
+        # the diff/verdict shortcuts -- the keydown guards must skip a TEXTAREA.
+        signer, _ = _recording_signer()
+        client, _conn, fp_hex = self._client(signer=signer)
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn("e.target.tagName === 'TEXTAREA'", body)
+
     def test_worklist_shows_a_note_count_badge(self):
         client, conn, fp_hex = self._client()
         for body in ('n1', 'n2'):
