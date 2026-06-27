@@ -401,6 +401,29 @@ class RecordReviewVerdictTestCase(ReviewFixture, testtools.TestCase):
         self.assertEqual(1, len(ledger_mod.pending_review_items(conn)))
 
 
+class RecordNoteTestCase(ReviewFixture, testtools.TestCase):
+    """A reviewer note is signed over its canonical bytes and stored append-only."""
+
+    def test_signs_canonical_note_bytes_and_appends(self):
+        conn, _corpus, _index, fp_hex = self._setup()
+        signer, signer_seen = _fake_signer()
+        body = 'unsafe sprintf near a privilege boundary'
+        note_id = review.record_note(conn, fp_hex, body, signer=signer, now=WHEN)
+        self.assertGreater(note_id, 0)
+        # The signer saw exactly the canonical note bytes.
+        self.assertEqual(review.canonical_note(fp_hex, body, WHEN), signer_seen['record_bytes'])
+        rows = ledger_mod.notes_for(conn, fp_hex)
+        self.assertEqual(1, len(rows))
+        self.assertEqual(body, rows[0]['body'])
+        self.assertEqual('reviewer@example.org', rows[0]['signed_by'])
+        self.assertEqual('FAKE-SIG', rows[0]['signature'])
+
+    def test_canonical_note_is_deterministic(self):
+        first = review.canonical_note('fp', 'body', WHEN)
+        self.assertEqual(first, review.canonical_note('fp', 'body', WHEN))
+        self.assertIn(b'"kind":"note"', first)
+
+
 class FetchSourceFileTestCase(testtools.TestCase):
 
     def test_builds_sources_debian_org_url(self):
