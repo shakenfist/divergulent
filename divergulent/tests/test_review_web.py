@@ -16,6 +16,7 @@ from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import review as review_mod
 from divergulent.classify import review_web
 from divergulent.classify import reviewability
+from divergulent.classify import risk
 from divergulent.classify import verdict as verdict_mod
 from divergulent.tests.test_review import ORIGINAL, SOURCE_PACKAGE, WHEN, _build_corpus
 
@@ -474,3 +475,31 @@ class ReviewabilityWebTestCase(ReviewWebFixture, testtools.TestCase):
         body = client.get('/review/%s' % fp_hex).get_data(as_text=True)
         self.assertIn('not realistically line-reviewable', body)
         self.assertIn('rev oversized', body)
+
+
+class RiskWebTestCase(ReviewWebFixture, testtools.TestCase):
+    """The security-risk score surfaced in the UI: a badge and live ordering."""
+
+    def _seed_risk(self, conn, fingerprint, level):
+        ledger_mod.append_observation(
+            conn, fingerprint=fingerprint, kind=risk.RISK_KIND, detail=level,
+            evidence='{}', observed_by=risk.RISK_OBSERVED_BY_PREFIX + 'm',
+            rule_version=1, observed_at=WHEN)
+        conn.commit()
+
+    def test_worklist_badges_risk_and_orders_by_it_over_stored_priority(self):
+        # The main fp has the LOWER stored priority (5) but is scored 'high'; the
+        # extra item has a higher stored priority (9) but no risk. Risk must win.
+        client, conn, fp_hex = self._client(extra_items=[dict(
+            fingerprint='b' * 64, draft_category='bugfix', priority=9)])
+        self._seed_risk(conn, fp_hex, 'high')
+        body = client.get('/').get_data(as_text=True)
+        self.assertIn('risk high', body)   # the badge (class="risk high")
+        # The high-risk item leads despite its lower stored priority.
+        self.assertLess(body.index(fp_hex[:16]), body.index(('b' * 64)[:16]))
+
+    def test_review_page_shows_the_risk_badge(self):
+        client, conn, fp_hex = self._client()
+        self._seed_risk(conn, fp_hex, 'elevated')
+        body = client.get('/review/%s' % fp_hex).get_data(as_text=True)
+        self.assertIn('risk: elevated', body)

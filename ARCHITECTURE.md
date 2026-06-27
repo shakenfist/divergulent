@@ -157,7 +157,12 @@ installed-package inventory never leaves the machine.
   / `rule_version=RISK_PROMPT_VERSION`, the same `(model, prompt_version)`
   provenance as the triage decisions) and feeds the work-list/`review_queue`
   priority (risk is the top component, `risk_rank * WEIGHT + occurrence`), but
-  never the verdict precedence, so it needs no adversarial verify. A
+  never the verdict precedence, so it needs no adversarial verify. Because the
+  stored `review_queue.priority` is frozen at enqueue time, a risk run re-stamps
+  every pending item from the current score (`reprioritise_review_queue`) so a
+  patch scored scary AFTER it was queued reaches the queue order; the web review
+  worklist also sorts by the LIVE risk level (and shows it as a badge), so it is
+  correct even before a re-stamp. A
   **security-safe deterministic cull** scores provably-benign patches (empty/
   whitespace/comment-only, doc-only, translation/changelog) `none` with no LLM
   call — narrower than the packaging category, since a `debian/rules` change can

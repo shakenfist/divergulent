@@ -26,6 +26,7 @@ from urllib.parse import urlencode
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import review as review_mod
 from divergulent.classify import reviewability as reviewability_mod
+from divergulent.classify import risk as risk_mod
 from divergulent.classify import verdict as verdict_mod
 
 # The handlers reuse review.py's fingerprint-keyed read helpers directly rather
@@ -115,7 +116,7 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
                 return item
         return None
 
-    def _worklist_row(item, level) -> dict:
+    def _worklist_row(item, level, risk_level) -> dict:
         fingerprint = item['fingerprint']
         packages = review_mod._carrying_packages(index_path, fingerprint)
         return {
@@ -127,6 +128,8 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             'n_packages': len(packages),
             # 'normal' is rendered as no badge; only large/oversized show.
             'reviewability': None if level == 'normal' else level,
+            # The security-risk level (none if un-scored); shown as a badge.
+            'risk': risk_level,
         }
 
     def _worklist_category_chips() -> list[dict]:
@@ -181,7 +184,17 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
         if reviewability:
             items = [item for item in items
                      if levels.get(item['fingerprint'], 'normal') == reviewability]
-        rows = [_worklist_row(item, levels.get(item['fingerprint'], 'normal')) for item in items]
+        # Order by the LIVE security-risk level first, then the stored priority --
+        # so a patch scored scary AFTER it was queued surfaces immediately, even if
+        # its frozen stored priority has not been re-stamped yet.
+        risk_levels = risk_mod.risk_level_by_fingerprint(conn)
+        items = sorted(
+            items,
+            key=lambda it: (risk_mod.RISK_RANK.get(risk_levels.get(it['fingerprint']), 0),
+                            it['priority']),
+            reverse=True)
+        rows = [_worklist_row(item, levels.get(item['fingerprint'], 'normal'),
+                              risk_levels.get(item['fingerprint'])) for item in items]
         top = items[0]['fingerprint'] if items else None
         # The category/package filters, as a query string, so the reviewability
         # chips can preserve them (and "all sizes" can reset only reviewability).
@@ -217,6 +230,7 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             can_verdict=signer is not None, categories=categories,
             verdict=verdict, can_requeue=signer is not None and not queued,
             reviewability=None if level == 'normal' else level,
+            risk=risk_mod.risk_level_by_fingerprint(conn).get(resolved),
             oversized_lines=reviewability_mod.REVIEWABILITY_OVERSIZED_LINES,
             package_lines=review_mod._format_package_lines(context),
             diff=diff_lines(context.context_view))
@@ -405,6 +419,12 @@ _HEAD = '''<!doctype html>
         font-size: 0.8rem; font-weight: bold; }
  .rev.large { background: #3a2f12; color: #e3c878; }
  .rev.oversized { background: #4a1c1c; color: #ff9a92; }
+ .risk { display: inline-block; padding: 0 0.4rem; border-radius: 0.2rem;
+         font-size: 0.8rem; font-weight: bold; }
+ .risk.high { background: #5a1212; color: #ff8a82; }
+ .risk.elevated { background: #4a3212; color: #f0b860; }
+ .risk.low { color: #8a909a; }
+ .risk.none { color: #5a606a; }
  .next { display: inline-block; margin: 0.5rem 0; padding: 0.4rem 0.8rem;
          background: #2563eb; color: #fff; border-radius: 0.3rem; text-decoration: none; }
  .meta-block { background: #232730; padding: 0.6rem 0.8rem; border-radius: 0.3rem; }
@@ -489,10 +509,11 @@ document.addEventListener('keydown', function(e) {
 });
 </script>
 <table>
-  <tr><th>priority</th><th>draft</th><th>size</th><th>pkgs</th><th>fingerprint</th><th>reason</th></tr>
+  <tr><th>risk</th><th>draft</th><th>size</th><th>pkgs</th><th>fingerprint</th><th>reason</th></tr>
   {% for row in rows %}
   <tr>
-    <td>{{ row.priority }}</td>
+    <td>{% if row.risk %}<span class="risk {{ row.risk }}">{{ row.risk }}</span>{% else %}
+        <span class="muted">-</span>{% endif %}</td>
     <td>{{ row.draft_category or '-' }}</td>
     <td>{% if row.reviewability %}<span class="rev {{ row.reviewability }}"
         >{{ row.reviewability }}</span>{% endif %}</td>
@@ -507,6 +528,7 @@ document.addEventListener('keydown', function(e) {
 REVIEW_TEMPLATE = _HEAD.replace('{{ title }}', 'review') + '''
 <p><a href="/">&larr; worklist</a></p>
 <h1 class="mono">{{ ctx.fingerprint[:16] }}<span class="muted">{{ ctx.fingerprint[16:] }}</span>
+{% if risk %} <span class="risk {{ risk }}">risk: {{ risk }}</span>{% endif %}
 {% if reviewability %} <span class="rev {{ reviewability }}">{{ reviewability }}</span>{% endif %}</h1>
 {% if reviewability == 'oversized' %}
 <p class="rev oversized" style="padding: 0.4rem 0.6rem;">This diff is oversized (&gt;{{ oversized_lines }}

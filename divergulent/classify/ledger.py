@@ -731,6 +731,24 @@ def mark_reviewed(conn: sqlite3.Connection, *, item_id: int, reviewed_at: str) -
     return cursor.rowcount
 
 
+def reprioritise_review_item(conn: sqlite3.Connection, *, item_id: int, priority: int,
+                             commit: bool = True) -> int:
+    """Re-stamp one PENDING review item's ``priority``; returns the count touched.
+
+    The stored priority is otherwise frozen at enqueue time; this lets a later
+    signal (a risk score that landed after the patch was queued) reach the queue
+    order. The review_queue is a derived work list, not part of the append-only
+    decision/observation audit trail, so its ``priority`` is mutable (as
+    ``reviewed_at`` already is). Touches only a currently-pending item.
+    """
+    cursor = conn.execute(
+        'UPDATE review_queue SET priority = ? WHERE id = ? AND reviewed_at IS NULL',
+        (priority, item_id))
+    if commit:
+        conn.commit()
+    return cursor.rowcount
+
+
 def resolve_settled_review_items(conn: sqlite3.Connection, *, now: str,
                                  commit: bool = True) -> int:
     """Dequeue pending review items whose fingerprint is now DETERMINISTICALLY settled.
