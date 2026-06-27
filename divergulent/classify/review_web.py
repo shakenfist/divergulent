@@ -627,8 +627,8 @@ document.addEventListener('keydown', function(e) {
 {% endif %}
 <h2>Diff in upstream context</h2>
 <pre class="diff">{% for line in diff %}<span class="{{ line.css }}">{{ line.text }}</span>{% endfor %}</pre>
-<p class="muted">diff: <span class="key">n</span> next change &middot;
-  <span class="key">p</span> previous change
+<p class="muted">diff: <span class="key">[</span> previous change &middot;
+  <span class="key">]</span> next change
   {% if queued and can_verdict %}&middot; <span class="key">v</span> jump to verdict
   (the <span class="key">1</span>-<span class="key">9</span>/<span class="key">a</span>/<span
   class="key">d</span> + <span class="key">Enter</span> verdict keys also work from here)
@@ -647,8 +647,8 @@ document.addEventListener('keydown', function(e) {
   }
   document.addEventListener('keydown', function (e) {
     if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === 'n') { e.preventDefault(); jump(1); }
-    else if (e.key === 'p') { e.preventDefault(); jump(-1); }
+    if (e.key === ']') { e.preventDefault(); jump(1); }
+    else if (e.key === '[') { e.preventDefault(); jump(-1); }
     else if (e.key === 'v') {
       var f = document.querySelector('fieldset.verdict');
       if (f) { e.preventDefault(); f.scrollIntoView({block: 'center'}); }

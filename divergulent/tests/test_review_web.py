@@ -223,8 +223,8 @@ class ReviewPageTestCase(ReviewWebFixture, testtools.TestCase):
         client, _conn, fp_hex = self._client()
         body = client.get('/review/' + fp_hex).get_data(as_text=True)
         self.assertIn('block-start', body)               # the change run is anchored
-        self.assertIn("e.key === 'n'", body)             # next-change shortcut wired
-        self.assertIn("e.key === 'p'", body)             # previous-change shortcut
+        self.assertIn("e.key === ']'", body)             # next-change shortcut wired
+        self.assertIn("e.key === '['", body)             # previous-change shortcut
 
     def test_offers_a_jump_back_to_the_verdict(self):
         # With a signer the verdict form is present, so the diff footer offers a way
