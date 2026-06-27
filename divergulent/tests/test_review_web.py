@@ -15,6 +15,7 @@ import testtools
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import review as review_mod
 from divergulent.classify import review_web
+from divergulent.classify import reviewability
 from divergulent.classify import verdict as verdict_mod
 from divergulent.tests.test_review import ORIGINAL, SOURCE_PACKAGE, WHEN, _build_corpus
 
@@ -439,3 +440,37 @@ class DiffLinesTestCase(testtools.TestCase):
         self.assertEqual(
             [('hunk', '@@ -1 +1 @@'), ('del', '-old'), ('add', '+new'), ('ctx', ' unchanged')],
             [(r['cls'], r['text']) for r in rows])
+
+
+class ReviewabilityWebTestCase(ReviewWebFixture, testtools.TestCase):
+    """The size axis surfaced in the UI: a row badge, a size filter, a warning."""
+
+    def _seed_rev(self, conn, fingerprint, level):
+        ledger_mod.append_observation(
+            conn, fingerprint=fingerprint, kind=reviewability.REVIEWABILITY_KIND,
+            detail=level, evidence='{}', observed_by=reviewability.REVIEWABILITY_OBSERVED_BY,
+            rule_version=reviewability.REVIEWABILITY_VERSION, observed_at=WHEN)
+        conn.commit()
+
+    def test_worklist_badges_oversized_and_offers_a_size_filter(self):
+        client, conn, _ = self._client(extra_items=[dict(
+            fingerprint='b' * 64, draft_category='bugfix', priority=9)])
+        self._seed_rev(conn, 'b' * 64, 'oversized')
+        body = client.get('/').get_data(as_text=True)
+        self.assertIn('rev oversized', body)             # the row badge
+        self.assertIn('?reviewability=oversized', body)  # the size filter chip
+
+    def test_reviewability_filter_narrows_the_worklist(self):
+        client, conn, fp_hex = self._client(extra_items=[dict(
+            fingerprint='b' * 64, draft_category='bugfix', priority=9)])
+        self._seed_rev(conn, 'b' * 64, 'oversized')      # only this one is oversized
+        body = client.get('/?reviewability=oversized').get_data(as_text=True)
+        self.assertIn(('b' * 64)[:16], body)             # the oversized item is shown
+        self.assertNotIn(fp_hex[:16], body)              # the normal item is filtered out
+
+    def test_review_page_warns_when_oversized(self):
+        client, conn, fp_hex = self._client()
+        self._seed_rev(conn, fp_hex, 'oversized')
+        body = client.get('/review/%s' % fp_hex).get_data(as_text=True)
+        self.assertIn('not realistically line-reviewable', body)
+        self.assertIn('rev oversized', body)
