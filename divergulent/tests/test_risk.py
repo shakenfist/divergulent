@@ -86,6 +86,22 @@ class ScoreRiskTestCase(testtools.TestCase):
         score = risk.score_risk(_patch(), call=_fake_call('no json at all'))
         self.assertEqual('elevated', score.level)  # recall-safe: never buried
 
+    def test_short_diff_is_not_truncated(self):
+        score = risk.score_risk(_patch(), call=_fake_call(_risk_json()))
+        self.assertFalse(score.truncated)
+
+    def test_long_diff_is_capped_and_flagged(self):
+        recorder = []
+        big = _DIFF + '\n'.join('+padding %d' % i for i in range(20000))
+        patch = 'Description: x\nForwarded: no\n\n%s' % big
+        score = risk.score_risk(
+            patch, call=_fake_call(_risk_json(), recorder=recorder), max_diff_chars=2000)
+        self.assertTrue(score.truncated)
+        self.assertGreater(score.original_chars, 2000)
+        _system, user, _model = recorder[0]
+        self.assertIn('truncated', user)            # the cut is visible to the model
+        self.assertLess(len(user), 2000 + 300)      # the user message is bounded near the cap
+
 
 class RecordRiskObservationTestCase(testtools.TestCase):
 

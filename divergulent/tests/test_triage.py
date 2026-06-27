@@ -18,7 +18,7 @@ from unittest import mock
 
 from divergulent.classify.triage import (
     DEFAULT_MODEL, CallResult, LlmVerdict, PROMPT_VERSION, TRIAGE_CATEGORIES, Usage,
-    anthropic_call, claude_cli_call, diff_body, triage, triage_system_prompt,
+    anthropic_call, cap_diff, claude_cli_call, diff_body, triage, triage_system_prompt,
     triage_user_message)
 
 
@@ -93,6 +93,36 @@ class DiffBodyTestCase(testtools.TestCase):
 
     def test_empty_input_returns_empty(self):
         self.assertEqual('', diff_body(''))
+
+
+# ---------------------------------------------------------------------------
+# cap_diff -- bound the diff sent to a coarse LLM read, never silently
+# ---------------------------------------------------------------------------
+
+class CapDiffTestCase(testtools.TestCase):
+
+    def test_short_diff_passes_through_unchanged(self):
+        text = 'a' * 100
+        out, truncated, original = cap_diff(text, 1000)
+        self.assertEqual(text, out)
+        self.assertFalse(truncated)
+        self.assertEqual(100, original)
+
+    def test_long_diff_is_truncated_with_a_visible_marker(self):
+        text = 'a' * 5000
+        out, truncated, original = cap_diff(text, 1000)
+        self.assertTrue(truncated)
+        self.assertEqual(5000, original)
+        self.assertEqual('a' * 1000, out[:1000])   # exactly the head is kept
+        self.assertIn('truncated', out)             # never a silent cap
+        self.assertIn('5000', out)                  # the original size is surfaced
+
+    def test_non_positive_max_disables_the_cap(self):
+        text = 'a' * 5000
+        out, truncated, original = cap_diff(text, 0)
+        self.assertEqual(text, out)
+        self.assertFalse(truncated)
+        self.assertEqual(5000, original)
 
 
 # ---------------------------------------------------------------------------

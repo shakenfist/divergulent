@@ -63,6 +63,13 @@ DEFAULT_RISK_MODEL = 'claude-opus-4-8'
 # level), default to this level -- erring toward review, never burying a patch.
 _PARSE_FAILURE_LEVEL = 'elevated'
 
+# Cap the diff sent to the gate. A coarse security read needs only the head, and
+# uncapped giant diffs were the run's cost spikes AND its context-overflow error
+# (one 5.4 MB diff). ~10k tokens; truncation is recorded, never silent. The
+# `oversized` reviewability tier skips the LLM entirely (S3), so this bites only
+# the `large` middle.
+RISK_MAX_DIFF_CHARS = 40_000
+
 
 @dataclass(frozen=True)
 class RiskScore:
@@ -70,7 +77,9 @@ class RiskScore:
 
     ``level`` is one of :data:`RISK_LEVELS`; ``rank`` is its 0..3 ordinal.
     ``usage`` is the call's token usage (telemetry); ``raw_response`` is kept as
-    auditable evidence, since an LLM score is non-deterministic.
+    auditable evidence, since an LLM score is non-deterministic. ``truncated`` is
+    True when the diff was capped before the call (``original_chars`` is then the
+    pre-cap length), so the audit trail records that the score read only the head.
     """
 
     level: str
@@ -80,6 +89,8 @@ class RiskScore:
     prompt_version: int
     raw_response: str
     usage: Usage = Usage()
+    truncated: bool = False
+    original_chars: int = 0
 
 
 def risk_system_prompt(*, prompt_version: int = RISK_PROMPT_VERSION) -> str:
@@ -162,27 +173,32 @@ def _parse_risk(text: str) -> tuple[str, str]:
 
 
 def score_risk(patch_text: str, *, call, model: str = DEFAULT_RISK_MODEL,
-               prompt_version: int = RISK_PROMPT_VERSION) -> RiskScore:
+               prompt_version: int = RISK_PROMPT_VERSION,
+               max_diff_chars: int = RISK_MAX_DIFF_CHARS) -> RiskScore:
     """Score one patch's security risk with a claim-blind LLM read.
 
     Extracts the claim-blind ``diff_body`` (so the author's framing never reaches
-    the model), builds the cacheable rubric system prompt + the diff user message,
-    invokes ``call(system, user, *, model) -> CallResult`` (the injectable
-    boundary the triage tier uses), parses the JSON, and returns a
-    :class:`RiskScore` carrying the level, the raw response (evidence) and the
-    call's token ``usage``.  ``call`` is required so the function is pure given a
-    fake; the test suite never touches the network.
+    the model), CAPS it to ``max_diff_chars`` (a coarse read needs only the head;
+    truncation is recorded, never silent), builds the cacheable rubric system
+    prompt + the diff user message, invokes ``call(system, user, *, model) ->
+    CallResult`` (the injectable boundary the triage tier uses), parses the JSON,
+    and returns a :class:`RiskScore` carrying the level, the raw response
+    (evidence), the call's token ``usage`` and whether the diff was truncated.
+    ``call`` is required so the function is pure given a fake; the test suite
+    never touches the network.
     """
     body = triage_mod.diff_body(patch_text)
+    capped, truncated, original_chars = triage_mod.cap_diff(body, max_diff_chars)
     system = risk_system_prompt(prompt_version=prompt_version)
-    user = risk_user_message(body)
+    user = risk_user_message(capped)
 
     result = call(system, user, model=model)
     level, reason = _parse_risk(result.text)
 
     return RiskScore(
         level=level, rank=RISK_RANK[level], reason=reason, model=model,
-        prompt_version=prompt_version, raw_response=result.text, usage=result.usage)
+        prompt_version=prompt_version, raw_response=result.text, usage=result.usage,
+        truncated=truncated, original_chars=original_chars)
 
 
 def record_risk_observation(conn, fingerprint: str, score: RiskScore, *, now: str,
@@ -198,9 +214,11 @@ def record_risk_observation(conn, fingerprint: str, score: RiskScore, *, now: st
     observed_by = RISK_OBSERVED_BY_PREFIX + score.model
     ledger_mod.supersede_observations_for_fingerprint(
         conn, fingerprint=fingerprint, kind=RISK_KIND, superseded_at=now, commit=False)
-    evidence = json.dumps(
-        {'level': score.level, 'reason': score.reason, 'raw_response': score.raw_response},
-        sort_keys=True)
+    payload = {'level': score.level, 'reason': score.reason, 'raw_response': score.raw_response}
+    if score.truncated:
+        payload['truncated'] = True
+        payload['original_chars'] = score.original_chars
+    evidence = json.dumps(payload, sort_keys=True)
     return ledger_mod.append_observation(
         conn, fingerprint=fingerprint, kind=RISK_KIND, detail=score.level,
         evidence=evidence, observed_by=observed_by, rule_version=score.prompt_version,
@@ -297,6 +315,7 @@ class RiskRunStats:
     scored: int = 0       # went through the LLM gate
     culled: int = 0       # provably-benign, scored 'none' deterministically
     errored: int = 0      # the backend raised -> recorded 'elevated' (recall-safe)
+    truncated: int = 0    # diff capped before the call (head-only read)
     by_level: dict[str, int] = field(default_factory=dict)
     unscored_remaining: int = 0
     usage: Usage = field(default_factory=Usage)
@@ -304,7 +323,8 @@ class RiskRunStats:
 
 
 def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, limit: int,
-                  model: str = DEFAULT_RISK_MODEL, progress=None) -> RiskRunStats:
+                  model: str = DEFAULT_RISK_MODEL, max_diff_chars: int = RISK_MAX_DIFF_CHARS,
+                  progress=None) -> RiskRunStats:
     """Score a BOUNDED slice of the WHOLE corpus's security risk; record each.
 
     Scores EVERY fingerprint (``scope='all'``), not just the residue: a patch the
@@ -336,7 +356,7 @@ def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, lim
             level = 'none'
         else:
             try:
-                score = score_risk(body, call=call, model=model)
+                score = score_risk(body, call=call, model=model, max_diff_chars=max_diff_chars)
             except Exception as exc:  # noqa: BLE001 -- one bad patch must not abort the run
                 score = RiskScore(
                     level='elevated', rank=RISK_RANK['elevated'],
@@ -346,6 +366,8 @@ def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, lim
             record_risk_observation(conn, item.fingerprint, score, now=now, commit=False)
             stats.usage = stats.usage + score.usage
             stats.scored += 1
+            if score.truncated:
+                stats.truncated += 1
             level = score.level
         stats.by_level[level] = stats.by_level.get(level, 0) + 1
         if progress is not None:
@@ -359,6 +381,8 @@ def print_risk_summary(stats: RiskRunStats) -> None:
     """Print a lean, honest summary of one risk-gate run (the cap is loud)."""
     print('risk gate: scored %d, culled %d (provably benign), errored %d; %d corpus, %d un-scored remain' % (
         stats.scored, stats.culled, stats.errored, stats.queue_size, stats.unscored_remaining))
+    if stats.truncated:
+        print('  (%d scored on a truncated diff -- head only, capped for cost)' % stats.truncated)
     if stats.by_level:
         order = {level: rank for rank, level in enumerate(RISK_LEVELS)}
         for level in sorted(stats.by_level, key=lambda lvl: order.get(lvl, 99), reverse=True):
@@ -403,6 +427,9 @@ def main(argv=None) -> int:
                              % RISK_DEFAULT_LIMIT)
     parser.add_argument('--model', default=DEFAULT_RISK_MODEL,
                         help='model for the gate (default: %s)' % DEFAULT_RISK_MODEL)
+    parser.add_argument('--max-diff-chars', type=int, default=RISK_MAX_DIFF_CHARS,
+                        help='cap the diff sent to the gate, head only (default: %d; 0 disables)'
+                             % RISK_MAX_DIFF_CHARS)
     args = parser.parse_args(argv)
 
     index_path = args.index or os.path.join(args.corpus_dir, 'fingerprints.sqlite')
@@ -411,6 +438,7 @@ def main(argv=None) -> int:
         stats = run_risk_gate(
             conn, args.corpus_dir, index_path, call=triage_mod.claude_cli_call,
             now=triage_mod._cli_now(), limit=args.limit, model=args.model,
+            max_diff_chars=args.max_diff_chars,
             progress=lambda message: print(message, file=sys.stderr, flush=True))
     finally:
         conn.close()
