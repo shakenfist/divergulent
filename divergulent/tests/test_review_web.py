@@ -529,3 +529,56 @@ class RiskWebTestCase(ReviewWebFixture, testtools.TestCase):
         self._seed_risk(conn, fp_hex, 'elevated')
         body = client.get('/review/%s' % fp_hex).get_data(as_text=True)
         self.assertIn('risk: elevated', body)
+
+
+class NotesWebTestCase(ReviewWebFixture, testtools.TestCase):
+    """Signed reviewer notes: shown with provenance, added via POST, indicated."""
+
+    def test_review_page_shows_a_note_with_signer_and_signature(self):
+        client, conn, fp_hex = self._client()
+        ledger_mod.append_note(conn, fingerprint=fp_hex, body='unsafe sprintf here',
+                               signed_by='rev@example.org', signature='SIGBUNDLE-XYZ',
+                               created_at=WHEN)
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn('id="notes"', body)
+        self.assertIn('unsafe sprintf here', body)   # the note body
+        self.assertIn('rev@example.org', body)        # the signer identity
+        self.assertIn('SIGBUNDLE-XYZ', body)          # the signature is shown
+
+    def test_post_note_records_a_signed_note_and_redirects(self):
+        signer, seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        resp = client.post('/note/' + fp_hex, data={'body': 'looks risky'})
+        self.assertEqual(302, resp.status_code)
+        self.assertIn('record_bytes', seen)           # it was signed
+        rows = ledger_mod.notes_for(conn, fp_hex)
+        self.assertEqual(1, len(rows))
+        self.assertEqual('looks risky', rows[0]['body'])
+        self.assertEqual('reviewer@example.org', rows[0]['signed_by'])
+        self.assertEqual('FAKE-SIG', rows[0]['signature'])
+
+    def test_empty_note_is_a_noop(self):
+        signer, _ = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        client.post('/note/' + fp_hex, data={'body': '   '})
+        self.assertEqual([], ledger_mod.notes_for(conn, fp_hex))
+
+    def test_post_note_without_a_signer_is_rejected(self):
+        client, _conn, fp_hex = self._client()        # no signer -> read-only
+        resp = client.post('/note/' + fp_hex, data={'body': 'x'})
+        self.assertEqual(405, resp.status_code)
+
+    def test_signer_failure_is_a_page_and_records_nothing(self):
+        client, conn, fp_hex = self._client(signer=_failing_signer())
+        resp = client.post('/note/' + fp_hex, data={'body': 'x'})
+        self.assertEqual(502, resp.status_code)
+        self.assertEqual([], ledger_mod.notes_for(conn, fp_hex))
+
+    def test_worklist_shows_a_note_count_badge(self):
+        client, conn, fp_hex = self._client()
+        for body in ('n1', 'n2'):
+            ledger_mod.append_note(conn, fingerprint=fp_hex, body=body, signed_by='a',
+                                   signature='s', created_at=WHEN)
+        body = client.get('/').get_data(as_text=True)
+        self.assertIn('note-badge', body)
+        self.assertIn('2 note(s)', body)
