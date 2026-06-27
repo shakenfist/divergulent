@@ -164,7 +164,9 @@ class RecordToLedgerTestCase(testtools.TestCase):
         (decisions,) = other.execute('SELECT COUNT(*) FROM decision').fetchone()
         (observations,) = other.execute('SELECT COUNT(*) FROM observation').fetchone()
         self.assertEqual(stats.decisions_appended, decisions)
-        self.assertEqual(stats.observations_appended, observations)
+        # The observation table now holds both the dangerous-construct flags and
+        # one reviewability (size) observation per fingerprint.
+        self.assertEqual(stats.observations_appended + stats.reviewability_appended, observations)
         self.assertGreater(decisions, 0)
 
     def test_one_live_decision_per_fingerprint(self):
@@ -229,21 +231,29 @@ class RecordToLedgerTestCase(testtools.TestCase):
 
         self.assertEqual(1, stats.observations_appended)
         self.assertEqual(0, stats.observations_skipped)
-        obs = ledger_mod.observations_for(conn, _fp(TROJAN))
-        self.assertEqual(1, len(obs))
-        self.assertEqual('dangerous-construct', obs[0]['kind'])
-        self.assertEqual('shell-out', obs[0]['detail'])
-        self.assertEqual('dangerous-construct-scan', obs[0]['observed_by'])
-        self.assertEqual(RULES_VERSION, obs[0]['rule_version'])
-        self.assertEqual(WHEN, obs[0]['observed_at'])
-        self.assertIn('system(', obs[0]['evidence'])
+        # The dangerous-construct flag (a reviewability observation also rides
+        # alongside; select the flag specifically).
+        flags = [o for o in ledger_mod.observations_for(conn, _fp(TROJAN))
+                 if o['kind'] == 'dangerous-construct']
+        self.assertEqual(1, len(flags))
+        self.assertEqual('shell-out', flags[0]['detail'])
+        self.assertEqual('dangerous-construct-scan', flags[0]['observed_by'])
+        self.assertEqual(RULES_VERSION, flags[0]['rule_version'])
+        self.assertEqual(WHEN, flags[0]['observed_at'])
+        self.assertIn('system(', flags[0]['evidence'])
 
-    def test_only_trojan_produces_an_observation(self):
+    def test_only_trojan_produces_a_dangerous_construct_observation(self):
         conn, _ = self._run()
-        # No other fingerprint flags a dangerous construct.
-        self.assertEqual(1, len(ledger_mod.live_observations(conn)))
+        # Exactly one dangerous-construct flag, on the trojan. (Reviewability
+        # observations ride alongside every fingerprint and are excluded here.)
+        dangerous = [o for o in ledger_mod.live_observations(conn)
+                     if o['kind'] == 'dangerous-construct']
+        self.assertEqual(1, len(dangerous))
+        self.assertEqual(_fp(TROJAN), dangerous[0]['fingerprint'])
         for text in (MODE_ONLY, DOC_ONLY, SUBSTANTIVE):
-            self.assertEqual([], ledger_mod.observations_for(conn, _fp(text)))
+            flags = [o for o in ledger_mod.observations_for(conn, _fp(text))
+                     if o['kind'] == 'dangerous-construct']
+            self.assertEqual([], flags)
 
     def test_registry_is_populated(self):
         conn, _ = self._run()
@@ -267,6 +277,7 @@ class IdempotencyTestCase(testtools.TestCase):
         first = record.record_to_ledger(conn, corpus_dir, index_path, now=WHEN)
         self.assertEqual(4, first.decisions_appended)
         self.assertEqual(1, first.observations_appended)
+        self.assertEqual(4, first.reviewability_appended)  # one per fingerprint
 
         # A second run -- even at a later timestamp -- must append nothing: every
         # decision/observation already exists live.
@@ -275,6 +286,8 @@ class IdempotencyTestCase(testtools.TestCase):
         self.assertEqual(4, second.decisions_skipped)
         self.assertEqual(0, second.observations_appended)
         self.assertEqual(1, second.observations_skipped)
+        self.assertEqual(0, second.reviewability_appended)
+        self.assertEqual(4, second.reviewability_skipped)
 
     def test_second_run_does_not_duplicate_rows(self):
         conn, corpus_dir, index_path = self._corpus_and_ledger()
@@ -284,7 +297,9 @@ class IdempotencyTestCase(testtools.TestCase):
         (decisions,) = conn.execute('SELECT COUNT(*) FROM decision').fetchone()
         (observations,) = conn.execute('SELECT COUNT(*) FROM observation').fetchone()
         self.assertEqual(4, decisions)
-        self.assertEqual(1, observations)
+        # 1 dangerous-construct + 4 reviewability (one per fingerprint); the
+        # second run duplicated none of them.
+        self.assertEqual(5, observations)
         # And the surviving timestamps are the originals (nothing re-stamped).
         live = {row['fingerprint']: row for row in ledger_mod.live_decisions(conn)}
         self.assertEqual(WHEN, live[_fp(MODE_ONLY)]['decided_at'])
