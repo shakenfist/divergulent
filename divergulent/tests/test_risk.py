@@ -14,6 +14,7 @@ import tempfile
 import testtools
 
 from divergulent.classify import ledger as ledger_mod
+from divergulent.classify import reviewability
 from divergulent.classify import risk
 from divergulent.classify import triage as triage_mod
 
@@ -214,6 +215,21 @@ class RunRiskGateTestCase(testtools.TestCase):
                if o['kind'] == risk.RISK_KIND][-1]
         self.assertEqual('elevated', bug['detail'])
         self.assertTrue(bug['observed_by'].startswith(risk.RISK_OBSERVED_BY_PREFIX))
+
+    def test_skips_oversized_fingerprints(self):
+        conn, corpus_dir, index_path, fingerprints = self._setup()
+        # Mark bug-a oversized (not line-reviewable): the gate must not score it.
+        ledger_mod.append_observation(
+            conn, fingerprint=fingerprints['bug-a.patch'], kind=reviewability.REVIEWABILITY_KIND,
+            detail='oversized', evidence='{}', observed_by=reviewability.REVIEWABILITY_OBSERVED_BY,
+            rule_version=reviewability.REVIEWABILITY_VERSION, observed_at=WHEN)
+        conn.commit()
+        stats = risk.run_risk_gate(
+            conn, corpus_dir, index_path, call=_fake_call(_risk_json()), now=WHEN, limit=100)
+        self.assertEqual(1, stats.skipped_oversized)
+        ranks = risk.risk_rank_by_fingerprint(conn)
+        self.assertNotIn(fingerprints['bug-a.patch'], ranks)   # never scored or culled
+        self.assertIn(fingerprints['bug-b.patch'], ranks)      # a sibling still scored
 
     def test_scores_settled_patches_not_just_the_residue(self):
         from divergulent.classify import triage_driver

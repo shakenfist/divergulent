@@ -30,6 +30,7 @@ from contextlib import redirect_stdout
 import testtools
 
 from divergulent.classify import ledger as ledger_mod
+from divergulent.classify import reviewability
 from divergulent.classify import triage as triage_mod
 from divergulent.classify import triage_driver
 from divergulent.classify import verdict as verdict_mod
@@ -497,6 +498,28 @@ class ResilienceTestCase(DriverFixture, testtools.TestCase):
                 conn, corpus_dir, index_path, call=boom, now=WHEN, limit=5)
         self.assertEqual(0, stats.triaged)
         self.assertEqual(5, stats.too_large)
+        self.assertEqual(5, stats.needs_human)
+        self.assertEqual(5, len(ledger_mod.pending_review_items(conn)))
+
+    def test_reviewability_oversized_routed_to_human_without_calling_the_model(self):
+        corpus_dir, index_path, _, conn, fingerprints = self._setup()
+        # Mark every fingerprint oversized via the reviewability axis (changed-line
+        # based); none may reach the model -- they route straight to a human.
+        for fp_hex in fingerprints.values():
+            ledger_mod.append_observation(
+                conn, fingerprint=fp_hex, kind=reviewability.REVIEWABILITY_KIND, detail='oversized',
+                evidence='{}', observed_by=reviewability.REVIEWABILITY_OBSERVED_BY,
+                rule_version=reviewability.REVIEWABILITY_VERSION, observed_at=WHEN)
+        conn.commit()
+
+        def boom(prompt, *, model):
+            raise AssertionError('the model must not be called for an oversized diff')
+
+        stats, _ = triage_driver.run_triage(
+            conn, corpus_dir, index_path, call=boom, now=WHEN, limit=5)
+        self.assertEqual(0, stats.triaged)
+        self.assertEqual(5, stats.skipped_oversized)
+        self.assertEqual(0, stats.too_large)   # caught by the reviewability axis, not the char backstop
         self.assertEqual(5, stats.needs_human)
         self.assertEqual(5, len(ledger_mod.pending_review_items(conn)))
 

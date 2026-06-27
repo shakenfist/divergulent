@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from divergulent.classify import content as content_mod
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import measure
+from divergulent.classify import reviewability as reviewability_mod
 from divergulent.classify import triage as triage_mod
 from divergulent.classify.triage import Usage
 
@@ -316,6 +317,7 @@ class RiskRunStats:
     culled: int = 0       # provably-benign, scored 'none' deterministically
     errored: int = 0      # the backend raised -> recorded 'elevated' (recall-safe)
     truncated: int = 0    # diff capped before the call (head-only read)
+    skipped_oversized: int = 0  # not line-reviewable -> never sent to the LLM
     by_level: dict[str, int] = field(default_factory=dict)
     unscored_remaining: int = 0
     usage: Usage = field(default_factory=Usage)
@@ -341,10 +343,16 @@ def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, lim
     from divergulent.classify import triage_driver  # lazy: avoids an import cycle
     work = triage_driver.build_work_list(conn, index_path, scope='all')
     scored = set(risk_rank_by_fingerprint(conn))
-    pending = [item for item in work if item.fingerprint not in scored]
+    # Oversized diffs are not line-reviewable and overflow the model: skip them
+    # entirely (the reviewability=oversized observation IS their disposition), so
+    # no LLM call is spent and the work list does not re-select them every run.
+    oversized = reviewability_mod.oversized_fingerprints(conn)
+    pending = [item for item in work
+               if item.fingerprint not in scored and item.fingerprint not in oversized]
     selected = pending[:limit]
 
     stats = RiskRunStats(queue_size=len(work), model=model)
+    stats.skipped_oversized = len(oversized.intersection(item.fingerprint for item in work))
     stats.unscored_remaining = max(len(pending) - len(selected), 0)
 
     for position, item in enumerate(selected, start=1):
@@ -381,6 +389,9 @@ def print_risk_summary(stats: RiskRunStats) -> None:
     """Print a lean, honest summary of one risk-gate run (the cap is loud)."""
     print('risk gate: scored %d, culled %d (provably benign), errored %d; %d corpus, %d un-scored remain' % (
         stats.scored, stats.culled, stats.errored, stats.queue_size, stats.unscored_remaining))
+    if stats.skipped_oversized:
+        print('  (%d oversized skipped -- not line-reviewable, no LLM; see the review UI)'
+              % stats.skipped_oversized)
     if stats.truncated:
         print('  (%d scored on a truncated diff -- head only, capped for cost)' % stats.truncated)
     if stats.by_level:
