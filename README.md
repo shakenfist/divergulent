@@ -239,6 +239,10 @@ first, a verified LLM triage tier, then a Sigstore-signed human-review
 tier. A cheap, claim-blind **security-risk gate**
 (`python -m divergulent.classify.risk`) scores each patch's security risk
 so the triage and human tiers reach the riskiest carried patches first.
+A deterministic **reviewability axis** scores each patch's size
+(`normal`/`large`/`oversized` by changed-line count) for free; an
+`oversized` diff is not line-reviewable, so the LLM passes skip it and the
+web UI gives it its own bucket.
 The human tier is both a CLI (`python -m divergulent.classify.review`)
 and a **local web UI** (`python -m divergulent.classify.review_web`, behind
 the optional `review` extra — `pip install divergulent[review]`, or

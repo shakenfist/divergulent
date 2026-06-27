@@ -162,7 +162,18 @@ installed-package inventory never leaves the machine.
   whitespace/comment-only, doc-only, translation/changelog) `none` with no LLM
   call — narrower than the packaging category, since a `debian/rules` change can
   flip a hardening flag. Default model **Opus** (bake-off: 100% recall / 0%
-  false-alarm at the ≥elevated cut vs Sonnet 73%/3%). `review.py` (the
+  false-alarm at the ≥elevated cut vs Sonnet 73%/3%). `reviewability.py` adds a
+  third, **deterministic** axis: each fingerprint's **reviewability**
+  (`normal`/`large`/`oversized`, by changed-line count) recorded as a
+  `reviewability` observation (`observed_by='size-rule'`) during the deterministic
+  `ledger build`/`record` pass — no LLM, free over the whole corpus, riding
+  alongside the category. An `oversized` patch (>5,000 changed lines) is not
+  line-reviewable and overflows the model, so the risk gate and triage **skip it
+  entirely** (the observation is its disposition; it surfaces in the review UI's
+  oversized bucket). For the merely-`large` middle the risk gate **caps** the diff
+  it sends (`RISK_MAX_DIFF_CHARS`, head-only, truncation recorded) — a coarse read
+  needs only the head, and uncapped giant diffs were the risk run's cost spikes
+  and its context-overflow error. `review.py` (the
   `python -m divergulent.classify.review` CLI) is the local, interactive human
   tier, with three subcommands. `review` drains the queue: it shows each
   high-priority diff **in its original source context** — fetched on-demand from

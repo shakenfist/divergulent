@@ -17,9 +17,12 @@ This adds a deterministic **reviewability** observation (`normal` / `large` /
 `oversized`) and a **diff-size cap** on what reaches the LLM. It is curation-side
 only and changes no verdict precedence.
 
-**Status: planned, thresholds agreed.** `large` = 500, `oversized` = 5,000 changed
-lines; metric = changed (`+`/`-`) lines; LLM diff cap = 40,000 chars. Ready to
-implement (S1).
+**Status: implemented (S1–S5).** `large` = 500, `oversized` = 5,000 changed lines;
+metric = changed (`+`/`-`) lines; LLM diff cap = 40,000 chars. The deterministic
+`reviewability` observation (`reviewability.py`, recorded at `ledger build`/
+`record`), the risk-gate diff cap, the oversized short-circuit in both LLM passes,
+and the review-UI badge/filter/bucket are built and offline-tested. To take effect
+on existing data, re-run `ledger record` so every fingerprint gets its size tier.
 
 ## What this does NOT do
 
