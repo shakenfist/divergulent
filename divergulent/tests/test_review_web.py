@@ -219,6 +219,23 @@ class ReviewPageTestCase(ReviewWebFixture, testtools.TestCase):
         self.assertIn('enlarge the read buffer to avoid truncation', body)
         self.assertIn('claimed category', body)
 
+    def test_diff_has_changed_block_anchors_and_nav(self):
+        client, _conn, fp_hex = self._client()
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn('block-start', body)               # the change run is anchored
+        self.assertIn("e.key === 'n'", body)             # next-change shortcut wired
+        self.assertIn("e.key === 'p'", body)             # previous-change shortcut
+
+    def test_offers_a_jump_back_to_the_verdict(self):
+        # With a signer the verdict form is present, so the diff footer offers a way
+        # back to it (link + `v` shortcut) and the form has the #verdict anchor.
+        signer, _ = _recording_signer()
+        client, _conn, fp_hex = self._client(signer=signer)
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn('id="verdict"', body)
+        self.assertIn('href="#verdict"', body)
+        self.assertIn("e.key === 'v'", body)
+
     def test_review_page_resolves_a_prefix(self):
         client, _conn, fp_hex = self._client()
         resp = client.get('/review/' + fp_hex[:12])
@@ -441,6 +458,15 @@ class DiffLinesTestCase(testtools.TestCase):
         self.assertEqual(
             [('hunk', '@@ -1 +1 @@'), ('del', '-old'), ('add', '+new'), ('ctx', ' unchanged')],
             [(r['cls'], r['text']) for r in rows])
+
+    def test_marks_the_first_line_of_each_changed_block(self):
+        rows = review_web.diff_lines('@@\n ctx\n-old\n+new\n ctx2\n+added\n ctx3')
+        # '-old'+'+new' is one modification block (anchored at '-old'); '+added' a
+        # second. Context/hunk lines never start a block.
+        self.assertEqual(['-old', '+added'], [r['text'] for r in rows if r['block_start']])
+        # The anchor carries the block-start marker class for the JS to collect.
+        delete = next(r for r in rows if r['text'] == '-old')
+        self.assertEqual('del block-start', delete['css'])
 
 
 class ReviewabilityWebTestCase(ReviewWebFixture, testtools.TestCase):

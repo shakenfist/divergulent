@@ -54,13 +54,18 @@ def require_loopback(host: str) -> str:
 
 
 def diff_lines(text: str) -> list[dict]:
-    """Split a rendered diff-in-context into ``{cls, text}`` rows for coloring.
+    """Split a rendered diff-in-context into ``{cls, text, block_start}`` rows.
 
     Classifies each line so the template can colour additions, deletions, hunk
     headers and file markers distinctly from upstream context -- the diff reads
-    nicer than the CLI pager without any highlighter dependency.
+    nicer than the CLI pager without any highlighter dependency. ``block_start``
+    marks the FIRST line of each contiguous changed (add/del) run -- the anchors
+    the review page's keyboard navigation jumps between, so a reviewer can skip
+    from change to change instead of scrolling through the expanded context. A
+    delete-then-add modification is one block (both lines are "changed").
     """
     rows = []
+    prev_changed = False
     for line in text.splitlines():
         if line.startswith('@@'):
             cls = 'hunk'
@@ -72,7 +77,12 @@ def diff_lines(text: str) -> list[dict]:
             cls = 'del'
         else:
             cls = 'ctx'
-        rows.append({'cls': cls, 'text': line})
+        changed = cls in ('add', 'del')
+        block_start = changed and not prev_changed
+        rows.append({
+            'cls': cls, 'text': line, 'block_start': block_start,
+            'css': cls + (' block-start' if block_start else '')})
+        prev_changed = changed
     return rows
 
 
@@ -436,6 +446,7 @@ _HEAD = '''<!doctype html>
  pre.diff span { display: block; min-width: 100%; width: fit-content; min-height: 1.4em; }
  pre.diff .add { color: #5fd17a; } pre.diff .del { color: #ff7b72; }
  pre.diff .hunk { color: #9aa0aa; background: #232730; } pre.diff .meta { color: #6b7280; }
+ pre.diff .block-current { box-shadow: inset 3px 0 0 #6cb6ff; }
  /* Upstream context (lines not part of the patch) gets a faint purple wash so the
     added/removed lines, left on the base background, read as the changed regions. */
  pre.diff .ctx { background: #1a1228; }
@@ -526,7 +537,7 @@ document.addEventListener('keydown', function(e) {
 ''' + _FOOT
 
 REVIEW_TEMPLATE = _HEAD.replace('{{ title }}', 'review') + '''
-<p><a href="/">&larr; worklist</a></p>
+<p id="top"><a href="/">&larr; worklist</a></p>
 <h1 class="mono">{{ ctx.fingerprint[:16] }}<span class="muted">{{ ctx.fingerprint[16:] }}</span>
 {% if risk %} <span class="risk {{ risk }}">risk: {{ risk }}</span>{% endif %}
 {% if reviewability %} <span class="rev {{ reviewability }}">{{ reviewability }}</span>{% endif %}</h1>
@@ -577,7 +588,7 @@ than a line-by-line read.</p>
 </form>
 {% endif %}
 {% if queued and can_verdict %}
-<h2>Your verdict</h2>
+<h2 id="verdict">Your verdict</h2>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 <form method="post" action="/review/{{ ctx.fingerprint }}">
   <fieldset class="verdict">
@@ -615,7 +626,36 @@ document.addEventListener('keydown', function(e) {
 </script>
 {% endif %}
 <h2>Diff in upstream context</h2>
-<pre class="diff">{% for line in diff %}<span class="{{ line.cls }}">{{ line.text }}</span>{% endfor %}</pre>
+<pre class="diff">{% for line in diff %}<span class="{{ line.css }}">{{ line.text }}</span>{% endfor %}</pre>
+<p class="muted">diff: <span class="key">n</span> next change &middot;
+  <span class="key">p</span> previous change
+  {% if queued and can_verdict %}&middot; <span class="key">v</span> jump to verdict
+  (the <span class="key">1</span>-<span class="key">9</span>/<span class="key">a</span>/<span
+  class="key">d</span> + <span class="key">Enter</span> verdict keys also work from here)
+  &middot; <a href="#verdict">enter verdict &uarr;</a>{% endif %}
+  &middot; <a href="#top">back to top</a></p>
+<script>
+(function () {
+  var blocks = Array.prototype.slice.call(document.querySelectorAll('pre.diff .block-start'));
+  var idx = -1;
+  function jump(delta) {
+    if (!blocks.length) return;
+    idx = Math.max(0, Math.min(blocks.length - 1, (idx < 0 ? 0 : idx + delta)));
+    blocks.forEach(function (b) { b.classList.remove('block-current'); });
+    blocks[idx].classList.add('block-current');
+    blocks[idx].scrollIntoView({block: 'center'});
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'n') { e.preventDefault(); jump(1); }
+    else if (e.key === 'p') { e.preventDefault(); jump(-1); }
+    else if (e.key === 'v') {
+      var f = document.querySelector('fieldset.verdict');
+      if (f) { e.preventDefault(); f.scrollIntoView({block: 'center'}); }
+    }
+  });
+})();
+</script>
 ''' + _FOOT
 
 ERROR_TEMPLATE = _HEAD.replace('{{ title }}', 'error') + '''
