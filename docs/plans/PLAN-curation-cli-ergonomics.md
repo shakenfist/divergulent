@@ -73,7 +73,10 @@ forwards to the underlying module's ``main`` with the resolved paths spliced in
 (e.g. ``triage`` → ``triage.main([ledger, corpus, *rest])``; ``web`` →
 ``review_web.main(['--ledger', ledger, '--corpus', corpus, *rest])``). A thin,
 low-risk shim — the real logic stays in the existing, tested modules. Verbs:
-``triage``, ``risk``, ``review``, ``web``, ``report``, ``status``, ``init``.
+``record``, ``triage``, ``risk``, ``review``, ``web``, ``report``, ``status``,
+``init`` (``record`` re-applies the deterministic rules to the existing ledger —
+a recurring, fully-discoverable operation, unlike the one-time ``build``/corpus
+steps which stay longhand).
 
 ### The cache guardrail (the "don't let me forget" part)
 Before a data-consuming verb, and in ``status``, check the stored published

@@ -23,7 +23,7 @@ from divergulent.classify import workspace
 # Verbs that forward to an existing module ``main``, and how to splice the
 # resolved paths into that main's argv (everything the operator typed after the
 # verb is appended verbatim as ``rest``).
-_FORWARDING_VERBS = ('triage', 'risk', 'review', 'requeue', 'history', 'web', 'report')
+_FORWARDING_VERBS = ('record', 'triage', 'risk', 'review', 'requeue', 'history', 'web', 'report')
 
 # Verbs that need a built ledger to do anything; checked up front so the operator
 # gets one clear message instead of a deeper failure.
@@ -113,6 +113,13 @@ def _status(ws: workspace.Workspace) -> int:
 
 def _forward(verb: str, ws: workspace.Workspace, rest: list[str]) -> int:
     ledger, corpus = str(ws.ledger), str(ws.corpus_dir)
+    if verb == 'record':
+        # Re-apply the current deterministic rules to the existing ledger
+        # (non-destructive: preserves llm/human decisions). The recurring
+        # "I changed a rule, re-apply it" pass -- e.g. backfilling a new
+        # observation like reviewability onto an already-built ledger.
+        from divergulent.classify import ledger as ledger_mod
+        return ledger_mod.main(['record', ledger, corpus, *rest])
     if verb == 'triage':
         from divergulent.classify import triage
         return triage.main([ledger, corpus, *rest])

@@ -286,8 +286,10 @@ triage/review pass is the operator's budgeted step. See
 a `.divergulent` marker beside `corpus/`+`cache/`, discovered git-style via
 `--data`/`DIVERGULENT_DATA`/walk-up) and **forwards** to each command's existing
 module main with the ledger/corpus paths spliced in — so verbs (`status`,
-`triage`, `risk`, `review`, `web`, `report`, `requeue`, `history`, `init`) take no
-paths. It guards the forgetful operator: a missing ledger or a not-a-root cwd is a
+`record`, `triage`, `risk`, `review`, `web`, `report`, `requeue`, `history`,
+`init`) take no paths (`record` re-applies the deterministic rules to the existing
+ledger — the recurring "I changed a rule, re-apply it" pass; the one-time
+corpus/`build` steps stay longhand, as they create the root's contents). It guards the forgetful operator: a missing ledger or a not-a-root cwd is a
 clear error not a crash, and a **stale published cache** is loudly flagged before
 data-consuming verbs. `status` is the one-screen orientation (residue, categories,
 risk distribution, pending review, cache age). The old `python -m

@@ -60,6 +60,12 @@ class ForwardingTestCase(DispatcherFixture, testtools.TestCase):
             self._run(['--data', str(ws.root), 'report'])
         m.assert_called_once_with(['report', str(ws.ledger)])
 
+    def test_record_forwards_subcommand_ledger_and_corpus(self):
+        ws = self._root()
+        with mock.patch('divergulent.classify.ledger.main', return_value=0) as m:
+            self._run(['--data', str(ws.root), 'record'])
+        m.assert_called_once_with(['record', str(ws.ledger), str(ws.corpus_dir)])
+
     def test_requeue_forwards_subcommand_and_fingerprint(self):
         ws = self._root()
         with mock.patch('divergulent.classify.review.main', return_value=0) as m:
