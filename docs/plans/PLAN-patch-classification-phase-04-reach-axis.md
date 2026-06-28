@@ -15,8 +15,17 @@ it is structural, deterministic, claim-blind and free (no model) — measured ov
 all ~60k fingerprints with zero LLM cost. It is curation-side only and changes no
 verdict precedence.
 
-**Status: planned.** Buckets calibrated against a live `by_inst` snapshot
-(2026-06-28, below); thresholds agreed; not yet implemented.
+**Status: implemented (R1–R7).** Buckets calibrated against a live `by_inst`
+snapshot (2026-06-28, below). `reach.py` (the rule + readers + corpus join),
+`popcon.py` (the pinned snapshot, `python -m divergulent.classify.popcon
+<corpus_dir>` → `corpus/popcon.sqlite`), the `.dsc` `Binary:` capture into
+`package.binaries`, the deterministic `reach` observation recorded at `ledger
+build`/`record` (opt-in on a pinned snapshot; re-records only when a bucket
+changes), the priority integration (`risk_rank * 1e9 + reach_rank * 1e6 +
+occurrence`, bands non-overlapping so reach never crosses a risk tier), and the
+review-UI badge/filter/ordering are built and offline-tested. To take effect on
+existing data: pull a snapshot, rebuild the corpus (to populate
+`package.binaries`), then re-run `ledger record`.
 
 ## The one hard rule: reach multiplies *within* a risk tier, never across it
 
