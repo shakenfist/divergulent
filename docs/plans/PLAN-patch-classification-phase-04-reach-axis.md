@@ -17,8 +17,8 @@ verdict precedence.
 
 **Status: implemented (R1–R7).** Buckets calibrated against a live `by_inst`
 snapshot (2026-06-28, below). `reach.py` (the rule + readers + corpus join),
-`popcon.py` (the pinned snapshot, `python -m divergulent.classify.popcon
-<corpus_dir>` → `corpus/popcon.sqlite`), the `.dsc` `Binary:` capture into
+`popcon.py` (the pinned snapshot, `divergulent-classify popcon` —
+longhand `python -m divergulent.classify.popcon <corpus_dir>` → `corpus/popcon.sqlite`), the `.dsc` `Binary:` capture into
 `package.binaries`, the deterministic `reach` observation recorded at `ledger
 build`/`record` (opt-in on a pinned snapshot; re-records only when a bucket
 changes), the priority integration (`risk_rank * 1e9 + reach_rank * 1e6 +

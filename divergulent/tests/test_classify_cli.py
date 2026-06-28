@@ -78,6 +78,23 @@ class ForwardingTestCase(DispatcherFixture, testtools.TestCase):
             self._run(['--data', str(ws.root), 'review', '--limit', '3'])
         m.assert_called_once_with(['review', str(ws.ledger), str(ws.corpus_dir), '--limit', '3'])
 
+    def test_popcon_forwards_corpus_and_rest(self):
+        ws = self._root()
+        with mock.patch('divergulent.classify.popcon.main', return_value=0) as m:
+            rc, _ = self._run(['--data', str(ws.root), 'popcon', '--date', '2026-06-28'])
+        self.assertEqual(0, rc)
+        m.assert_called_once_with([str(ws.corpus_dir), '--date', '2026-06-28'])
+
+    def test_popcon_does_not_require_a_ledger(self):
+        # popcon writes corpus/popcon.sqlite; it is a corpus-only verb, so a missing
+        # ledger must NOT block it (unlike the ledger-consuming verbs).
+        ws = self._root(with_ledger=False)
+        with mock.patch('divergulent.classify.popcon.main', return_value=0) as m:
+            rc, out = self._run(['--data', str(ws.root), 'popcon'])
+        self.assertEqual(0, rc)
+        self.assertNotIn('no ledger', out)
+        m.assert_called_once_with([str(ws.corpus_dir)])
+
 
 class GuardrailTestCase(DispatcherFixture, testtools.TestCase):
 
