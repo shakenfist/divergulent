@@ -308,22 +308,40 @@ def _extract_changelog_date(dest_dir: str) -> str | None:
         return _changelog_date(_read(tar, member))
 
 
+def _read_binaries(dest_dir: str) -> list[str]:
+    '''The binary package names the source builds, from the ``.dsc`` ``Binary:``.
+
+    The reach axis maps a source to popcon install counts (max over its binaries),
+    so it needs the source's binary names -- read for free from the already-
+    downloaded ``.dsc`` (the same file ``_read_format`` reads). The ``Binary``
+    field is comma-separated and may be folded across lines. Empty list when there
+    is no ``.dsc`` or no ``Binary`` field.
+    '''
+    dscs = glob.glob(os.path.join(dest_dir, '*.dsc'))
+    if not dscs:
+        return []
+    with open(dscs[0]) as handle:
+        value = deb822.Dsc(handle).get('Binary') or ''
+    return [name.strip() for name in value.replace('\n', ' ').split(',') if name.strip()]
+
+
 def _fetch_source(source_package: str, version: str, *, download: Callable[..., bool]
-                  ) -> tuple[str | None, dict[str, str] | None, str | None]:
-    '''Download once; return ``(source_format, texts, changelog_date)``.
+                  ) -> tuple[str | None, dict[str, str] | None, str | None, list[str]]:
+    '''Download once; return ``(source_format, texts, changelog_date, binaries)``.
 
     The shared core of :func:`fetch_patch_texts` (texts only) and
-    :func:`fetch_source_details` (texts + the package's changelog date), so both
-    cost a single ``.dsc`` + ``.debian.tar.*`` download.
+    :func:`fetch_source_details` (texts + the package's changelog date + binary
+    names), so both cost a single ``.dsc`` + ``.debian.tar.*`` download.
     '''
     with tempfile.TemporaryDirectory() as dest:
         if not download(source_package, version, dest):
-            return None, None, None
+            return None, None, None, []
         source_format = _read_format(dest)
         changelog_date = _extract_changelog_date(dest)
+        binaries = _read_binaries(dest)
         if 'native' in (source_format or '').lower():
-            return source_format, None, changelog_date
-        return source_format, _extract_patches(dest), changelog_date
+            return source_format, None, changelog_date, binaries
+        return source_format, _extract_patches(dest), changelog_date, binaries
 
 
 def fetch_patch_texts(source_package: str, version: str, *,
@@ -346,18 +364,19 @@ def fetch_patch_texts(source_package: str, version: str, *,
     any other format (e.g. ``1.0``) means a non-quilt source. This mirrors the
     distinctions ``details()`` draws today.
     '''
-    source_format, texts, _date = _fetch_source(source_package, version, download=download)
+    source_format, texts, _date, _binaries = _fetch_source(source_package, version, download=download)
     return source_format, texts
 
 
 def fetch_source_details(source_package: str, version: str, *,
                          download: Callable[..., bool] = _download_source
-                         ) -> tuple[str | None, dict[str, str] | None, str | None]:
-    '''Like :func:`fetch_patch_texts` but also returns the package's changelog date.
+                         ) -> tuple[str | None, dict[str, str] | None, str | None, list[str]]:
+    '''Like :func:`fetch_patch_texts` but also returns the changelog date and binaries.
 
     The curation-side corpus builder uses this to record the package's last-upload
-    date alongside its patches, from the SAME download. The client divergence path
-    stays on :func:`fetch_patch_texts` (it needs no date).
+    date and its binary package names (for the reach axis) alongside its patches,
+    from the SAME download. The client divergence path stays on
+    :func:`fetch_patch_texts` (it needs neither).
     '''
     return _fetch_source(source_package, version, download=download)
 
