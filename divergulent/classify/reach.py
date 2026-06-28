@@ -116,6 +116,63 @@ def evidence_for(*, binary: str, inst: int, anchor: int, snapshot_date: str) -> 
         sort_keys=True)
 
 
+def reach_levels_for_index(index_path: str, popcon_path: str, *,
+                           column: str = 'inst') -> dict[str, tuple[str, str | None]]:
+    """``{fingerprint: (level, evidence)}`` for every fingerprint in the index.
+
+    The corpus-level join the recorder runs once: the index's ``patch`` table
+    (fingerprint -> carrying sources) and ``package.binaries`` (source -> binary
+    names, from R3) against the popcon snapshot (binary -> inst). A fingerprint's
+    reach is the MAX install count over the binaries of EVERY source that carries
+    it -- the patch's exposure is the most-installed package it lands in. A
+    fingerprint whose carrying sources list no binaries (a corpus built before
+    binary capture, or a missing ``binaries`` column) is ``unknown`` with no
+    evidence; the recorder counts those rather than churning unrankable rows.
+    """
+    import sqlite3
+    from divergulent.classify import popcon as popcon_mod  # lazy: keep this module import-light
+
+    snapshot = popcon_mod.open_snapshot(popcon_path)
+    try:
+        inst_map = popcon_mod.installs_by_binary(snapshot, column=column)
+        anchor = popcon_mod.anchor_inst(snapshot)
+        snapshot_date = popcon_mod.snapshot_meta(snapshot).get('snapshot_date', '')
+    finally:
+        snapshot.close()
+
+    conn = sqlite3.connect(index_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        try:
+            binaries_by_source = {
+                row['source_package']: json.loads(row['binaries'] or '[]')
+                for row in conn.execute('SELECT source_package, binaries FROM package')}
+        except sqlite3.OperationalError:
+            binaries_by_source = {}  # pre-R3 index: no binaries column -> all unknown
+        sources_by_fp: dict[str, set[str]] = {}
+        for row in conn.execute('SELECT DISTINCT fingerprint, source_package FROM patch'):
+            sources_by_fp.setdefault(row['fingerprint'], set()).add(row['source_package'])
+    finally:
+        conn.close()
+
+    levels: dict[str, tuple[str, str | None]] = {}
+    for fingerprint, sources in sources_by_fp.items():
+        binaries: list[str] = []
+        for source in sources:
+            binaries.extend(binaries_by_source.get(source, []))
+        if not binaries:
+            levels[fingerprint] = (REACH_UNKNOWN, None)
+            continue
+        # MAX over the binaries: the most-installed package the patch lands in.
+        best_binary, best_inst = max(
+            ((name, inst_map.get(name, 0)) for name in binaries), key=lambda pair: pair[1])
+        levels[fingerprint] = (
+            bucket_for(best_inst, anchor),
+            evidence_for(binary=best_binary, inst=best_inst, anchor=anchor,
+                         snapshot_date=snapshot_date))
+    return levels
+
+
 def reach_by_fingerprint(conn) -> dict[str, str]:
     """``{fingerprint: level}`` from the live ``reach`` observations.
 

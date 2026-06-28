@@ -1014,6 +1014,17 @@ def _guard_overwrite(out_path: str, *, force: bool) -> bool:
     return answer == 'wipe'
 
 
+def _popcon_arg(corpus_dir: str) -> str | None:
+    """The pinned popcon snapshot path if one exists, else None (reach opt-in).
+
+    Reach is recorded only when a snapshot has been pulled; an operator who has
+    not run ``popcon`` records exactly as before, with no reach observations.
+    """
+    from divergulent.classify import popcon as popcon_mod
+    path = popcon_mod.default_popcon_path(corpus_dir)
+    return path if os.path.exists(path) else None
+
+
 def _cmd_build(args: argparse.Namespace) -> int:
     """``build``: create a ledger from a corpus and print the verdict report."""
     from divergulent.classify import record, verdict
@@ -1039,15 +1050,18 @@ def _cmd_build(args: argparse.Namespace) -> int:
     conn = create_ledger(out_path)
     try:
         stats = record.record_to_ledger(
-            conn, args.corpus_dir, index_path, now=_cli_now(), progress=progress)
+            conn, args.corpus_dir, index_path, now=_cli_now(), progress=progress,
+            popcon_path=_popcon_arg(args.corpus_dir))
         rows = verdict.rebuild_current_verdict(conn)
         print(verdict.render_report(verdict.summarise_ledger(conn)))
         print('built ledger: %s' % out_path)
         print('decisions appended=%d skipped=%d; observations appended=%d skipped=%d; '
-              'reviewability appended=%d skipped=%d; fingerprints=%d; current verdicts=%d' % (
+              'reviewability appended=%d skipped=%d; reach appended=%d skipped=%d unknown=%d; '
+              'fingerprints=%d; current verdicts=%d' % (
                   stats.decisions_appended, stats.decisions_skipped,
                   stats.observations_appended, stats.observations_skipped,
                   stats.reviewability_appended, stats.reviewability_skipped,
+                  stats.reach_appended, stats.reach_skipped, stats.reach_unknown,
                   stats.fingerprints, rows))
     finally:
         conn.close()
@@ -1091,7 +1105,7 @@ def _cmd_record(args: argparse.Namespace) -> int:
 
         stats = record.record_to_ledger(
             conn, args.corpus_dir, index_path, now=now, progress=progress,
-            reconcile=True)
+            reconcile=True, popcon_path=_popcon_arg(args.corpus_dir))
         # A newly-applied rule may add a category (e.g. ``test`` at enum v2); record
         # the current enum version so ``meta`` reflects what the ledger now holds.
         conn.execute("UPDATE meta SET value = ? WHERE key = 'category_enum_version'",
@@ -1105,12 +1119,13 @@ def _cmd_record(args: argparse.Namespace) -> int:
         print('recorded into ledger: %s' % args.ledger)
         print('dequeued %d now-settled review items' % dequeued)
         print('decisions appended=%d skipped=%d superseded=%d; observations appended=%d '
-              'skipped=%d; reviewability appended=%d skipped=%d; fingerprints=%d; '
-              'current verdicts=%d' % (
+              'skipped=%d; reviewability appended=%d skipped=%d; reach appended=%d '
+              'skipped=%d unknown=%d; fingerprints=%d; current verdicts=%d' % (
                   stats.decisions_appended, stats.decisions_skipped,
                   stats.decisions_superseded, stats.observations_appended,
                   stats.observations_skipped, stats.reviewability_appended,
-                  stats.reviewability_skipped, stats.fingerprints, rows))
+                  stats.reviewability_skipped, stats.reach_appended,
+                  stats.reach_skipped, stats.reach_unknown, stats.fingerprints, rows))
     finally:
         conn.close()
     return 0

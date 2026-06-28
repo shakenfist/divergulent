@@ -8,11 +8,13 @@ lives with R4 in ``test_record``.
 """
 import json
 import os
+import sqlite3
 import tempfile
 
 import testtools
 
 from divergulent.classify import ledger as ledger_mod
+from divergulent.classify import popcon as popcon_mod
 from divergulent.classify import reach
 
 
@@ -126,3 +128,89 @@ class ReaderTestCase(testtools.TestCase):
             conn, fingerprint='c' * 64, kind='reviewability', detail='large',
             evidence=None, observed_by='size-rule', rule_version=1, observed_at=WHEN)
         self.assertEqual({}, reach.reach_by_fingerprint(conn))
+
+
+class ReachLevelsForIndexTestCase(testtools.TestCase):
+    """The corpus-level join: fingerprint -> sources -> binaries -> popcon."""
+
+    # Fingerprints (any 64-hex stand-ins; the join keys on them, not their bodies).
+    FP_OPENSSL = 'a' * 64    # carried by a source whose binaries are near-universal
+    FP_RMAN = 'b' * 64       # carried by an ancient, low-install source
+    FP_NOBINS = 'c' * 64     # carried by a source with no binary list (pre-rebuild)
+    FP_GHOST = 'd' * 64      # carried by a source whose binary is absent from popcon
+    FP_SHARED = 'e' * 64     # carried by TWO sources; reach is the MAX over both
+
+    def _build(self):
+        tmpdir = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__('shutil').rmtree(tmpdir, ignore_errors=True))
+
+        index_path = os.path.join(tmpdir, 'fingerprints.sqlite')
+        conn = sqlite3.connect(index_path)
+        try:
+            conn.execute(
+                'CREATE TABLE patch (source_package TEXT, version TEXT, patch_name TEXT, '
+                'raw_sha256 TEXT, normalisation_version INTEGER, fingerprint TEXT)')
+            conn.executemany(
+                'INSERT INTO patch (source_package, fingerprint) VALUES (?, ?)',
+                [('openssl-src', self.FP_OPENSSL),
+                 ('rman-src', self.FP_RMAN),
+                 ('nobins-src', self.FP_NOBINS),
+                 ('ghost-src', self.FP_GHOST),
+                 ('small-src', self.FP_SHARED),
+                 ('openssl-src', self.FP_SHARED)])  # shared fp also lands in openssl-src
+            conn.execute('CREATE TABLE package (source_package TEXT, version TEXT, '
+                         'changelog_date TEXT, binaries TEXT)')
+            conn.executemany(
+                'INSERT INTO package (source_package, binaries) VALUES (?, ?)',
+                [('openssl-src', json.dumps(['openssl', 'libssl3'])),
+                 ('rman-src', json.dumps(['rman'])),
+                 ('nobins-src', json.dumps([])),
+                 ('ghost-src', json.dumps(['ghostbin'])),
+                 ('small-src', json.dumps(['smalltool']))])
+            conn.commit()
+        finally:
+            conn.close()
+
+        popcon_path = os.path.join(tmpdir, 'popcon.sqlite')
+        popcon_mod.write_snapshot(
+            popcon_path,
+            [('libc6', 278978, 142127),   # the anchor (max inst)
+             ('openssl', 278070, 200000),
+             ('libssl3', 87105, 40000),
+             ('smalltool', 500, 100),
+             ('rman', 137, 50)],          # 'ghostbin' deliberately absent
+            snapshot_date='2026-06-28', source_url='test')
+        return index_path, popcon_path
+
+    def test_join_assigns_levels_and_handles_every_case(self):
+        index_path, popcon_path = self._build()
+        levels = reach.reach_levels_for_index(index_path, popcon_path)
+
+        self.assertEqual('XL', levels[self.FP_OPENSSL][0])     # max(openssl, libssl3) -> XL
+        self.assertEqual('XS', levels[self.FP_RMAN][0])        # 137/278978 -> XS
+        self.assertEqual(reach.REACH_UNKNOWN, levels[self.FP_NOBINS][0])
+        self.assertIsNone(levels[self.FP_NOBINS][1])           # unknown carries no evidence
+        self.assertEqual('XS', levels[self.FP_GHOST][0])       # absent from popcon -> inst 0 -> XS
+        self.assertEqual('XL', levels[self.FP_SHARED][0])      # MAX over both sources -> openssl
+
+    def test_evidence_names_the_deciding_binary(self):
+        index_path, popcon_path = self._build()
+        levels = reach.reach_levels_for_index(index_path, popcon_path)
+        evidence = json.loads(levels[self.FP_OPENSSL][1])
+        self.assertEqual('openssl', evidence['binary'])        # the most-installed binary
+        self.assertEqual(278070, evidence['inst'])
+        self.assertEqual('2026-06-28', evidence['snapshot_date'])
+
+    def test_missing_binaries_column_makes_everything_unknown(self):
+        # A pre-R3 index (package table without a binaries column) degrades to all
+        # unknown rather than raising.
+        index_path, popcon_path = self._build()
+        conn = sqlite3.connect(index_path)
+        try:
+            conn.execute('DROP TABLE package')
+            conn.execute('CREATE TABLE package (source_package TEXT, version TEXT, changelog_date TEXT)')
+            conn.commit()
+        finally:
+            conn.close()
+        levels = reach.reach_levels_for_index(index_path, popcon_path)
+        self.assertTrue(all(level == reach.REACH_UNKNOWN for level, _ in levels.values()))

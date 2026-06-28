@@ -37,6 +37,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from divergulent.classify import ledger as ledger_mod
+from divergulent.classify import reach as reach_mod
 from divergulent.classify import reviewability as reviewability_mod
 from divergulent.classify.classify import iter_classified
 from divergulent.classify.rules import RULES_VERSION
@@ -65,6 +66,9 @@ class RecordStats:
     observations_skipped: int = 0
     reviewability_appended: int = 0
     reviewability_skipped: int = 0
+    reach_appended: int = 0
+    reach_skipped: int = 0
+    reach_unknown: int = 0
     fingerprints: int = 0
 
 
@@ -80,7 +84,7 @@ def _category_rule_versions(registry: list[ledger_mod.RegisteredRule]) -> dict[s
 
 
 def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progress=None,
-                     reconcile=False):
+                     reconcile=False, popcon_path=None):
     """Record the deterministic verdicts for a corpus into ``conn``; idempotent.
 
     Registers ``registry`` (or :func:`ledger.default_registry`) into the
@@ -119,6 +123,17 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
     rules = registry if registry is not None else ledger_mod.default_registry()
     ledger_mod.register_rules(conn, rules)
     rule_versions = _category_rule_versions(rules)
+
+    # The deterministic reach (install-base) levels, joined once over the whole
+    # corpus from the popcon snapshot + the index's binary lists. Empty (the reach
+    # pass is skipped) when no snapshot is supplied -- reach is opt-in on a pinned
+    # snapshot, so an operator who has not pulled one records exactly as before.
+    # ``existing_reach`` is the prior run's levels: the skip key is the BUCKET, not
+    # the evidence, so a fresh snapshot whose counts drift but whose bucket is
+    # unchanged does NOT churn ~60k rows -- reach only re-records when a bucket moves.
+    reach_levels = (reach_mod.reach_levels_for_index(index_path, popcon_path)
+                    if popcon_path else {})
+    existing_reach = reach_mod.reach_by_fingerprint(conn) if popcon_path else {}
 
     stats = RecordStats()
     for record in iter_classified(corpus_dir, index_path):
@@ -188,6 +203,30 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
                 rule_version=reviewability_mod.REVIEWABILITY_VERSION,
                 observed_at=now, commit=False)
             stats.reviewability_appended += 1
+
+        # The deterministic reach (install-base) observation -- its own rule
+        # identity, recorded only when a popcon snapshot was supplied. A
+        # fingerprint with no binary list to rank is counted as a gap, not
+        # recorded (unknown is unrankable, so a row would be pure churn). An
+        # unchanged level skips; a changed level (new snapshot/binaries or a
+        # version bump) supersedes the prior before appending.
+        if popcon_path:
+            reach_level, reach_evidence = reach_levels.get(
+                record.fingerprint, (reach_mod.REACH_UNKNOWN, None))
+            if reach_level == reach_mod.REACH_UNKNOWN:
+                stats.reach_unknown += 1
+            elif existing_reach.get(record.fingerprint) == reach_level:
+                stats.reach_skipped += 1
+            else:
+                ledger_mod.supersede_observations_for_fingerprint(
+                    conn, fingerprint=record.fingerprint,
+                    kind=reach_mod.REACH_KIND, superseded_at=now, commit=False)
+                ledger_mod.append_observation(
+                    conn, fingerprint=record.fingerprint,
+                    kind=reach_mod.REACH_KIND, detail=reach_level, evidence=reach_evidence,
+                    observed_by=reach_mod.REACH_OBSERVED_BY,
+                    rule_version=reach_mod.REACH_VERSION, observed_at=now, commit=False)
+                stats.reach_appended += 1
 
     if progress is not None:
         progress.finish()

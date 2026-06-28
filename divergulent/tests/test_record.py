@@ -16,6 +16,7 @@ Coverage asserts: one live decision per fingerprint with the right
 category/decided_by/rule_version/evidence; an observation per dangerous-construct
 flag; and that a SECOND run appends nothing and duplicates no rows.
 """
+import json
 import os
 import sqlite3
 import tempfile
@@ -23,6 +24,8 @@ import tempfile
 import testtools
 
 from divergulent.classify import ledger as ledger_mod
+from divergulent.classify import popcon as popcon_mod
+from divergulent.classify import reach as reach_mod
 from divergulent.classify import record
 from divergulent.classify.corpus import body_sha256
 from divergulent.classify.fingerprint import fingerprint
@@ -371,3 +374,115 @@ class ReconcileTestCase(testtools.TestCase):
         live = self._live_heuristic(conn, fp)
         self.assertEqual(2, len(live))
         self.assertEqual({'doc-only', 'substantive'}, {r['decided_by'] for r in live})
+
+
+def _add_package_and_popcon(corpus_dir, index_path):
+    """Extend the synthetic corpus with a package.binaries table + popcon snapshot.
+
+    Maps each source to a single binary with a chosen install count so the four
+    distinct fingerprints land in known reach buckets; pkg-c and pkg-d share the
+    SUBSTANTIVE fingerprint, so its reach must be the MAX over both their binaries.
+    Returns the popcon snapshot path.
+    """
+    conn = sqlite3.connect(index_path)
+    try:
+        conn.execute('CREATE TABLE package (source_package TEXT, version TEXT, '
+                     'changelog_date TEXT, binaries TEXT)')
+        conn.executemany(
+            'INSERT INTO package (source_package, binaries) VALUES (?, ?)',
+            [('pkg-a', json.dumps(['aaa'])),
+             ('pkg-b', json.dumps(['bbb'])),
+             ('pkg-c', json.dumps(['ccc'])),
+             ('pkg-d', json.dumps(['ddd'])),
+             ('pkg-e', json.dumps(['eee']))])
+        conn.commit()
+    finally:
+        conn.close()
+    popcon_path = os.path.join(corpus_dir, 'popcon.sqlite')
+    popcon_mod.write_snapshot(
+        popcon_path,
+        [('aaa', 278978, 142127),   # anchor -> XL
+         ('bbb', 137, 50),          # XS
+         ('ccc', 5000, 2000),       # the lower of the shared fp's two binaries
+         ('ddd', 50000, 20000),     # the higher -> shared fp buckets L
+         ('eee', 137, 50)],         # XS
+        snapshot_date='2026-06-28', source_url='test')
+    return popcon_path
+
+
+class ReachRecordingTestCase(testtools.TestCase):
+
+    def _corpus(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        index_path = _build_synthetic_corpus(tmp.name)
+        popcon_path = _add_package_and_popcon(tmp.name, index_path)
+        path = os.path.join(tmp.name, 'ledger.sqlite')
+        conn = ledger_mod.create_ledger(path)
+        self.addCleanup(conn.close)
+        return conn, tmp.name, index_path, popcon_path
+
+    def test_reach_observations_recorded_with_expected_levels(self):
+        conn, corpus_dir, index_path, popcon_path = self._corpus()
+        stats = record.record_to_ledger(
+            conn, corpus_dir, index_path, now=WHEN, popcon_path=popcon_path)
+
+        levels = reach_mod.reach_by_fingerprint(conn)
+        self.assertEqual('XL', levels[_fp(MODE_ONLY)])
+        self.assertEqual('XS', levels[_fp(DOC_ONLY)])
+        self.assertEqual('L', levels[_fp(SUBSTANTIVE)])   # MAX over pkg-c/pkg-d binaries
+        self.assertEqual('XS', levels[_fp(TROJAN)])
+        self.assertEqual(4, stats.reach_appended)         # one per distinct fingerprint
+        self.assertEqual(0, stats.reach_unknown)
+
+    def test_no_snapshot_records_no_reach(self):
+        conn, corpus_dir, index_path, _popcon = self._corpus()
+        stats = record.record_to_ledger(conn, corpus_dir, index_path, now=WHEN)
+        self.assertEqual(0, stats.reach_appended)
+        self.assertEqual(0, stats.reach_unknown)
+        self.assertEqual({}, reach_mod.reach_by_fingerprint(conn))
+
+    def test_second_run_is_idempotent(self):
+        conn, corpus_dir, index_path, popcon_path = self._corpus()
+        record.record_to_ledger(conn, corpus_dir, index_path, now=WHEN, popcon_path=popcon_path)
+        stats = record.record_to_ledger(
+            conn, corpus_dir, index_path, now=LATER, popcon_path=popcon_path)
+        self.assertEqual(0, stats.reach_appended)
+        self.assertEqual(4, stats.reach_skipped)
+
+    def test_changed_snapshot_supersedes_prior_level(self):
+        conn, corpus_dir, index_path, popcon_path = self._corpus()
+        record.record_to_ledger(conn, corpus_dir, index_path, now=WHEN, popcon_path=popcon_path)
+
+        # Re-pin a snapshot where pkg-b's binary is now near-universal: its
+        # fingerprint's reach must move XS -> XL, superseding the prior row.
+        popcon_mod.write_snapshot(
+            popcon_path,
+            [('aaa', 278978, 142127), ('bbb', 270000, 200000),
+             ('ccc', 5000, 2000), ('ddd', 50000, 20000), ('eee', 137, 50)],
+            snapshot_date='2026-07-01', source_url='test')
+        stats = record.record_to_ledger(
+            conn, corpus_dir, index_path, now=LATER, popcon_path=popcon_path)
+
+        self.assertEqual('XL', reach_mod.reach_by_fingerprint(conn)[_fp(DOC_ONLY)])
+        self.assertEqual(1, stats.reach_appended)   # only the changed fingerprint
+        self.assertEqual(3, stats.reach_skipped)
+
+    def test_count_drift_without_bucket_change_does_not_churn(self):
+        # The key no-churn property: a fresh snapshot whose install counts drift
+        # but whose buckets are unchanged must re-record nothing (the skip key is
+        # the bucket, not the raw counts/date) -- so a daily popcon refresh does
+        # not rewrite ~60k rows.
+        conn, corpus_dir, index_path, popcon_path = self._corpus()
+        record.record_to_ledger(conn, corpus_dir, index_path, now=WHEN, popcon_path=popcon_path)
+
+        popcon_mod.write_snapshot(
+            popcon_path,
+            [('aaa', 278000, 142127), ('bbb', 140, 50),     # drifted, same buckets
+             ('ccc', 5100, 2000), ('ddd', 49000, 20000), ('eee', 150, 50)],
+            snapshot_date='2026-07-01', source_url='test')
+        stats = record.record_to_ledger(
+            conn, corpus_dir, index_path, now=LATER, popcon_path=popcon_path)
+
+        self.assertEqual(0, stats.reach_appended)
+        self.assertEqual(4, stats.reach_skipped)
