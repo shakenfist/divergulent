@@ -181,7 +181,19 @@ installed-package inventory never leaves the machine.
   oversized bucket). For the merely-`large` middle the risk gate **caps** the diff
   it sends (`RISK_MAX_DIFF_CHARS`, head-only, truncation recorded) — a coarse read
   needs only the head, and uncapped giant diffs were the risk run's cost spikes
-  and its context-overflow error. `review.py` (the
+  and its context-overflow error. `reach.py` adds a fourth, also **deterministic**
+  axis: each fingerprint's **install-base** as a t-shirt size (`XS`–`XL`, a `reach`
+  observation, `observed_by='popcon-rule'`) from a pinned Debian popcon snapshot
+  (`popcon.py` → `corpus/popcon.sqlite`, refreshed independently of the corpus)
+  joined against the source's binary names (the `.dsc` `Binary:` field captured
+  into `package.binaries` on the rebuild). Reach is the MAX install count over the
+  binaries of every carrying source, bucketed relative to the snapshot's
+  `max(inst)` anchor; it enters priority as a **secondary key within the security
+  tier** (`risk_rank * 1e9 + reach_rank * 1e6 + occurrence`, non-overlapping bands
+  so reach **never crosses a risk boundary**), surfacing widely-run risky patches
+  first. It is opt-in on a pinned snapshot and re-records only when a bucket changes
+  (no churn when counts drift); the web worklist orders `(risk, reach, priority)`
+  and shows a reach badge. `review.py` (the
   `python -m divergulent.classify.review` CLI) is the local, interactive human
   tier, with three subcommands. `review` drains the queue: it shows each
   high-priority diff **in its original source context** — fetched on-demand from

@@ -264,9 +264,22 @@ levers are the real cost dial. A third, **deterministic** axis —
 (`normal`/`large`/`oversized`, by changed-line count) as a `reviewability`
 observation (`observed_by='size-rule'`) at `ledger build`/`record`; an `oversized`
 patch (>5,000 changed lines) is not line-reviewable, so both LLM passes skip it and
-the review UI buckets it. See
-`docs/plans/PLAN-patch-classification-phase-04-risk-gate.md` and
-`docs/plans/PLAN-patch-classification-phase-04-reviewability-axis.md`. `python -m
+the review UI buckets it. A fourth, also **deterministic** axis — `reach.py` —
+records each fingerprint's **install-base** as a t-shirt size (`XS`–`XL`, a
+`reach` observation, `observed_by='popcon-rule'`) from a pinned Debian popcon
+snapshot (`popcon.py`, `python -m divergulent.classify.popcon <corpus_dir>` →
+`corpus/popcon.sqlite`) joined against the source's binary names (the `.dsc`
+`Binary:` field, captured into `package.binaries` on the corpus rebuild). Reach is
+the MAX install count over the binaries of every source carrying the fingerprint,
+bucketed relative to the snapshot's `max(inst)` anchor (resilient to t64/soname
+renames). It enters priority as a **secondary key WITHIN the security tier** —
+`risk_rank * 1e9 + reach_rank * 1e6 + occurrence`, bands non-overlapping so reach
+**never crosses a risk boundary** — surfacing "security-impacting AND widely-run"
+first; it is opt-in on a pinned snapshot and recorded only when a bucket changes
+(no churn on count drift). See
+`docs/plans/PLAN-patch-classification-phase-04-risk-gate.md`,
+`docs/plans/PLAN-patch-classification-phase-04-reviewability-axis.md` and
+`docs/plans/PLAN-patch-classification-phase-04-reach-axis.md`. `python -m
 divergulent.classify.review` (in `review.py`) is the local, interactive,
 Sigstore-signed human tier. It has three subcommands: `review <ledger>
 <corpus_dir>` drains the queue (showing each diff in its sources.debian.org
@@ -289,9 +302,11 @@ a `.divergulent` marker beside `corpus/`+`cache/`, discovered git-style via
 `--data`/`DIVERGULENT_DATA`/walk-up) and **forwards** to each command's existing
 module main with the ledger/corpus paths spliced in — so verbs (`status`,
 `record`, `triage`, `risk`, `review`, `web`, `report`, `requeue`, `history`,
-`init`) take no paths (`record` re-applies the deterministic rules to the existing
-ledger — the recurring "I changed a rule, re-apply it" pass; the one-time
-corpus/`build` steps stay longhand, as they create the root's contents). It guards the forgetful operator: a missing ledger or a not-a-root cwd is a
+`popcon`, `init`) take no paths (`record` re-applies the deterministic rules to the
+existing ledger — the recurring "I changed a rule, re-apply it" pass; `popcon`
+pulls the reach axis's install-base snapshot into `corpus/popcon.sqlite` and is
+**corpus-only**, needing no ledger; the one-time corpus/`build` steps stay
+longhand, as they create the root's contents). It guards the forgetful operator: a missing ledger or a not-a-root cwd is a
 clear error not a crash, and a **stale published cache** is loudly flagged before
 data-consuming verbs. `status` is the one-screen orientation (residue, categories,
 risk distribution, pending review, cache age). The old `python -m

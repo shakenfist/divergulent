@@ -226,6 +226,45 @@ class WorkListTestCase(DriverFixture, testtools.TestCase):
         self.assertEqual(2, non_dangerous[0].n_occurrences)
 
 
+class PriorityTestCase(testtools.TestCase):
+    """The priority bands: risk dominates, reach breaks ties within a risk tier,
+    occurrence within a reach tier -- and reach NEVER crosses a risk boundary."""
+
+    def _item(self, *, fingerprint='a', risk=0, reach=0, occ=0, dangerous=False):
+        return triage_driver.WorkItem(
+            fingerprint=fingerprint, representative_sha='s', representative_patch_name='p',
+            n_occurrences=occ, n_packages=1, has_dangerous_construct=dangerous,
+            risk_rank=risk, reach_rank=reach)
+
+    def test_reach_breaks_ties_within_a_risk_tier(self):
+        hi = self._item(fingerprint='hi', risk=2, reach=4, occ=1)
+        lo = self._item(fingerprint='lo', risk=2, reach=1, occ=999)
+        # Higher reach sorts ahead despite far fewer occurrences (same risk tier).
+        self.assertGreater(triage_driver._priority_key(hi), triage_driver._priority_key(lo))
+        self.assertGreater(triage_driver._stored_priority(hi), triage_driver._stored_priority(lo))
+
+    def test_reach_never_crosses_a_risk_boundary(self):
+        # The one hard rule: a ubiquitous (XL) low-risk patch must NEVER outrank an
+        # obscure (XS) high-risk patch.
+        xl_low_risk = self._item(risk=0, reach=4, occ=999_999)
+        xs_high_risk = self._item(risk=1, reach=0, occ=0)
+        self.assertGreater(
+            triage_driver._stored_priority(xs_high_risk),
+            triage_driver._stored_priority(xl_low_risk))
+        self.assertGreater(
+            triage_driver._priority_key(xs_high_risk),
+            triage_driver._priority_key(xl_low_risk))
+
+    def test_occurrence_cannot_bleed_into_the_reach_band(self):
+        # Even a pathological occurrence count cannot lift a reach-0 item to or past
+        # a reach-1 item in the same risk tier (the occurrence cap guarantees it).
+        reach0_huge_occ = self._item(risk=1, reach=0, occ=10_000_000)
+        reach1_no_occ = self._item(risk=1, reach=1, occ=0)
+        self.assertGreater(
+            triage_driver._stored_priority(reach1_no_occ),
+            triage_driver._stored_priority(reach0_huge_occ))
+
+
 class RunTriageTestCase(DriverFixture, testtools.TestCase):
 
     def test_dangerous_construct_triaged_first_and_routed_to_human(self):

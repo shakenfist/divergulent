@@ -13,6 +13,7 @@ import tempfile
 import testtools
 
 from divergulent.classify import ledger as ledger_mod
+from divergulent.classify import reach
 from divergulent.classify import review as review_mod
 from divergulent.classify import review_web
 from divergulent.classify import reviewability
@@ -536,6 +537,59 @@ class RiskWebTestCase(ReviewWebFixture, testtools.TestCase):
         self._seed_risk(conn, fp_hex, 'elevated')
         body = client.get('/review/%s' % fp_hex).get_data(as_text=True)
         self.assertIn('risk: elevated', body)
+
+
+class ReachWebTestCase(ReviewWebFixture, testtools.TestCase):
+    """The install-base reach surfaced in the UI: a badge, a filter, live order."""
+
+    def _seed_reach(self, conn, fingerprint, level):
+        ledger_mod.append_observation(
+            conn, fingerprint=fingerprint, kind=reach.REACH_KIND, detail=level,
+            evidence='{}', observed_by=reach.REACH_OBSERVED_BY,
+            rule_version=reach.REACH_VERSION, observed_at=WHEN)
+        conn.commit()
+
+    def _seed_risk(self, conn, fingerprint, level):
+        ledger_mod.append_observation(
+            conn, fingerprint=fingerprint, kind=risk.RISK_KIND, detail=level,
+            evidence='{}', observed_by=risk.RISK_OBSERVED_BY_PREFIX + 'm',
+            rule_version=1, observed_at=WHEN)
+        conn.commit()
+
+    def test_worklist_badges_reach_and_orders_within_a_risk_tier(self):
+        # Same (zero) risk tier: the main fp has the LOWER stored priority (5) but
+        # is reach XL; the extra has higher priority (9) but no reach. Reach wins.
+        client, conn, fp_hex = self._client(extra_items=[dict(
+            fingerprint='b' * 64, draft_category='bugfix', priority=9)])
+        self._seed_reach(conn, fp_hex, 'XL')
+        body = client.get('/').get_data(as_text=True)
+        self.assertIn('reach XL', body)   # the badge (class="reach XL")
+        self.assertLess(body.index(fp_hex[:16]), body.index(('b' * 64)[:16]))
+
+    def test_reach_never_crosses_a_risk_tier_in_the_worklist(self):
+        # The hard rule, in the UI: an XL low-risk patch must NOT outrank a
+        # high-risk patch with no reach.
+        client, conn, fp_hex = self._client(extra_items=[dict(
+            fingerprint='b' * 64, draft_category='bugfix', priority=1)])
+        self._seed_reach(conn, fp_hex, 'XL')             # main: XL, risk 0
+        self._seed_risk(conn, 'b' * 64, 'high')          # extra: high risk, no reach
+        body = client.get('/').get_data(as_text=True)
+        self.assertLess(body.index(('b' * 64)[:16]), body.index(fp_hex[:16]))
+
+    def test_review_page_shows_the_reach_badge(self):
+        client, conn, fp_hex = self._client()
+        self._seed_reach(conn, fp_hex, 'XS')             # the rman case
+        body = client.get('/review/%s' % fp_hex).get_data(as_text=True)
+        self.assertIn('reach: XS', body)
+
+    def test_reach_filter_narrows_the_worklist(self):
+        client, conn, fp_hex = self._client(extra_items=[dict(
+            fingerprint='b' * 64, draft_category='bugfix', priority=1)])
+        self._seed_reach(conn, fp_hex, 'XL')
+        self._seed_reach(conn, 'b' * 64, 'XS')
+        xl_only = client.get('/?reach=XL').get_data(as_text=True)
+        self.assertIn(fp_hex[:16], xl_only)
+        self.assertNotIn(('b' * 64)[:16], xl_only)
 
 
 class NotesWebTestCase(ReviewWebFixture, testtools.TestCase):

@@ -150,3 +150,36 @@ class ChangelogDateTestCase(testtools.TestCase):
     def test_unparseable_date_is_none(self):
         from divergulent.sources.apt_patches import _changelog_date
         self.assertIsNone(_changelog_date(' -- Maint <m@e.org>  not-a-date\n'))
+
+
+class ReadBinariesTestCase(testtools.TestCase):
+
+    def _dest_with_dsc(self, body):
+        import os
+        import tempfile
+        dest = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__('shutil').rmtree(dest, ignore_errors=True))
+        if body is not None:
+            with open(os.path.join(dest, 'pkg.dsc'), 'w') as handle:
+                handle.write(body)
+        return dest
+
+    def test_comma_separated_binary_field(self):
+        from divergulent.sources.apt_patches import _read_binaries
+        dest = self._dest_with_dsc('Format: 3.0 (quilt)\nBinary: openssl, libssl3, libssl-dev\n')
+        self.assertEqual(['openssl', 'libssl3', 'libssl-dev'], _read_binaries(dest))
+
+    def test_folded_binary_field_across_lines(self):
+        from divergulent.sources.apt_patches import _read_binaries
+        # deb822 folds a continuation line (leading whitespace) into the value.
+        dest = self._dest_with_dsc(
+            'Format: 3.0 (quilt)\nBinary: openssl,\n libssl3,\n libssl-dev\n')
+        self.assertEqual(['openssl', 'libssl3', 'libssl-dev'], _read_binaries(dest))
+
+    def test_no_binary_field_is_empty(self):
+        from divergulent.sources.apt_patches import _read_binaries
+        self.assertEqual([], _read_binaries(self._dest_with_dsc('Format: 3.0 (quilt)\n')))
+
+    def test_no_dsc_is_empty(self):
+        from divergulent.sources.apt_patches import _read_binaries
+        self.assertEqual([], _read_binaries(self._dest_with_dsc(None)))

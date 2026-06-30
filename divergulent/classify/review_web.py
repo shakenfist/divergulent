@@ -25,6 +25,7 @@ from urllib.parse import urlencode
 
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import review as review_mod
+from divergulent.classify import reach as reach_mod
 from divergulent.classify import reviewability as reviewability_mod
 from divergulent.classify import risk as risk_mod
 from divergulent.classify import verdict as verdict_mod
@@ -129,7 +130,7 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
                 return item
         return None
 
-    def _worklist_row(item, level, risk_level, note_count) -> dict:
+    def _worklist_row(item, level, risk_level, reach_level, note_count) -> dict:
         fingerprint = item['fingerprint']
         packages = review_mod._carrying_packages(index_path, fingerprint)
         return {
@@ -143,9 +144,26 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             'reviewability': None if level == 'normal' else level,
             # The security-risk level (none if un-scored); shown as a badge.
             'risk': risk_level,
+            # The install-base reach t-shirt size (none if un-ranked); a badge.
+            'reach': reach_level,
             # How many reviewer notes this fingerprint carries (0 -> no indicator).
             'notes': note_count,
         }
+
+    def _worklist_reach_chips(reach_levels: dict) -> list[dict]:
+        """Filter chips for the reach tiers present in the queue, in scale order.
+
+        Reach is the install-base t-shirt size; the chips let a reviewer focus the
+        widely-run patches (e.g. only ``XL``/``L``) within whatever other filters
+        are active. Levels with no pending items are omitted.
+        """
+        counts: dict[str, int] = {}
+        for item in ledger_mod.pending_review_items(conn):
+            level = reach_levels.get(item['fingerprint'])
+            if level:
+                counts[level] = counts.get(level, 0) + 1
+        return [{'name': name, 'count': counts[name]}
+                for name in reach_mod.REACH_LEVELS if name in counts]
 
     def _worklist_category_chips() -> list[dict]:
         """The category filter chips for the worklist: full set, pending counts."""
@@ -199,32 +217,45 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
         if reviewability:
             items = [item for item in items
                      if levels.get(item['fingerprint'], 'normal') == reviewability]
-        # Order by the LIVE security-risk level first, then the stored priority --
-        # so a patch scored scary AFTER it was queued surfaces immediately, even if
-        # its frozen stored priority has not been re-stamped yet.
+        # Reach filter: the install-base axis (e.g. only the widely-run XL/L
+        # patches). Composes with every other filter.
+        reach_levels = reach_mod.reach_by_fingerprint(conn)
+        reach = request.args.get('reach', '').strip() or None
+        if reach:
+            items = [item for item in items if reach_levels.get(item['fingerprint']) == reach]
+        # Order by the LIVE security-risk level first, then reach, then the stored
+        # priority -- so a patch scored scary (or ranked widely-run) AFTER it was
+        # queued surfaces immediately, even if its frozen stored priority has not
+        # been re-stamped yet. Reach is a within-risk key (never crosses a tier).
         risk_levels = risk_mod.risk_level_by_fingerprint(conn)
         items = sorted(
             items,
             key=lambda it: (risk_mod.RISK_RANK.get(risk_levels.get(it['fingerprint']), 0),
+                            reach_mod.REACH_RANK.get(reach_levels.get(it['fingerprint']), 0),
                             it['priority']),
             reverse=True)
         note_counts = ledger_mod.note_counts_by_fingerprint(conn)
         rows = [_worklist_row(item, levels.get(item['fingerprint'], 'normal'),
                               risk_levels.get(item['fingerprint']),
+                              reach_levels.get(item['fingerprint']),
                               note_counts.get(item['fingerprint'], 0)) for item in items]
         top = items[0]['fingerprint'] if items else None
-        # The category/package filters, as a query string, so the reviewability
-        # chips can preserve them (and "all sizes" can reset only reviewability).
+        # Two query strings so each filter row preserves the OTHER axes: the size
+        # chips keep category/package/reach, the reach chips keep category/package/
+        # reviewability (and each "all ..." link resets only its own axis).
         base_params = {}
         if category:
             base_params['category'] = category
         if package:
             base_params['package'] = package
+        size_params = dict(base_params, **({'reach': reach} if reach else {}))
+        reach_params = dict(base_params, **({'reviewability': reviewability} if reviewability else {}))
         return render_template_string(
             WORKLIST_TEMPLATE, rows=rows, category=category, package=package,
             categories=_worklist_category_chips(), top=top, total=len(items),
             reviewability=reviewability, reviewabilities=_worklist_reviewability_chips(levels),
-            base_qs=urlencode(base_params))
+            reach=reach, reaches=_worklist_reach_chips(reach_levels),
+            base_qs=urlencode(size_params), reach_qs=urlencode(reach_params))
 
     @app.route('/review/<fingerprint>')
     def review(fingerprint):
@@ -248,6 +279,7 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             verdict=verdict, can_requeue=signer is not None and not queued,
             reviewability=None if level == 'normal' else level,
             risk=risk_mod.risk_level_by_fingerprint(conn).get(resolved),
+            reach=reach_mod.reach_by_fingerprint(conn).get(resolved),
             oversized_lines=reviewability_mod.REVIEWABILITY_OVERSIZED_LINES,
             notes=ledger_mod.notes_for(conn, resolved), can_note=signer is not None,
             package_lines=review_mod._format_package_lines(context),
@@ -463,6 +495,13 @@ _HEAD = '''<!doctype html>
  .risk.elevated { background: #4a3212; color: #f0b860; }
  .risk.low { color: #8a909a; }
  .risk.none { color: #5a606a; }
+ .reach { display: inline-block; padding: 0 0.4rem; border-radius: 0.2rem;
+          font-size: 0.8rem; font-weight: bold; }
+ .reach.XL { background: #123a3a; color: #6fe0d0; }
+ .reach.L { background: #10302f; color: #5ac0b4; }
+ .reach.M { color: #8a909a; }
+ .reach.S { color: #6a707a; }
+ .reach.XS { color: #5a606a; }
  .next { display: inline-block; margin: 0.5rem 0; padding: 0.4rem 0.8rem;
          background: #2563eb; color: #fff; border-radius: 0.3rem; text-decoration: none; }
  .meta-block { background: #232730; padding: 0.6rem 0.8rem; border-radius: 0.3rem; }
@@ -541,6 +580,17 @@ WORKLIST_TEMPLATE = _HEAD.replace('{{ title }}', 'worklist') + '''
   {% endfor %}
 </p>
 {% endif %}
+{% if reaches or reach %}
+<p>
+  <span class="muted">reach:</span>
+  <a class="chip {{ 'on' if not reach }}" href="/{{ '?' + reach_qs if reach_qs }}">all reach</a>
+  {% for r in reaches %}
+    <a class="chip {{ 'on' if reach == r.name }}"
+       href="/?reach={{ r.name }}{{ '&' + reach_qs if reach_qs }}"
+       >{{ r.name }} <span class="muted">({{ r.count }})</span></a>
+  {% endfor %}
+</p>
+{% endif %}
 {% if top %}
   <a class="next" href="/review/{{ top }}">Review next most important &rarr;</a>
   <span class="muted">(press <span class="key">j</span>)</span>
@@ -558,10 +608,12 @@ document.addEventListener('keydown', function(e) {
 });
 </script>
 <table>
-  <tr><th>risk</th><th>draft</th><th>size</th><th>pkgs</th><th>fingerprint</th><th>reason</th></tr>
+  <tr><th>risk</th><th>reach</th><th>draft</th><th>size</th><th>pkgs</th><th>fingerprint</th><th>reason</th></tr>
   {% for row in rows %}
   <tr>
     <td>{% if row.risk %}<span class="risk {{ row.risk }}">{{ row.risk }}</span>{% else %}
+        <span class="muted">-</span>{% endif %}</td>
+    <td>{% if row.reach %}<span class="reach {{ row.reach }}">{{ row.reach }}</span>{% else %}
         <span class="muted">-</span>{% endif %}</td>
     <td>{{ row.draft_category or '-' }}</td>
     <td>{% if row.reviewability %}<span class="rev {{ row.reviewability }}"
@@ -579,6 +631,7 @@ REVIEW_TEMPLATE = _HEAD.replace('{{ title }}', 'review') + '''
 <p id="top"><a href="/">&larr; worklist</a></p>
 <h1 class="mono">{{ ctx.fingerprint[:16] }}<span class="muted">{{ ctx.fingerprint[16:] }}</span>
 {% if risk %} <span class="risk {{ risk }}">risk: {{ risk }}</span>{% endif %}
+{% if reach %} <span class="reach {{ reach }}">reach: {{ reach }}</span>{% endif %}
 {% if reviewability %} <span class="rev {{ reviewability }}">{{ reviewability }}</span>{% endif %}</h1>
 {% if reviewability == 'oversized' %}
 <p class="rev oversized" style="padding: 0.4rem 0.6rem;">This diff is oversized (&gt;{{ oversized_lines }}

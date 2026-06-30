@@ -242,7 +242,12 @@ so the triage and human tiers reach the riskiest carried patches first.
 A deterministic **reviewability axis** scores each patch's size
 (`normal`/`large`/`oversized` by changed-line count) for free; an
 `oversized` diff is not line-reviewable, so the LLM passes skip it and the
-web UI gives it its own bucket.
+web UI gives it its own bucket. A deterministic **reach axis** scores each
+patch's install-base from Debian [popcon](https://popcon.debian.org/) as a
+t-shirt size (`XS`–`XL`), so review effort goes to security-impacting
+patches in the most widely-run packages first — as a tie-break *within* a
+security tier, never above it (a popular benign patch never outranks a risky
+obscure one).
 The human tier is both a CLI (`python -m divergulent.classify.review`)
 and a **local web UI** (`python -m divergulent.classify.review_web`, behind
 the optional `review` extra — `pip install divergulent[review]`, or

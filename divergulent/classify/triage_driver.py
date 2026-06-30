@@ -82,9 +82,12 @@ class WorkItem:
     Built from the queue + the phase-1 index + the live observations: the
     representative ``raw_sha256`` (to load the body), the recurrence counts (for
     priority and the report), ``has_dangerous_construct`` (which both raises
-    priority and routes the result to a human), and ``risk_rank`` -- the security-
-    risk gate's level (0..3) for this fingerprint, the TOP priority component so
-    the scariest carried patches are triaged and reviewed first.
+    priority and routes the result to a human), ``risk_rank`` -- the security-risk
+    gate's level (0..3) for this fingerprint, the TOP priority component so the
+    scariest carried patches are triaged and reviewed first -- and ``reach_rank``
+    -- the install-base t-shirt level (0..4, XS..XL), a SECONDARY key WITHIN a risk
+    tier so a widely-run risky patch sorts ahead of an obscure one, but reach never
+    crosses a risk boundary.
     """
 
     fingerprint: str
@@ -94,6 +97,7 @@ class WorkItem:
     n_packages: int
     has_dangerous_construct: bool
     risk_rank: int = 0
+    reach_rank: int = 0
 
 
 def _fingerprints_with_dangerous_construct(conn: sqlite3.Connection) -> set[str]:
@@ -140,23 +144,29 @@ def _index_groups(index_path: str) -> dict[str, dict]:
     return groups
 
 
-# The security-risk level is the TOP priority component; scaled past any realistic
-# occurrence count so a higher risk always sorts ahead, with occurrence as the
-# tie-break within a risk level (encoded into the single stored integer priority).
-RISK_PRIORITY_WEIGHT = 1_000_000
+# Priority is a single integer with non-overlapping bands so the riskiest patches
+# always sort first: risk_rank is the TOP band (scaled past any realistic reach +
+# occurrence), reach_rank a SECONDARY band within a risk tier, and occurrence the
+# within-reach tie-break. The bands cannot overlap (reach 0..4 < RISK/REACH ratio;
+# occurrence is capped below REACH_PRIORITY_WEIGHT), so reach can never promote a
+# patch across a risk boundary -- the one hard rule of the reach axis.
+RISK_PRIORITY_WEIGHT = 1_000_000_000
+REACH_PRIORITY_WEIGHT = 1_000_000
 
 
 def _priority_key(item: WorkItem) -> tuple:
-    """Sort key (higher == triaged first): risk, dangerous-construct, occurrence.
+    """Sort key (higher == triaged first): risk, dangerous, reach, occurrence.
 
     The security-risk gate's level is the top signal -- the scariest patches are
     triaged and reviewed first -- then a live dangerous-construct observation, then
-    a high occurrence count (one recurring fingerprint stands for many carried
-    patches), then package count, with the fingerprint as a final tie-break.
+    the install-base reach (a widely-run patch ahead of an obscure one), then a high
+    occurrence count (one recurring fingerprint stands for many carried patches),
+    then package count, with the fingerprint as a final tie-break.
     """
     return (
         item.risk_rank,
         1 if item.has_dangerous_construct else 0,
+        item.reach_rank,
         item.n_occurrences,
         item.n_packages,
         item.fingerprint)
@@ -165,36 +175,44 @@ def _priority_key(item: WorkItem) -> tuple:
 def _stored_priority(item: WorkItem) -> int:
     """The single integer ``review_queue.priority`` for a needs-human item.
 
-    Encodes risk-first ordering into one int (``risk_rank * WEIGHT + occurrence``)
-    so the review tool's ``ORDER BY priority DESC`` pulls the highest-risk patches
-    first, with occurrence count as the within-risk tie-break -- no schema change.
+    Encodes risk-first, then reach-within-risk ordering into one int
+    (``risk_rank * RISK_WEIGHT + reach_rank * REACH_WEIGHT + occurrence``) so the
+    review tool's ``ORDER BY priority DESC`` pulls the highest-risk patches first,
+    reach breaking ties within a risk tier and occurrence within a reach tier -- no
+    schema change. Occurrence is capped below ``REACH_PRIORITY_WEIGHT`` so it can
+    never bleed into the reach band, keeping the bands non-overlapping.
     """
-    return item.risk_rank * RISK_PRIORITY_WEIGHT + item.n_occurrences
+    return (item.risk_rank * RISK_PRIORITY_WEIGHT
+            + item.reach_rank * REACH_PRIORITY_WEIGHT
+            + min(item.n_occurrences, REACH_PRIORITY_WEIGHT - 1))
 
 
 def reprioritise_review_queue(conn, index_path: str) -> int:
     """Re-stamp pending review items' priority from CURRENT risk + occurrence.
 
-    ``review_queue.priority`` is frozen at enqueue (triage) time, so a risk score
-    that lands AFTER a patch was queued never reaches the queue order -- the
-    worklist's "review next" walks ``priority`` DESC and would otherwise stay in
-    occurrence order even as scary patches get scored. This recomputes
-    ``risk_rank * WEIGHT + n_occurrences`` (the same formula as
-    :func:`_stored_priority`) from the live risk observations + the index for every
-    pending item, updates those that changed, and returns the count changed. Run at
-    the tail of a risk-gate pass so the queue self-heals as scores land; safe to run
-    standalone.
+    ``review_queue.priority`` is frozen at enqueue (triage) time, so a risk or
+    reach signal that lands AFTER a patch was queued never reaches the queue order
+    -- the worklist's "review next" walks ``priority`` DESC and would otherwise stay
+    in occurrence order even as scary patches get scored. This recomputes the full
+    :func:`_stored_priority` formula (``risk_rank * RISK_WEIGHT + reach_rank *
+    REACH_WEIGHT + occurrence``) from the live risk + reach observations + the index
+    for every pending item, updates those that changed, and returns the count
+    changed. Run at the tail of a risk-gate pass so the queue self-heals as scores
+    land; safe to run standalone.
     """
+    from divergulent.classify import reach as reach_mod  # lazy: avoids an import cycle
     from divergulent.classify import risk as risk_mod  # lazy: avoids an import cycle
 
     risk_ranks = risk_mod.risk_rank_by_fingerprint(conn)
+    reach_ranks = reach_mod.reach_rank_by_fingerprint(conn)
     groups = _index_groups(index_path)
     changed = 0
     for item in ledger_mod.pending_review_items(conn):
         fingerprint = item['fingerprint']
-        rank = risk_ranks.get(fingerprint, 0)
         occurrences = groups.get(fingerprint, {}).get('n_occurrences', 0)
-        new_priority = rank * RISK_PRIORITY_WEIGHT + occurrences
+        new_priority = (risk_ranks.get(fingerprint, 0) * RISK_PRIORITY_WEIGHT
+                        + reach_ranks.get(fingerprint, 0) * REACH_PRIORITY_WEIGHT
+                        + min(occurrences, REACH_PRIORITY_WEIGHT - 1))
         if new_priority != item['priority']:
             ledger_mod.reprioritise_review_item(
                 conn, item_id=item['id'], priority=new_priority, commit=False)
@@ -214,16 +232,18 @@ def build_work_list(conn: sqlite3.Connection, index_path: str, *,
     hardening-flag change), not just the residue.
 
     Joins the source against the index (for the representative body + recurrence
-    counts), the live dangerous-construct observations, and the live security-risk
-    levels, and returns it sorted highest-value first (risk, then dangerous, then
-    occurrence). The cap is applied by the caller so the full ordered list is
-    available for the report's remainder count.
+    counts), the live dangerous-construct observations, the live security-risk
+    levels, and the live reach levels, and returns it sorted highest-value first
+    (risk, then dangerous, then reach, then occurrence). The cap is applied by the
+    caller so the full ordered list is available for the report's remainder count.
     """
+    from divergulent.classify import reach as reach_mod  # lazy: avoids an import cycle
     from divergulent.classify import risk as risk_mod  # lazy: avoids an import cycle
 
     groups = _index_groups(index_path)
     dangerous = _fingerprints_with_dangerous_construct(conn)
     risk_ranks = risk_mod.risk_rank_by_fingerprint(conn)
+    reach_ranks = reach_mod.reach_rank_by_fingerprint(conn)
     fingerprints = groups.keys() if scope == 'all' else verdict_mod.queue(conn)
 
     items: list[WorkItem] = []
@@ -238,7 +258,8 @@ def build_work_list(conn: sqlite3.Connection, index_path: str, *,
             n_occurrences=group['n_occurrences'],
             n_packages=len(group['packages']),
             has_dangerous_construct=fingerprint in dangerous,
-            risk_rank=risk_ranks.get(fingerprint, 0)))
+            risk_rank=risk_ranks.get(fingerprint, 0),
+            reach_rank=reach_ranks.get(fingerprint, 0)))
 
     items.sort(key=_priority_key, reverse=True)
     return items

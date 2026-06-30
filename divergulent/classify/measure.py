@@ -378,10 +378,13 @@ def write_index(corpus_dir: str, index_path: str) -> int:
             'CREATE TABLE package ('
             'source_package TEXT NOT NULL, '
             'version TEXT NOT NULL, '
-            'changelog_date TEXT)')
+            'changelog_date TEXT, '
+            'binaries TEXT)')
         connection.executemany(
-            'INSERT INTO package (source_package, version, changelog_date) VALUES (?, ?, ?)',
-            [(row['source_package'], row['version'], row.get('changelog_date'))
+            'INSERT INTO package (source_package, version, changelog_date, binaries) '
+            'VALUES (?, ?, ?, ?)',
+            [(row['source_package'], row['version'], row.get('changelog_date'),
+              json.dumps(row.get('binaries') or []))
              for row in package_rows])
         connection.execute('CREATE INDEX idx_package_source_package ON package (source_package)')
         connection.commit()

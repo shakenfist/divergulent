@@ -15,17 +15,21 @@ PATCH_B = '--- a/y\n+++ b/y\n@@ -2 +2 @@\n-c\n+d\n'
 
 
 def _fake_fetch(table):
-    """Build a fetch() over a dict ``{(pkg, ver): (format, texts)}``.
+    """Build a fetch() over a dict ``{(pkg, ver): (format, texts[, date[, binaries]])}``.
 
     A value of the string ``'raise'`` makes the fetch raise, exercising the
-    fetch-error path; otherwise the value is returned verbatim.
+    fetch-error path; otherwise the value is padded to the full
+    ``(format, texts, changelog_date, binaries)`` shape.
     """
     def fetch(source_package, version):
         value = table[(source_package, version)]
         if value == 'raise':
             raise RuntimeError('boom')
-        # Accept legacy 2-tuples (format, texts) and append a None changelog date.
-        return value if len(value) == 3 else (value[0], value[1], None)
+        # Accept legacy 2/3-tuples and pad missing changelog_date/binaries.
+        fmt, texts = value[0], value[1]
+        changelog = value[2] if len(value) >= 3 else None
+        binaries = value[3] if len(value) >= 4 else []
+        return fmt, texts, changelog, binaries
     return fetch
 
 
@@ -226,7 +230,8 @@ class EndToEndExtractTestCase(testtools.TestCase):
 
         def download(source_package, version, dest):
             with open(os.path.join(dest, 'pkg.dsc'), 'w') as handle:
-                handle.write('Format: 3.0 (quilt)\n')
+                handle.write('Format: 3.0 (quilt)\n'
+                             'Binary: real-pkg, libreal0, libreal-dev\n')
             with tarfile.open(os.path.join(dest, 'pkg.debian.tar.xz'), 'w:xz') as tar:
                 _add(tar, 'debian/patches/series', 'first.patch\nsecond.patch\n')
                 _add(tar, 'debian/patches/first.patch', PATCH_A)
@@ -246,6 +251,7 @@ class EndToEndExtractTestCase(testtools.TestCase):
         self.assertEqual('3.0 (quilt)', package_row['source_format'])
         self.assertEqual(2, package_row['n_patches'])
         self.assertEqual('2020-05-20', package_row['changelog_date'])  # top entry's date
+        self.assertEqual(['real-pkg', 'libreal0', 'libreal-dev'], package_row['binaries'])
         self.assertEqual(2, distinct_new)
         shas = {row['patch_name']: row['raw_sha256'] for row in patch_rows}
         self.assertEqual(body_sha256(PATCH_A), shas['first.patch'])

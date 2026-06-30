@@ -51,11 +51,12 @@ from divergulent.sources.apt_patches import deb_src_available, fetch_source_deta
 _TRANSIENT_ERROR_PREFIXES = ('fetch-failed', 'fetch-error')
 
 
-# A fetch returns ``(source_format, texts, changelog_date)`` like
+# A fetch returns ``(source_format, texts, changelog_date, binaries)`` like
 # ``fetch_source_details``: texts is ``{name: raw_text}`` (patched), ``{}`` (clean
 # quilt) or ``None`` (native / non-quilt / unresolved, disambiguated by
-# source_format); changelog_date is the package's last-upload date (ISO) or None.
-FetchResult = tuple["str | None", "dict[str, str] | None", "str | None"]
+# source_format); changelog_date is the package's last-upload date (ISO) or None;
+# binaries is the source's binary package names (for the reach axis) or [].
+FetchResult = tuple["str | None", "dict[str, str] | None", "str | None", "list[str]"]
 Fetch = Callable[[str, str], FetchResult]
 
 
@@ -219,11 +220,11 @@ def _process(source_package: str, version: str, *, corpus_dir: str,
     is how many bodies this package added to the store (for stats).
     """
     try:
-        source_format, texts, changelog_date = fetch(source_package, version)
+        source_format, texts, changelog_date, binaries = fetch(source_package, version)
     except Exception as exc:  # noqa: BLE001 -- record any fetch failure, never crash the crawl
         package_row = {
             'source_package': source_package, 'version': version, 'state': 'unknown',
-            'source_format': None, 'n_patches': 0, 'changelog_date': None,
+            'source_format': None, 'n_patches': 0, 'changelog_date': None, 'binaries': None,
             'error': 'fetch-error: %s' % exc}
         return package_row, [], 0
 
@@ -242,7 +243,7 @@ def _process(source_package: str, version: str, *, corpus_dir: str,
     package_row = {
         'source_package': source_package, 'version': version, 'state': state,
         'source_format': source_format, 'n_patches': len(patch_rows),
-        'changelog_date': changelog_date, 'error': error}
+        'changelog_date': changelog_date, 'binaries': binaries, 'error': error}
     return package_row, patch_rows, distinct_new
 
 
