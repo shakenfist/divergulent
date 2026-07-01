@@ -1,9 +1,11 @@
 """Pure, versioned normalisation and fingerprinting of unified-diff patch bodies.
 
-Curation-side only: this runs centrally in the builder to deduplicate carried
-patches; no client command imports it. The functions here are pure -- no I/O,
-no network -- so a corpus can be re-normalised and re-measured offline without
-re-crawling the archive.
+Primarily curation-side: this runs centrally in the builder to deduplicate
+carried patches. The CLIENT also imports it, for one narrow purpose -- to hash a
+patch it has already fetched and join it to the published classification bundle
+(hashing a diff is not classifying it; no rule and no LLM run on the client). The
+functions here are pure -- no I/O, no network -- so a corpus can be re-normalised
+offline and the client's join key always matches the curation side's exactly.
 
 A patch's classification is a property of its *content*, so the fingerprint key
 is ``sha256(normalise(diff_body))``. We normalise the diff to a canonical form

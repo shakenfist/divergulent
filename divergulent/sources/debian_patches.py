@@ -20,6 +20,7 @@ import urllib.parse
 from dataclasses import dataclass
 
 from divergulent import dep3
+from divergulent.classify import fingerprint
 from divergulent.dep3 import BugRef, PatchClass
 from divergulent.http import HttpClient
 
@@ -57,6 +58,11 @@ class PatchDetail:
     description: str | None
     forwarded: str | None
     bugs: list[BugRef]
+    # The content fingerprint (bare hex digest) of the normalised diff body, or
+    # None when the patch text could not be fetched. This is the join key into the
+    # published classification bundle: the client HASHES the patch it already
+    # fetched (hashing is not classifying) and looks the verdict up.
+    fingerprint: str | None = None
 
 
 @dataclass(frozen=True)
@@ -69,14 +75,22 @@ class PackagePatches:
 
 
 def patch_detail(name: str, text: str) -> PatchDetail:
-    '''Build a PatchDetail from a patch's raw text via DEP-3.'''
+    '''Build a PatchDetail from a patch's raw text via DEP-3.
+
+    Also computes the content fingerprint (the same normalised-diff hash the
+    curation side keys the classification ledger on) so the client can look the
+    patch's verdict up in the published bundle. Hashing the diff is not
+    classifying it: no rule and no LLM runs here.
+    '''
     fields = dep3.parse_header(text)
+    _version, digest = fingerprint.fingerprint(text)
     return PatchDetail(
         name=name,
         patch_class=dep3.classify(text, name),
         description=fields.get('description') or fields.get('subject'),
         forwarded=fields.get('forwarded'),
-        bugs=dep3.bug_references(text))
+        bugs=dep3.bug_references(text),
+        fingerprint=digest)
 
 
 def _quote(value: str) -> str:
