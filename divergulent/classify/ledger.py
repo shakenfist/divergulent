@@ -272,12 +272,25 @@ def create_ledger(path: str) -> sqlite3.Connection:
         os.makedirs(directory, exist_ok=True)
 
     conn = sqlite3.connect(path)
-    conn.execute(
-        'CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+    create_schema(conn)
     conn.executemany(
         'INSERT INTO meta (key, value) VALUES (?, ?)',
         [('schema_version', str(LEDGER_SCHEMA_VERSION)),
          ('category_enum_version', str(CATEGORY_ENUM_VERSION))])
+    conn.commit()
+    return conn
+
+
+def create_schema(conn: sqlite3.Connection) -> None:
+    """Lay down every ledger table + index on ``conn``; seed no rows.
+
+    The pure DDL, split out of :func:`create_ledger` so a faithful reconstruction
+    (:mod:`divergulent.classify.export`'s import) can recreate the schema and then
+    insert the exported rows verbatim -- including the ``meta`` seed rows -- with no
+    primary-key clash.  :func:`create_ledger` calls this and then seeds ``meta``.
+    """
+    conn.execute(
+        'CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
 
     # The rule registry.  (rule_id, version) is the PK so a bumped version is a
     # new row alongside the old, never a replacement.
@@ -357,9 +370,6 @@ def create_ledger(path: str) -> sqlite3.Connection:
     conn.execute('CREATE INDEX idx_observation_fingerprint ON observation (fingerprint)')
 
     ensure_note_table(conn)
-
-    conn.commit()
-    return conn
 
 
 def ensure_note_table(conn: sqlite3.Connection) -> None:

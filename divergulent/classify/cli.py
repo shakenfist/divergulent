@@ -23,17 +23,22 @@ from divergulent.classify import workspace
 # Verbs that forward to an existing module ``main``, and how to splice the
 # resolved paths into that main's argv (everything the operator typed after the
 # verb is appended verbatim as ``rest``).
-_FORWARDING_VERBS = ('record', 'triage', 'risk', 'review', 'requeue', 'history', 'web', 'report')
+_FORWARDING_VERBS = ('record', 'triage', 'risk', 'review', 'requeue', 'history', 'web',
+                     'report', 'export')
 
 # Verbs that forward but operate on the CORPUS only (no ledger needed) -- e.g.
 # pulling a popcon snapshot for the reach axis, which writes corpus/popcon.sqlite.
 _CORPUS_VERBS = ('popcon',)
 
+# Verbs that CREATE the ledger, so must not require one to already exist -- e.g.
+# rebuilding it from a committed JSONL export on a fresh CI checkout.
+_LEDGER_WRITING_VERBS = ('import',)
+
 # Verbs that need a built ledger to do anything; checked up front so the operator
 # gets one clear message instead of a deeper failure.
 _NEEDS_LEDGER = (*_FORWARDING_VERBS, 'status')
 
-_ALL_VERBS = (*_FORWARDING_VERBS, *_CORPUS_VERBS, 'status', 'init')
+_ALL_VERBS = (*_FORWARDING_VERBS, *_CORPUS_VERBS, *_LEDGER_WRITING_VERBS, 'status', 'init')
 
 # A stored published bundle older than this nags the operator to re-pull it.
 CACHE_STALE_DAYS = 14
@@ -185,6 +190,15 @@ def _forward(verb: str, ws: workspace.Workspace, rest: list[str]) -> int:
         # axis input). Corpus-only: no ledger required.
         from divergulent.classify import popcon
         return popcon.main([corpus, *rest])
+    if verb == 'export':
+        # Serialise the ledger to canonical JSONL -- the committed source of truth
+        # CI publishes from. Default output is the ledger with a .jsonl suffix.
+        from divergulent.classify import export
+        return export.main(['export', ledger, *rest])
+    if verb == 'import':
+        # Rebuild the ledger sqlite from a committed JSONL export (the CI side).
+        from divergulent.classify import export
+        return export.main(['import', *rest, '--ledger', ledger])
     raise AssertionError('unhandled verb %r' % verb)  # pragma: no cover
 
 
