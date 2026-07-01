@@ -16,7 +16,17 @@ however much LLM/human residue is decided so far), and each future review sessio
 just enriches a bundle that already ships. This decouples the shippable product
 from the completeness of the human-review grind.
 
-**Status: plan drafted (P1–P5 not started).**
+**Status: implemented (P1–P5).** The ledger JSONL export/import (`export.py`,
+round-trip-tested), the lean signed-able bundle (`classification_bundle.py`,
+mirroring `bundle.py`, no raw evidence), the client consumption (`cache
+pull-classification` + `show` rendering by hashing the patch body; the classify
+import chain the client pulls in is stdlib-only), and the CI publish path
+(`tools/build-classification.sh` + `publish-classification.sh` +
+`build-classification.yml`, reusing the keyless `sign-bundle.sh`) are built and
+offline-tested. As with the cache-publish phase, a real signed publish run is
+validated after merge (it needs the ledger data repo + a read token wired). The
+open questions below (evidence inline vs split, per-source rollup, data-repo home)
+remain deferred follow-ups.
 
 ## The mechanics question this phase must answer
 
