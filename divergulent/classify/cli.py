@@ -24,7 +24,7 @@ from divergulent.classify import workspace
 # resolved paths into that main's argv (everything the operator typed after the
 # verb is appended verbatim as ``rest``).
 _FORWARDING_VERBS = ('record', 'triage', 'risk', 'review', 'requeue', 'history', 'web',
-                     'report', 'export')
+                     'report', 'export', 'bundle')
 
 # Verbs that forward but operate on the CORPUS only (no ledger needed) -- e.g.
 # pulling a popcon snapshot for the reach axis, which writes corpus/popcon.sqlite.
@@ -199,6 +199,10 @@ def _forward(verb: str, ws: workspace.Workspace, rest: list[str]) -> int:
         # Rebuild the ledger sqlite from a committed JSONL export (the CI side).
         from divergulent.classify import export
         return export.main(['import', *rest, '--ledger', ledger])
+    if verb == 'bundle':
+        # Build the lean, publishable classification bundle from the ledger.
+        from divergulent.classify import classification_bundle
+        return classification_bundle.main([ledger, *rest])
     raise AssertionError('unhandled verb %r' % verb)  # pragma: no cover
 
 

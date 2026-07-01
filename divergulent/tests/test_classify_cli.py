@@ -85,6 +85,13 @@ class ForwardingTestCase(DispatcherFixture, testtools.TestCase):
         self.assertEqual(0, rc)
         m.assert_called_once_with([str(ws.corpus_dir), '--date', '2026-06-28'])
 
+    def test_bundle_forwards_ledger_and_rest(self):
+        ws = self._root()
+        with mock.patch('divergulent.classify.classification_bundle.main', return_value=0) as m:
+            rc, _ = self._run(['--data', str(ws.root), 'bundle', '--release', 'trixie'])
+        self.assertEqual(0, rc)
+        m.assert_called_once_with([str(ws.ledger), '--release', 'trixie'])
+
     def test_export_forwards_ledger_and_rest(self):
         ws = self._root()
         with mock.patch('divergulent.classify.export.main', return_value=0) as m:
