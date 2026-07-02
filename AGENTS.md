@@ -302,16 +302,49 @@ a `.divergulent` marker beside `corpus/`+`cache/`, discovered git-style via
 `--data`/`DIVERGULENT_DATA`/walk-up) and **forwards** to each command's existing
 module main with the ledger/corpus paths spliced in — so verbs (`status`,
 `record`, `triage`, `risk`, `review`, `web`, `report`, `requeue`, `history`,
-`popcon`, `init`) take no paths (`record` re-applies the deterministic rules to the
+`popcon`, `export`, `import`, `bundle`, `init`) take no paths (`record` re-applies
+the deterministic rules to the
 existing ledger — the recurring "I changed a rule, re-apply it" pass; `popcon`
 pulls the reach axis's install-base snapshot into `corpus/popcon.sqlite` and is
-**corpus-only**, needing no ledger; the one-time corpus/`build` steps stay
+**corpus-only**, needing no ledger; `export`/`import` serialise the ledger to/from
+the committed JSONL source of truth and `bundle` builds the publishable bundle —
+the phase-5 publish path below; `import` **creates** the ledger, so it needs none
+to pre-exist; the one-time corpus/`build` steps stay
 longhand, as they create the root's contents). It guards the forgetful operator: a missing ledger or a not-a-root cwd is a
 clear error not a crash, and a **stale published cache** is loudly flagged before
 data-consuming verbs. `status` is the one-screen orientation (residue, categories,
 risk distribution, pending review, cache age). The old `python -m
 divergulent.classify.<x>` forms still work. See
 `docs/plans/PLAN-curation-cli-ergonomics.md`.
+
+Phase 5 (`export.py`/`classification_bundle.py` + the client half) publishes the
+curation work. The load-bearing decision is **provenance**: the divergence cache
+is a pure function of the archive (CI regenerates it), but the classification
+ledger embeds irreproducible human + verified-LLM verdicts, so it is the **source
+of truth** and reaches CI as a **committed JSONL export** — never the sqlite
+(binary: unreviewable diffs, unmergeable, bloats git). `export.py` serialises every
+table verbatim (ids preserved, so verdict precedence — which tie-breaks on
+`decision.id` — survives) and rebuilds a faithful sqlite via `ledger.create_schema`;
+the round-trip (`import(export(L)) == L`, byte-deterministic, idempotent) is the
+trust anchor. The operator's `export → commit → push` is the **sole human-in-the-
+loop publish gate** — the diff is a reviewable "here are the verdicts I just added"
+— with no auto-created PR. `classification_bundle.py` mirrors `bundle.py` (a single
+gzipped, key-sorted JSON document, `schema`/`entry_schema`-versioned) and projects
+the ledger down to a **lean** fingerprint→verdict map: category + risk/reach/
+reviewability axes + a short provenance reason + the deciding rule, but **no raw
+LLM evidence** (that stays auditable in the export). CI builds it from the export
+(`tools/build-classification.sh`, pure Python — no archive/deb-src), signs it
+keyless (reusing `tools/sign-bundle.sh`) and publishes to the rolling
+`classification` release (`tools/publish-classification.sh`,
+`.github/workflows/build-classification.yml`). The **client** pulls it (`cache
+pull-classification`, signature-verified against `verify.CLASSIFICATION_SIGNER_IDENTITY`,
+no spot-check — a verdict has no live oracle), and `show` joins it by hashing each
+patch body it already fetched (`PatchDetail.fingerprint`, the same normalised-diff
+key; hashing ≠ classifying) to render the per-package breakdown + per-patch "why".
+The classify import chain the client now pulls in is stdlib-only, so the minimal
+install stays minimal. The bundle *grows* as review settles the residue —
+re-publishing just enriches it. See
+`docs/plans/PLAN-patch-classification-phase-05-bundle.md`.
 
 `python -m divergulent.classify.review_web` (in `review_web.py`) is a **local
 web UI over the same review machinery** — it reuses `build_review_context` and

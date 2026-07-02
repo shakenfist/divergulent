@@ -40,6 +40,12 @@ EXPECTED_SIGNER_ISSUER = 'https://token.actions.githubusercontent.com'
 EXPECTED_SIGNER_IDENTITY = (
     'https://github.com/shakenfist/divergulent/.github/workflows/build-cache.yml@refs/heads/main')
 
+# The classification bundle is published and signed by its own workflow, so it has
+# its own expected signer identity (the issuer is the same GitHub OIDC issuer).
+CLASSIFICATION_SIGNER_IDENTITY = (
+    'https://github.com/shakenfist/divergulent/.github/workflows/'
+    'build-classification.yml@refs/heads/main')
+
 # Default number of bundle entries to spot-check against the live origin. Small,
 # to stay a polite client; the live half is the unthrottled sources.debian.org.
 DEFAULT_SPOT_CHECK = 8

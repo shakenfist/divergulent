@@ -246,6 +246,26 @@ installed-package inventory never leaves the machine.
   not-a-root cwd, and a loud nag when the published **cache looks stale** — and
   `status` is the one-screen orientation. The old `python -m
   divergulent.classify.<x>` forms still work.
+- `divergulent/classify/export.py` (the `export`/`import` verbs) — the ledger's
+  **committed source of truth**. The classification ledger embeds irreproducible
+  human + verified-LLM verdicts, so it reaches CI as a canonical **JSONL export**,
+  never the sqlite (binary: unreviewable, unmergeable, bloats git). `export_ledger`
+  serialises every table verbatim, stably ordered so two exports are byte-identical;
+  `import_ledger` rebuilds a faithful sqlite (ids preserved, so the derived verdict —
+  which tie-breaks on `decision.id` — is identical) via `ledger.create_schema`. The
+  round-trip is the trust anchor; the operator's `export → commit → push` is the
+  human-in-the-loop publish gate (a reviewable diff).
+- `divergulent/classify/classification_bundle.py` (the `bundle` verb) — the
+  publishable half, mirroring `bundle.py`: a single gzipped, key-sorted JSON
+  document, `schema`/`entry_schema`-versioned, keyed by patch fingerprint.
+  `build_classification_bundle` projects the ledger down to a **lean**
+  fingerprint→verdict map (category + risk/reach/reviewability + a short provenance
+  reason + the deciding rule) with **no raw LLM evidence** (that stays in the
+  export). CI builds it from the export (`tools/build-classification.sh`, pure
+  Python), signs keyless (`tools/sign-bundle.sh`) and publishes to the rolling
+  `classification` release (`build-classification.yml`); the client pulls it (`cache
+  pull-classification`) and `show` joins by hashing the patch body it already
+  fetched. It *grows* as review settles the residue.
 - `divergulent/bundle.py` — the precomputed cache **bundle** schema, a
   gzipped-JSON `write()` and `load()`. A bundle is the shareable half of
   a cold run: staleness and divergence for a whole Debian release,

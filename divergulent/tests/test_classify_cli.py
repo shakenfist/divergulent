@@ -85,6 +85,30 @@ class ForwardingTestCase(DispatcherFixture, testtools.TestCase):
         self.assertEqual(0, rc)
         m.assert_called_once_with([str(ws.corpus_dir), '--date', '2026-06-28'])
 
+    def test_bundle_forwards_ledger_and_rest(self):
+        ws = self._root()
+        with mock.patch('divergulent.classify.classification_bundle.main', return_value=0) as m:
+            rc, _ = self._run(['--data', str(ws.root), 'bundle', '--release', 'trixie'])
+        self.assertEqual(0, rc)
+        m.assert_called_once_with([str(ws.ledger), '--release', 'trixie'])
+
+    def test_export_forwards_ledger_and_rest(self):
+        ws = self._root()
+        with mock.patch('divergulent.classify.export.main', return_value=0) as m:
+            rc, _ = self._run(['--data', str(ws.root), 'export', '--output', '/tmp/l.jsonl'])
+        self.assertEqual(0, rc)
+        m.assert_called_once_with(['export', str(ws.ledger), '--output', '/tmp/l.jsonl'])
+
+    def test_import_forwards_input_and_dest_ledger(self):
+        # import REBUILDS the ledger, so it must not require one to pre-exist and it
+        # forwards the dest ledger as --ledger with the input JSONL as the positional.
+        ws = self._root(with_ledger=False)
+        with mock.patch('divergulent.classify.export.main', return_value=0) as m:
+            rc, out = self._run(['--data', str(ws.root), 'import', 'in.jsonl'])
+        self.assertEqual(0, rc)
+        self.assertNotIn('no ledger', out)
+        m.assert_called_once_with(['import', 'in.jsonl', '--ledger', str(ws.ledger)])
+
     def test_popcon_does_not_require_a_ledger(self):
         # popcon writes corpus/popcon.sqlite; it is a corpus-only verb, so a missing
         # ledger must NOT block it (unlike the ledger-consuming verbs).
