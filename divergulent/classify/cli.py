@@ -191,12 +191,14 @@ def _forward(verb: str, ws: workspace.Workspace, rest: list[str]) -> int:
         from divergulent.classify import popcon
         return popcon.main([corpus, *rest])
     if verb == 'export':
-        # Serialise the ledger to canonical JSONL -- the committed source of truth
-        # CI publishes from. Default output is the ledger with a .jsonl suffix.
+        # Serialise the ledger to the sharded JSONL export -- the committed source
+        # of truth CI publishes from. Default output is a ledger/ dir at the data
+        # root (an operator --output in rest overrides, argparse last-wins).
         from divergulent.classify import export
-        return export.main(['export', ledger, *rest])
+        default_out = os.path.join(str(ws.root), 'ledger')
+        return export.main(['export', ledger, '--output', default_out, *rest])
     if verb == 'import':
-        # Rebuild the ledger sqlite from a committed JSONL export (the CI side).
+        # Rebuild the ledger sqlite from a committed sharded export dir (CI side).
         from divergulent.classify import export
         return export.main(['import', *rest, '--ledger', ledger])
     if verb == 'bundle':

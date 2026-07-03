@@ -92,12 +92,15 @@ class ForwardingTestCase(DispatcherFixture, testtools.TestCase):
         self.assertEqual(0, rc)
         m.assert_called_once_with([str(ws.ledger), '--release', 'trixie'])
 
-    def test_export_forwards_ledger_and_rest(self):
+    def test_export_forwards_ledger_and_default_output_dir(self):
+        # The dispatcher injects a default --output of <root>/ledger (the tracked
+        # export dir); an operator --output in rest would override it (last-wins).
         ws = self._root()
+        default_out = os.path.join(str(ws.root), 'ledger')
         with mock.patch('divergulent.classify.export.main', return_value=0) as m:
-            rc, _ = self._run(['--data', str(ws.root), 'export', '--output', '/tmp/l.jsonl'])
+            rc, _ = self._run(['--data', str(ws.root), 'export'])
         self.assertEqual(0, rc)
-        m.assert_called_once_with(['export', str(ws.ledger), '--output', '/tmp/l.jsonl'])
+        m.assert_called_once_with(['export', str(ws.ledger), '--output', default_out])
 
     def test_import_forwards_input_and_dest_ledger(self):
         # import REBUILDS the ledger, so it must not require one to pre-exist and it

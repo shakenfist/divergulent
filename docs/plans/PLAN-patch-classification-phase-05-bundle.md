@@ -16,8 +16,9 @@ however much LLM/human residue is decided so far), and each future review sessio
 just enriches a bundle that already ships. This decouples the shippable product
 from the completeness of the human-review grind.
 
-**Status: implemented (P1–P5).** The ledger JSONL export/import (`export.py`,
-round-trip-tested), the lean signed-able bundle (`classification_bundle.py`,
+**Status: implemented (P1–P5).** The ledger export/import (`export.py`,
+round-trip-tested; a directory of compact JSONL, the big append-only tables
+sharded by month so no file crosses GitHub's 100 MB limit), the lean signed-able bundle (`classification_bundle.py`,
 mirroring `bundle.py`, no raw evidence), the client consumption (`cache
 pull-classification` + `show` rendering by hashing the patch body; the classify
 import chain the client pulls in is stdlib-only), and the CI publish path
@@ -54,14 +55,14 @@ text export, never the sqlite** — falls directly out of that provenance split.
 | | Source of truth (Artifact A) | Published bundle (Artifact B) |
 |---|---|---|
 | **What** | The full append-only ledger | Derived current verdicts, lean |
-| **Format** | Canonical **JSONL** (text) | Gzipped sorted **JSON** (like `bundle.py`) |
+| **Format** | A directory of compact **JSONL**, big tables month-sharded | Gzipped sorted **JSON** (like `bundle.py`) |
 | **Contains** | Every `decision`/`observation`/`review`/`note`/`rule` row, incl. raw LLM evidence | Per-fingerprint category + risk/reach/reviewability + short reason + deciding rule/version. **No raw LLM dumps.** |
 | **Home** | A git data repo (committed, reviewable) | A GitHub Release tag (`classification`), Sigstore-signed |
 | **Built by** | The operator's `export` verb | CI, from Artifact A |
 | **Consumed by** | CI (rebuilds sqlite, derives verdicts) | Clients (`cache pull` + `report`/`show`) |
-| **Size** | Grows unbounded; text → git delta-compresses | Few MB gzipped; capped by dropping evidence |
+| **Size** | Grows unbounded, but month-sharded so no file crosses 100 MB | Few MB gzipped; capped by dropping evidence |
 
-### We do **not** commit the sqlite ledger — we commit a JSONL export
+### We do **not** commit the sqlite ledger — we commit a sharded JSONL export
 
 The sqlite file is a *derived working copy* on both ends, gitignored. Committing it
 would be wrong on every axis:
@@ -72,25 +73,38 @@ would be wrong on every axis:
 - **Off-pattern**: the project already publishes its bundle as gzipped *JSON*
   (`bundle.py`), not sqlite — sqlite-as-artifact is foreign here.
 
-Instead, `export` serialises the ledger to **canonical JSONL** — one row per line,
-stable field order, sorted by `(table, fingerprint, id)` so the same ledger always
-yields byte-identical output. The ledger is an append-only *log*; JSONL is its
-natural on-disk form. Properties we get for free:
+Instead, `export` serialises the ledger to a **directory** of compact JSONL — one
+row per line, key-sorted, null columns omitted (import restores them from the
+schema defaults). The two big append-only tables (`decision`, `observation`) are
+**sharded by the calendar month** of their timestamp (`ledger/decision-2026-07.jsonl`);
+the small bounded tables (`rule`, `note`, `meta`, `review_queue`) are whole; a
+`ledger/manifest.json` lists the shards and the format version. Everything is
+deterministic, so the same ledger always yields byte-identical files.
+
+Why a directory of month-shards rather than one file: the ledger is append-only and
+**grows without bound** — every re-triage or re-review supersedes rows but keeps
+them — so any single file would eventually cross GitHub's 100 MB per-file limit.
+Sharding by month bounds every file (new work appends to the current month; a
+supersession is a small edit to one old shard) and scales indefinitely. *(Measured:
+the first real export is 144,348 rows / ~56 MB compact, largest single shard 34 MB —
+comfortably under even the 50 MB warning, versus one 68 MB file before.)* Properties
+we get for free:
 
 - **The commit diff is the human-in-the-loop publish gate.** "Operator added 47
   human verdicts to `security`" is *visible in review* before anything goes public
   — the no-cry-wolf discipline applied to the classifier itself, and a fit for the
   operator's standing rule that they are involved in every publish.
-- **git stays lean** (append-ordered text appends, clean deltas).
-- **Round-trip is testable**: `import(export(L))` must reproduce `L` exactly, and
-  re-import must be idempotent. This is the trust anchor for the whole pipeline.
+- **git stays lean** (append-ordered text appends to the current month, clean deltas).
+- **Round-trip is testable**: `import(export(L))` must reproduce `L` exactly (ids
+  included), and re-export must be byte-identical. This is the trust anchor for the
+  whole pipeline.
 
 ### The pipeline, end to end
 
 ```
  operator (local)                          git data repo            CI (GitHub Actions)            client
  ───────────────                           ─────────────            ───────────────────            ──────
- review → ledger.sqlite  ──export──▶  ledger.jsonl (in divergulent-reviews)
+ review → ledger.sqlite  ──export──▶  ledger/*.jsonl (sharded, in divergulent-reviews)
  (gitignored, working)                       │  commit + push  ──▶  import → temp sqlite
                                              │  (reviewable diff)    rebuild_current_verdict
                                              │                       + join risk/reach/review axes
@@ -139,11 +153,11 @@ verdict so "why" is auditable client-side.
 ### Where the data repo lives
 
 **Resolved:** a dedicated **public** GitHub repo, `shakenfist/divergulent-reviews`,
-holding the ledger export as `ledger.jsonl` at its root. The former data root moved
-off scratch storage (`/srv/nobackups/divergulent`, unbacked) into this repo, with
-the large regenerable working files (`corpus/bodies/`, the `*.sqlite` ledger/index/
-popcon, the corpus `*.jsonl` dumps) gitignored — only `ledger.jsonl` and the
-analysis notes are tracked. Rationale: keeps the code repo's history clean of the
+holding the sharded ledger export under `ledger/` at its root. The former data root
+moved off scratch storage (`/srv/nobackups/divergulent`, unbacked) into this repo,
+with the large regenerable working files (`corpus/bodies/`, the `*.sqlite` ledger/
+index/popcon, the corpus `*.jsonl` dumps) gitignored — only the `ledger/` export dir
+and the analysis notes are tracked. Rationale: keeps the code repo's history clean of the
 dataset; **public** means the GitHub Actions publish workflow clones it with no
 token (the default `github.token` suffices) and it is the natural seed for the
 *shared community classification ledger* the master plan anticipates; the review
@@ -196,14 +210,15 @@ Everything offline-tested; the bundle reuses the divergence-cache trust model wh
 
 ## Open questions
 
-- **Evidence in the export: full vs split.** Committing full raw LLM responses
-  inline keeps Artifact A self-contained but grows the JSONL. Alternative: a
-  compact verdict JSONL for the reviewable diff + a content-addressed evidence
-  store (like patch bodies) committed alongside. Lean: full-inline for the first
-  cut (git compresses it); split when size warrants. **Data point:** the first real
-  export (144,348 rows: 75,675 decisions + 64,793 observations) is **~68 MB**, which
-  already draws GitHub's >50 MB large-file warning; as the ledger grows toward the
-  100 MB hard per-file limit, the split (or git-lfs) becomes necessary.
+- **Evidence in the export: full vs split.** *Resolved: keep inline.* The first
+  real export (144,348 rows) is ~68 MB as one file and drew GitHub's >50 MB warning,
+  but the driver turned out to be **row count × structure (~75%), not evidence
+  (~25%)** — and the growth is fundamentally unbounded (append-only). So the fix was
+  **month-sharding + compaction** (largest shard now 34 MB, no warning), not evidence
+  removal. Evidence stays inline: a re-triage burst still fits within one month's
+  shard under 100 MB. If a single month ever gets fat, splitting raw evidence to a
+  content-addressed store (like `corpus/bodies/`) is the next lever — additive, not a
+  rework.
 - **Cheap per-package overview.** Should the bundle also ship a
   `(source, version) → category counts` rollup so the *polite* tier-1 overview can
   show categories without fetching bodies? Cheaper client UX, larger + version-

@@ -22,8 +22,8 @@ on:
         description: Debian release codename the bundle describes
         default: trixie
       ledger_path:
-        description: Path to the ledger JSONL export within the data repo
-        default: ledger.jsonl
+        description: Path to the sharded ledger export directory within the data repo
+        default: ledger
       publish:
         description: Publish the bundle to the rolling 'classification' release
         type: boolean
