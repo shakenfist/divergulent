@@ -203,6 +203,29 @@ and any bug references the patch declares (Debian references are linked
 to bugs.debian.org). A patch that declares no bug shows "none declared"
 — it means the patch does not reference one, not that none exists.
 
+### Patch classification (an optional second bundle)
+
+Beyond the DEP-3 forwarded/Debian-only class, there is a richer,
+curated **classification** of what each patch actually *is* — its
+category (security, feature, bugfix, packaging, documentation, test…),
+plus security-risk, install-base *reach*, and reviewability axes. That
+curation is expensive (deterministic rules, a verified LLM tier, and
+human review), so like the divergence cache it is done **once, centrally**
+and published as a small signed bundle keyed by patch fingerprint. Pull
+it and `show` annotates each patch with its category and *why*:
+
+```bash
+divergulent cache pull-classification   # download + verify + store this release's bundle
+divergulent show bash                    # patches now carry: class, axes, and the deciding rule
+```
+
+The client runs **no** classifier and **no** LLM — it hashes the patch
+body it already fetched and looks the verdict up in the bundle (hashing a
+diff is not classifying it). Without the bundle, `show` behaves exactly
+as before. The bundle is signed and verified the same way as the
+divergence cache; it *grows* as review settles more of the residue, so
+re-pulling simply enriches what you see.
+
 ## Status
 
 Five commands work against real data: `divergulent inventory` (installed

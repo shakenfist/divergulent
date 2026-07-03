@@ -14,6 +14,7 @@ from divergulent import bundle
 from divergulent import inventory
 from divergulent import score
 from divergulent import verify
+from divergulent.classify import classification_bundle
 from divergulent.cache import Cache, default_cache_dir
 from divergulent.dep3 import PatchClass
 from divergulent.http import HttpClient
@@ -47,6 +48,14 @@ DEFAULT_WORKERS = 8
 # --cache-url to use a mirror or a hand-hosted bundle.
 DEFAULT_CACHE_URL_TEMPLATE = (
     'https://github.com/shakenfist/divergulent/releases/download/cache/cache-%s.json.gz')
+
+# Where `cache pull-classification` fetches the classification bundle from. Like
+# the divergence cache it is uploaded to a rolling, in-place prerelease tag
+# ('classification') by its publisher (build-classification.yml), so this is a
+# stable URL. Override with --cache-url.
+DEFAULT_CLASSIFICATION_URL_TEMPLATE = (
+    'https://github.com/shakenfist/divergulent/releases/download/'
+    'classification/classification-%s.json.gz')
 
 # How recent a stored bundle's staleness data must be to be trusted. Divergence
 # is immutable and never expires; staleness ages, but a stale "newest" can only
@@ -270,6 +279,14 @@ def _build_parser():
         '--cache-url', default=None,
         help='URL to download the bundle from (default: the GitHub Releases asset for this release).')
     _add_verify_arguments(pullcmd)
+
+    pullclasscmd = cachesub.add_parser(
+        'pull-classification',
+        help='Download, verify and store the patch classification bundle for this Debian release.')
+    pullclasscmd.add_argument(
+        '--cache-url', default=None,
+        help='URL to download the classification bundle from (default: the GitHub Releases asset).')
+    _add_verify_arguments(pullclasscmd)
 
     verifycmd = cachesub.add_parser(
         'verify', help='Re-verify a stored or given cache bundle (signature and spot-check).')
@@ -918,14 +935,119 @@ def _cache_verify_command(args):
     return 1
 
 
+def _usable_classification(release):
+    '''Load the stored classification bundle for ``release``, or None.
+
+    Returns the ClassificationBundle when one is stored, readable, and of a
+    recognised schema for this release; otherwise None (so ``show`` simply omits
+    the classification, never guesses). A present-but-unusable bundle warns.
+    '''
+    if release is None:
+        return None
+    path = classification_bundle.stored_path(default_cache_dir(), release)
+    if not path.exists():
+        return None
+    try:
+        loaded = classification_bundle.load(path)
+    except (OSError, ValueError, KeyError):
+        print('divergulent: classification bundle could not be read; omitting.', file=sys.stderr)
+        return None
+    if (loaded.schema, loaded.entry_schema) != (
+            classification_bundle.CLASSIFICATION_SCHEMA_VERSION,
+            classification_bundle.ENTRY_SCHEMA_VERSION):
+        print('divergulent: classification bundle schema not recognised; omitting.', file=sys.stderr)
+        return None
+    return loaded
+
+
+def _validate_classification(data):
+    '''Parse downloaded bytes into a ClassificationBundle, or None (with a notice).'''
+    try:
+        loaded = classification_bundle.loads(data)
+    except (OSError, ValueError, KeyError):
+        print('divergulent: classification bundle could not be read.', file=sys.stderr)
+        return None
+    if (loaded.schema, loaded.entry_schema) != (
+            classification_bundle.CLASSIFICATION_SCHEMA_VERSION,
+            classification_bundle.ENTRY_SCHEMA_VERSION):
+        print('divergulent: classification bundle schema not recognised.', file=sys.stderr)
+        return None
+    return loaded
+
+
+def _cache_pull_classification_command(args):
+    release = _detect_release()
+    if release is None:
+        print('divergulent: could not detect the Debian release; cannot choose a bundle.', file=sys.stderr)
+        return 1
+
+    url = args.cache_url or (DEFAULT_CLASSIFICATION_URL_TEMPLATE % release)
+    http = _http_client()
+    data = http.get_bytes(url)
+    if data is None:
+        print('divergulent: could not download a classification bundle from %s' % url, file=sys.stderr)
+        return 1
+
+    loaded = _validate_classification(data)
+    if loaded is None:
+        print('divergulent: not stored.', file=sys.stderr)
+        return 1
+
+    # The classification bundle is signed exactly like the divergence cache, but by
+    # its own workflow identity; a spot-check does not apply (there is no live
+    # oracle for a verdict), so we verify the signature only.
+    signature = http.get_bytes(url + verify.SIGNATURE_SUFFIX)
+    if not _verify_signature_only(data, signature, args,
+                                  identity=verify.CLASSIFICATION_SIGNER_IDENTITY):
+        print('divergulent: verification failed; not stored.', file=sys.stderr)
+        return 1
+
+    path = classification_bundle.stored_path(default_cache_dir(), release)
+    _atomic_write_bytes(path, data)
+    if signature is not None:
+        _atomic_write_bytes(Path(str(path) + verify.SIGNATURE_SUFFIX), signature)
+    print(
+        'divergulent: stored %s (%d bytes, %d verdicts, built %s)' % (
+            path, len(data), len(loaded.verdicts), loaded.generated_at),
+        file=sys.stderr)
+    return 0
+
+
+def _verify_signature_only(data, signature, args, *, identity):
+    '''Signature-only verification for a bundle with no live spot-check oracle.
+
+    Mirrors _verify_bundle's signature half: --insecure skips; a missing or
+    unverifiable signature is fatal only under --require-signature; a positive
+    verification failure is always fatal.
+    '''
+    if args.insecure:
+        print('divergulent: --insecure: skipping signature verification.', file=sys.stderr)
+        return True
+    if signature is None:
+        print('divergulent: no signature found for the bundle.', file=sys.stderr)
+        return not args.require_signature
+    result = verify.verify_signature(data, signature, identity=identity)
+    if result.status == verify.SignatureStatus.VERIFIED:
+        print('divergulent: signature verified (%s).' % result.detail, file=sys.stderr)
+        return True
+    if result.status == verify.SignatureStatus.SKIPPED:
+        print('divergulent: signature not checked: %s' % result.detail, file=sys.stderr)
+        return not args.require_signature
+    print('divergulent: signature verification FAILED: %s' % result.detail, file=sys.stderr)
+    return False
+
+
 def _cache_command(args):
     if args.cache_command == 'build':
         return _cache_build_command(args)
     if args.cache_command == 'pull':
         return _cache_pull_command(args)
+    if args.cache_command == 'pull-classification':
+        return _cache_pull_classification_command(args)
     if args.cache_command == 'verify':
         return _cache_verify_command(args)
-    print("divergulent: 'cache' needs a subcommand (build, pull, verify)", file=sys.stderr)
+    print("divergulent: 'cache' needs a subcommand (build, pull, pull-classification, verify)",
+          file=sys.stderr)
     return 1
 
 
@@ -967,7 +1089,32 @@ def _patch_class_counts(package):
         sum(1 for p in package.patches if p.patch_class == PatchClass.UNKNOWN))
 
 
-def _render_show(source, version, staleness, package, drift):
+def _classification_breakdown(package, verdicts):
+    '''``[(category, count), ...]`` over the package's fingerprinted patches.
+
+    Counts only patches whose fingerprint is present in the bundle; ordered most
+    common first, category name as the tiebreak so the line is deterministic.
+    '''
+    from collections import Counter
+    counts = Counter(
+        verdicts[p.fingerprint]['category']
+        for p in package.patches
+        if p.fingerprint and p.fingerprint in verdicts)
+    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+
+
+def _verdict_note(entry):
+    '''One-line "why" for a patch's verdict: category, axes, and the reason.'''
+    axes = []
+    for key in ('risk', 'reach', 'reviewability'):
+        if entry.get(key):
+            axes.append('%s %s' % (key, entry[key]))
+    axis_str = ' (%s)' % ', '.join(axes) if axes else ''
+    return 'class: %s%s -- %s' % (entry['category'], axis_str, entry.get('reason', ''))
+
+
+def _render_show(source, version, staleness, package, drift, classification=None):
+    verdicts = classification.verdicts if classification else {}
     newest = ' -> newest %s' % staleness.newest_version if staleness.newest_version else ''
     lines = [
         '%s %s' % (source, version),
@@ -978,9 +1125,18 @@ def _render_show(source, version, staleness, package, drift):
         debian_only, forwarded, unknown = _patch_class_counts(package)
         lines.append('  patches: %d total (%d Debian-only, %d forwarded, %d unknown)' % (
             len(package.patches), debian_only, forwarded, unknown))
+        if verdicts:
+            breakdown = _classification_breakdown(package, verdicts)
+            if breakdown:
+                lines.append('  classification: %s (bundle built %s)' % (
+                    ', '.join('%d %s' % (count, category) for category, count in breakdown),
+                    classification.generated_at))
         for patch in package.patches:
             lines.append('')
             lines.append('  %s  [%s]' % (patch.name, patch.patch_class.value))
+            entry = verdicts.get(patch.fingerprint) if patch.fingerprint else None
+            if entry:
+                lines.append('      %s' % _verdict_note(entry))
             if patch.description:
                 lines.append('      %s' % patch.description)
             if patch.bugs:
@@ -1008,6 +1164,11 @@ def _show_command(args):
         source_name, str(source_version), package.source_format, len(package.patches), package.state)
     drift = score.combine(staleness, summary)
 
+    # The classification is an optional, locally-stored bundle (pulled via
+    # `cache pull-classification`); absent, `show` behaves exactly as before.
+    classification = _usable_classification(_detect_release())
+    verdicts = classification.verdicts if classification else {}
+
     if args.json:
         debian_only, forwarded, unknown = _patch_class_counts(package)
         print(json.dumps({
@@ -1028,12 +1189,14 @@ def _show_command(args):
                     'class': p.patch_class.value,
                     'description': p.description,
                     'forwarded': p.forwarded,
+                    'fingerprint': p.fingerprint,
+                    'classification': verdicts.get(p.fingerprint) if p.fingerprint else None,
                     'bugs': [{'tracker': b.tracker, 'ref': b.ref, 'url': _bug_link(b)} for b in p.bugs],
                 }
                 for p in package.patches],
         }, indent=2))
     else:
-        print(_render_show(source_name, str(source_version), staleness, package, drift))
+        print(_render_show(source_name, str(source_version), staleness, package, drift, classification))
     return 0
 
 

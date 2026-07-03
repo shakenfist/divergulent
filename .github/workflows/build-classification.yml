@@ -1,0 +1,81 @@
+name: Build classification
+
+permissions:
+  contents: read
+
+# Builds the patch-classification bundle from the committed ledger JSONL export,
+# signs it, and (when asked) publishes it to the rolling 'classification'
+# prerelease so clients can pull it. Unlike the divergence cache this needs no
+# archive access -- the ledger export is the source of truth, so this job only
+# imports that text file and projects it to the lean signed bundle.
+#
+# The export lives in a separate data repo (its diff is the operator's reviewable
+# publish gate). Set the LEDGER_REPO variable and, for a private data repo, a
+# LEDGER_REPO_TOKEN secret with read access; the checkout below reads the export
+# from there. Manual for now (workflow_dispatch); a push trigger on the data repo
+# is the intended automation once the repo is settled.
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Debian release codename the bundle describes
+        default: trixie
+      ledger_path:
+        description: Path to the ledger JSONL export within the data repo
+        default: classification-ledger.jsonl
+      publish:
+        description: Publish the bundle to the rolling 'classification' release
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write  # publish the bundle to the 'classification' release
+      id-token: write  # keyless Sigstore signing of the bundle
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # setuptools_scm needs full history
+
+      - name: Checkout ledger data
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ vars.LEDGER_REPO || 'shakenfist/divergulent-ledger' }}
+          token: ${{ secrets.LEDGER_REPO_TOKEN || github.token }}
+          path: ledger-data
+
+      - name: Install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y -q python3 python3-venv python3-pip
+
+      - name: Build classification bundle
+        run: >-
+          tools/build-classification.sh
+          "classification-bundle/classification-${{ github.event.inputs.release }}.json.gz"
+          "ledger-data/${{ github.event.inputs.ledger_path }}"
+          "${{ github.event.inputs.release }}"
+
+      - name: Sign classification bundle
+        run: >-
+          tools/sign-bundle.sh
+          "classification-bundle/classification-${{ github.event.inputs.release }}.json.gz"
+
+      - name: Upload classification bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: classification-bundle
+          path: classification-bundle/
+
+      - name: Publish classification bundle
+        if: github.event.inputs.publish == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          tools/publish-classification.sh
+          "classification-bundle/classification-${{ github.event.inputs.release }}.json.gz"
