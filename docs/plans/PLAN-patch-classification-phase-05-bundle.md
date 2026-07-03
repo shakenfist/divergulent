@@ -90,7 +90,7 @@ natural on-disk form. Properties we get for free:
 ```
  operator (local)                          git data repo            CI (GitHub Actions)            client
  ───────────────                           ─────────────            ───────────────────            ──────
- review → ledger.sqlite  ──export──▶  classification-ledger.jsonl
+ review → ledger.sqlite  ──export──▶  ledger.jsonl (in divergulent-reviews)
  (gitignored, working)                       │  commit + push  ──▶  import → temp sqlite
                                              │  (reviewable diff)    rebuild_current_verdict
                                              │                       + join risk/reach/review axes
@@ -138,14 +138,20 @@ verdict so "why" is auditable client-side.
 
 ### Where the data repo lives
 
-Recommendation: a **dedicated GitHub data repo** (e.g. `shakenfist/divergulent-ledger`),
-private-able to start. Rationale: keeps the code repo's history clean of an
-unbounded dataset; readable by the GitHub Actions publish workflow without
-cross-host auth; and a dedicated ledger repo is the natural unit to later open as
-the *shared community classification ledger* the master plan anticipates ("private
-repo first; a shared ledger later"). A private GitLab home (the operator's usual
-pattern) is possible but adds cross-host CI friction, since signing/publish run on
-GitHub Actions — noted as an Open question, not the default.
+**Resolved:** a dedicated **public** GitHub repo, `shakenfist/divergulent-reviews`,
+holding the ledger export as `ledger.jsonl` at its root. The former data root moved
+off scratch storage (`/srv/nobackups/divergulent`, unbacked) into this repo, with
+the large regenerable working files (`corpus/bodies/`, the `*.sqlite` ledger/index/
+popcon, the corpus `*.jsonl` dumps) gitignored — only `ledger.jsonl` and the
+analysis notes are tracked. Rationale: keeps the code repo's history clean of the
+dataset; **public** means the GitHub Actions publish workflow clones it with no
+token (the default `github.token` suffices) and it is the natural seed for the
+*shared community classification ledger* the master plan anticipates; the review
+verdicts are judgements about public Debian patches, so nothing is sensitive.
+Durability comes from the git remote, not the local disk. (A private GitLab home —
+the operator's usual pattern — was considered but adds cross-host CI friction, since
+`actions/checkout` cannot clone GitLab without extra config; if the repo is ever
+made private, add a `LEDGER_REPO_TOKEN` secret with read access.)
 
 ## Steps
 
@@ -194,15 +200,16 @@ Everything offline-tested; the bundle reuses the divergence-cache trust model wh
   inline keeps Artifact A self-contained but grows the JSONL. Alternative: a
   compact verdict JSONL for the reviewable diff + a content-addressed evidence
   store (like patch bodies) committed alongside. Lean: full-inline for the first
-  cut (git compresses it); split when size warrants.
+  cut (git compresses it); split when size warrants. **Data point:** the first real
+  export (144,348 rows: 75,675 decisions + 64,793 observations) is **~68 MB**, which
+  already draws GitHub's >50 MB large-file warning; as the ledger grows toward the
+  100 MB hard per-file limit, the split (or git-lfs) becomes necessary.
 - **Cheap per-package overview.** Should the bundle also ship a
   `(source, version) → category counts` rollup so the *polite* tier-1 overview can
   show categories without fetching bodies? Cheaper client UX, larger + version-
   coupled bundle. Defer; key-by-fingerprint first.
-- **Data-repo home & visibility.** Dedicated GitHub repo (default, CI-friendly) vs
-  the operator's private GitLab (cross-host CI friction) vs an in-repo `ledger/`
-  directory (simplest, but bloats the code repo). Private-first then open as a
-  community ledger.
+- **Data-repo home & visibility.** *Resolved:* the public
+  `shakenfist/divergulent-reviews` repo (see the design decision above).
 - **Bundle size budget.** ~60k fingerprints × lean verdict ≈ a few MB gzipped —
   confirm against the 0.73 MB divergence-cache norm and trim `reason` length if
   needed.
