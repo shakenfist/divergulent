@@ -8,13 +8,13 @@
 # verdicts); this script never regenerates it, only republishes from it.
 set -euo pipefail
 
-output="${1:?usage: build-classification.sh <output.json.gz> <ledger.jsonl> <release>}"
-export_jsonl="${2:?usage: build-classification.sh <output.json.gz> <ledger.jsonl> <release>}"
+output="${1:?usage: build-classification.sh <output.json.gz> <ledger-export-dir> <release>}"
+export_dir="${2:?usage: build-classification.sh <output.json.gz> <ledger-export-dir> <release>}"
 release="${3:-unknown}"
 mkdir -p "$(dirname "$output")"
 
-if [ ! -f "$export_jsonl" ]; then
-    echo "ERROR: ledger export '$export_jsonl' not found." >&2
+if [ ! -f "$export_dir/manifest.json" ]; then
+    echo "ERROR: ledger export dir '$export_dir' has no manifest.json." >&2
     exit 1
 fi
 
@@ -26,9 +26,9 @@ build-venv/bin/pip install --quiet .
 workdir="$(mktemp -d)"
 ledger="$workdir/ledger.sqlite"
 
-# Import (JSONL -> sqlite) then build (sqlite -> lean gzipped-JSON bundle). Both
-# reuse the tested module mains directly, so no data-root discovery is needed.
-build-venv/bin/python -m divergulent.classify.export import "$export_jsonl" --ledger "$ledger"
+# Import (sharded JSONL dir -> sqlite) then build (sqlite -> lean gzipped-JSON
+# bundle). Both reuse the tested module mains directly, so no data-root discovery.
+build-venv/bin/python -m divergulent.classify.export import "$export_dir" --ledger "$ledger"
 build-venv/bin/python -m divergulent.classify.classification_bundle "$ledger" \
     --release "$release" --output "$output"
 

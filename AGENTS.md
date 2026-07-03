@@ -322,11 +322,15 @@ curation work. The load-bearing decision is **provenance**: the divergence cache
 is a pure function of the archive (CI regenerates it), but the classification
 ledger embeds irreproducible human + verified-LLM verdicts, so it is the **source
 of truth** and reaches CI as a **committed JSONL export** — never the sqlite
-(binary: unreviewable diffs, unmergeable, bloats git). `export.py` serialises every
-table verbatim (ids preserved, so verdict precedence — which tie-breaks on
-`decision.id` — survives) and rebuilds a faithful sqlite via `ledger.create_schema`;
-the round-trip (`import(export(L)) == L`, byte-deterministic, idempotent) is the
-trust anchor. The operator's `export → commit → push` is the **sole human-in-the-
+(binary: unreviewable diffs, unmergeable, bloats git). The export is a *directory*
+of compact JSONL (null columns omitted), with the two big append-only tables
+(`decision`, `observation`) **sharded by calendar month** so no file crosses
+GitHub's 100 MB limit as the ledger grows without bound (append-only: supersessions
+keep old rows); the small tables are whole, and a `manifest.json` lists the shards.
+`export.py` serialises every table verbatim (ids preserved, so verdict precedence —
+which tie-breaks on `decision.id` — survives) and rebuilds a faithful sqlite via
+`ledger.create_schema`; the round-trip (`import(export(L)) == L`, byte-deterministic,
+idempotent) is the trust anchor. The operator's `export → commit → push` is the **sole human-in-the-
 loop publish gate** — the diff is a reviewable "here are the verdicts I just added"
 — with no auto-created PR. `classification_bundle.py` mirrors `bundle.py` (a single
 gzipped, key-sorted JSON document, `schema`/`entry_schema`-versioned) and projects

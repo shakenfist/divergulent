@@ -9,11 +9,12 @@ permissions:
 # archive access -- the ledger export is the source of truth, so this job only
 # imports that text file and projects it to the lean signed bundle.
 #
-# The export lives in a separate data repo (its diff is the operator's reviewable
-# publish gate). Set the LEDGER_REPO variable and, for a private data repo, a
-# LEDGER_REPO_TOKEN secret with read access; the checkout below reads the export
-# from there. Manual for now (workflow_dispatch); a push trigger on the data repo
-# is the intended automation once the repo is settled.
+# The export lives in the separate, public data repo shakenfist/divergulent-reviews
+# (its commit diff is the operator's reviewable publish gate). Being public, the
+# checkout needs no token -- the default github.token clones it. Override the repo
+# with the LEDGER_REPO variable (and add a LEDGER_REPO_TOKEN secret if you point it
+# at a private repo). Manual for now (workflow_dispatch); a push trigger on the
+# data repo is the intended automation once the flow is proven.
 on:
   workflow_dispatch:
     inputs:
@@ -21,8 +22,8 @@ on:
         description: Debian release codename the bundle describes
         default: trixie
       ledger_path:
-        description: Path to the ledger JSONL export within the data repo
-        default: classification-ledger.jsonl
+        description: Path to the sharded ledger export directory within the data repo
+        default: ledger
       publish:
         description: Publish the bundle to the rolling 'classification' release
         type: boolean
@@ -45,7 +46,7 @@ jobs:
       - name: Checkout ledger data
         uses: actions/checkout@v6
         with:
-          repository: ${{ vars.LEDGER_REPO || 'shakenfist/divergulent-ledger' }}
+          repository: ${{ vars.LEDGER_REPO || 'shakenfist/divergulent-reviews' }}
           token: ${{ secrets.LEDGER_REPO_TOKEN || github.token }}
           path: ledger-data
 

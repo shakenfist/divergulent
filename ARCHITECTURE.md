@@ -248,10 +248,13 @@ installed-package inventory never leaves the machine.
   divergulent.classify.<x>` forms still work.
 - `divergulent/classify/export.py` (the `export`/`import` verbs) — the ledger's
   **committed source of truth**. The classification ledger embeds irreproducible
-  human + verified-LLM verdicts, so it reaches CI as a canonical **JSONL export**,
-  never the sqlite (binary: unreviewable, unmergeable, bloats git). `export_ledger`
-  serialises every table verbatim, stably ordered so two exports are byte-identical;
-  `import_ledger` rebuilds a faithful sqlite (ids preserved, so the derived verdict —
+  human + verified-LLM verdicts, so it reaches CI as a **JSONL export directory**,
+  never the sqlite (binary: unreviewable, unmergeable, bloats git). `write_export`
+  serialises every table as compact JSONL (null columns omitted), the two big
+  append-only tables (`decision`, `observation`) **sharded by calendar month** — so
+  no file crosses GitHub's 100 MB limit as the append-only ledger grows — plus a
+  `manifest.json`; everything stably ordered so two exports are byte-identical.
+  `load_export` rebuilds a faithful sqlite (ids preserved, so the derived verdict —
   which tie-breaks on `decision.id` — is identical) via `ledger.create_schema`. The
   round-trip is the trust anchor; the operator's `export → commit → push` is the
   human-in-the-loop publish gate (a reviewable diff).
