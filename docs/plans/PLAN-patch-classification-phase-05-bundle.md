@@ -24,10 +24,13 @@ pull-classification` + `show` rendering by hashing the patch body; the classify
 import chain the client pulls in is stdlib-only), and the CI publish path
 (`tools/build-classification.sh` + `publish-classification.sh` +
 `build-classification.yml`, reusing the keyless `sign-bundle.sh`) are built and
-offline-tested. As with the cache-publish phase, a real signed publish run is
-validated after merge (it needs the ledger data repo + a read token wired). The
-open questions below (evidence inline vs split, per-source rollup, data-repo home)
-remain deferred follow-ups.
+offline-tested. **The loop is now closed end-to-end in production:** the ledger
+data repo is wired (public [`shakenfist/divergulent-reviews`](https://github.com/shakenfist/divergulent-reviews),
+holding the sharded export under `ledger/`), PR #35 merged the workflow pointing
+at it, and the first real `build-classification` workflow run has **published a
+signed classification bundle** to the rolling `classification` release. The
+data-repo-home open question is resolved (public reviews repo); evidence
+inline-vs-split and per-source rollup remain deferred follow-ups.
 
 ## The mechanics question this phase must answer
 
