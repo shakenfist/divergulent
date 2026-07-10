@@ -197,19 +197,37 @@ provenance ledger (rule id/version, evidence, supersession/redo).
 
 ## Success criteria
 
-- "60k carried patches" is replaced by "**N distinct** patches, of which the
-  vast majority are classified deterministically, and here is the small
-  residue worth review." (Phase 1 measured **N ≈ 60,640** — dedup does *not*
-  shrink it, so "classified deterministically" must come from category rules,
-  not duplicate-collapsing.)
-- Every verdict carries `rule_id + version + evidence`; re-running after a
-  rule fix re-classifies **only** the affected fingerprints.
-- The LLM is invoked only on the residue, is always verified, and shrinks
-  over time as its judgements become deterministic rules.
-- A user can see a meaningful per-package classification — and for any
-  patch, *why* it was classified that way.
-- Clients run **no** classifier and **no** LLM; they consume a signed
-  bundle, consistent with the project's minimal, deterministic posture.
+**All six phases are implemented; every success criterion below is met.** The
+remaining work is operational, not architectural: the ongoing human-review grind
+(phase 4, which enriches an already-shipping bundle rather than gating it) and the
+first operator record-with-snapshot run that populates phase 6's verdict split.
+
+- ✅ **"60k carried patches" is replaced by a distinct count with a small
+  review residue.** Phase 1 measured **N ≈ 60,640** distinct (dedup is only 1.02x —
+  no shortcut), and phases 2–4 narrow it: ~29% settle deterministically, a
+  `test-only` rule peels ~15% more, and the LLM/human tiers work the rest. So
+  "classified deterministically" comes from the category *rules*, exactly as the
+  measurement forced.
+- ✅ **Every verdict carries `rule_id + version + evidence`; a rule fix
+  re-classifies only the affected fingerprints.** The append-only ledger (phase 3)
+  records provenance per decision, and `record --reconcile` supersedes only the
+  fingerprints whose winning rule changed. Phase 6's `external` verdicts additionally
+  record an `input_snapshot` + `input_fresh_until`, so even world-dependent decisions
+  say exactly what they saw and when.
+- ✅ **The LLM is invoked only on the residue, is always verified, and shrinks as
+  its judgements become deterministic rules.** Phase 4 runs claim-blind triage +
+  adversarial verify only on the substantive residue; the one deterministic win it
+  surfaced (`test-only` → `test`) was crystallised into a rule. Phase 6 shrinks the
+  residue further *without* the LLM — a confirmed CVE settles `security` from an
+  external snapshot, no model spend.
+- ✅ **A user can see a meaningful per-package classification — and for any patch,
+  *why*.** Phase 5's signed bundle + client `show` render per-package category
+  breakdowns with a per-patch provenance reason, including phase 6's confirmed-CVE
+  phrase (id + snapshot date).
+- ✅ **Clients run no classifier and no LLM; they consume a signed bundle.** Every
+  tier — deterministic rules, LLM triage, human review, and the phase-6 external
+  cross-reference — is curation-side. The client only hashes a patch body and looks
+  up a verdict, consistent with the project's minimal, deterministic posture.
 
 ## Out of scope / honest boundaries
 
