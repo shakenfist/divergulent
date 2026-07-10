@@ -28,6 +28,7 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass, field
 
+from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import security_tracker
 
 # The external rule's identity, recorded on the decision it settles. Bump the
@@ -37,6 +38,37 @@ EXTERNAL_CVE_VERSION = 1
 EXTERNAL_CVE_KIND = 'heuristic'      # ranks in the heuristic tier (below verified-LLM/human)
 EXTERNAL_CVE_PURITY = 'external'     # consults the world -> records an input snapshot + freshness
 EXTERNAL_CVE_CATEGORY = 'security'   # the only category a confirmed CVE settles
+
+# The provenance observation the pass records alongside (or instead of) the
+# category decision: it annotates every fingerprint that carries a CVE reference,
+# so the review UI can badge "confirmed" / "unconfirmed" and the priority order
+# can nudge a contradiction up for a human look.
+PROVENANCE_KIND = 'provenance'
+PROVENANCE_OBSERVED_BY = EXTERNAL_CVE_RULE_ID
+DETAIL_CVE_CONFIRMED = 'cve-confirmed'
+DETAIL_CLAIM_UNCONFIRMED = 'claim-unconfirmed'
+
+
+def registered_rule() -> ledger_mod.RegisteredRule:
+    """The ``rule`` registry row for the external CVE cross-reference."""
+    return ledger_mod.RegisteredRule(
+        rule_id=EXTERNAL_CVE_RULE_ID, version=EXTERNAL_CVE_VERSION,
+        kind=EXTERNAL_CVE_KIND, purity=EXTERNAL_CVE_PURITY,
+        description='claimed CVE confirmed against the Debian Security Tracker for this source -> security',
+        category_enum_version=ledger_mod.CATEGORY_ENUM_VERSION)
+
+
+def should_settle_security(content_category: str, touches_code: bool) -> bool:
+    """Whether a confirmed CVE may settle ``security`` for this fingerprint.
+
+    The two guards from the plan: DEFER to a settled pure-content category (only
+    the ``unknown`` residue is eligible -- a manpage that merely cites a CVE
+    classifies as high-confidence ``documentation`` and must stay there), and
+    require the patch to TOUCH CODE (a confirmed CVE over non-code content is not
+    a code security fix). Both must hold.
+    """
+    return content_category == 'unknown' and touches_code
+
 
 # How long an external verdict is trusted before the recorder must re-verify it
 # against a current snapshot. Generous: a *settled* CVE status rarely flips.

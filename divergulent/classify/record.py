@@ -34,11 +34,14 @@ an LLM.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
+from divergulent.classify import cross_reference as xref_mod
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import reach as reach_mod
 from divergulent.classify import reviewability as reviewability_mod
+from divergulent.classify import security_tracker as tracker_mod
 from divergulent.classify.classify import iter_classified
 from divergulent.classify.rules import RULES_VERSION
 
@@ -69,6 +72,15 @@ class RecordStats:
     reach_appended: int = 0
     reach_skipped: int = 0
     reach_unknown: int = 0
+    # The phase-6 external CVE cross-reference (only when a Security Tracker
+    # snapshot is supplied). ``external_decisions_*`` count the settled ``security``
+    # category decision; ``external_obs_*`` count the provenance observation
+    # (confirmed / unconfirmed) recorded alongside it.
+    external_decisions_appended: int = 0
+    external_decisions_skipped: int = 0
+    external_decisions_superseded: int = 0
+    external_obs_appended: int = 0
+    external_obs_skipped: int = 0
     fingerprints: int = 0
 
 
@@ -83,8 +95,85 @@ def _category_rule_versions(registry: list[ledger_mod.RegisteredRule]) -> dict[s
     return {rule.rule_id: rule.version for rule in registry}
 
 
+def _record_external_cve(conn, record, tracker_conn, tracker_date, now, stats):
+    """Record the phase-6 CVE cross-reference for one fingerprint (E3).
+
+    Two outputs, both supersede-on-change so a re-run over an unchanged snapshot
+    writes nothing:
+
+    * a ``provenance`` observation -- ``cve-confirmed`` or ``claim-unconfirmed`` --
+      whenever the fingerprint carries a CVE reference (retracted when it no longer
+      does, or when there is nothing to say);
+    * a settled ``security`` DECISION, but only for a code-touching confirmed CVE
+      over the ``unknown`` residue (the deference + code-touch guards). It carries
+      the compact ``input_snapshot`` and the ``input_fresh_until`` horizon; a stale
+      (past-horizon) or changed verdict supersedes the prior one, and a corroboration
+      the tracker no longer supports is retracted.
+    """
+    verdict = xref_mod.verify_cve(
+        record.claim.cves, record.representative_package, tracker_conn, snapshot_date=tracker_date)
+
+    # 1. The provenance observation (annotates every CVE-referencing fingerprint).
+    if verdict.outcome == xref_mod.CONFIRMED:
+        detail, evidence = xref_mod.DETAIL_CVE_CONFIRMED, verdict.reason
+    elif verdict.outcome == xref_mod.CONTRADICTED:
+        detail, evidence = xref_mod.DETAIL_CLAIM_UNCONFIRMED, verdict.reason
+    else:
+        detail, evidence = None, None
+    if detail is None:
+        # No signal now: retract any stale provenance observation (no-op if none).
+        ledger_mod.supersede_observations_for_fingerprint(
+            conn, fingerprint=record.fingerprint, kind=xref_mod.PROVENANCE_KIND,
+            observed_by=xref_mod.PROVENANCE_OBSERVED_BY, superseded_at=now, commit=False)
+    elif ledger_mod.live_observation_exists(
+            conn, fingerprint=record.fingerprint, observed_by=xref_mod.PROVENANCE_OBSERVED_BY,
+            rule_version=xref_mod.EXTERNAL_CVE_VERSION, detail=detail, evidence=evidence):
+        stats.external_obs_skipped += 1
+    else:
+        ledger_mod.supersede_observations_for_fingerprint(
+            conn, fingerprint=record.fingerprint, kind=xref_mod.PROVENANCE_KIND,
+            observed_by=xref_mod.PROVENANCE_OBSERVED_BY, superseded_at=now, commit=False)
+        ledger_mod.append_observation(
+            conn, fingerprint=record.fingerprint, kind=xref_mod.PROVENANCE_KIND,
+            detail=detail, evidence=evidence, observed_by=xref_mod.PROVENANCE_OBSERVED_BY,
+            rule_version=xref_mod.EXTERNAL_CVE_VERSION, observed_at=now, commit=False)
+        stats.external_obs_appended += 1
+
+    # 2. The settled ``security`` decision (confirmed + deference + code-touch).
+    settle = (verdict.outcome == xref_mod.CONFIRMED and xref_mod.should_settle_security(
+        record.verdict.content_category, record.profile.touches_code))
+    live = ledger_mod.live_decision_for_rule(
+        conn, fingerprint=record.fingerprint, decided_by=xref_mod.EXTERNAL_CVE_RULE_ID,
+        rule_version=xref_mod.EXTERNAL_CVE_VERSION)
+    if settle:
+        snapshot_json = json.dumps(verdict.input_snapshot, sort_keys=True)
+        stale = live is not None and now[:10] >= (live['input_fresh_until'] or '')
+        changed = live is not None and (live['input_snapshot'] or '') != snapshot_json
+        if live is not None and not stale and not changed:
+            stats.external_decisions_skipped += 1
+            return
+        if live is not None:
+            ledger_mod.supersede_rule_decisions_for_fingerprint(
+                conn, fingerprint=record.fingerprint, decided_by=xref_mod.EXTERNAL_CVE_RULE_ID,
+                rule_version=xref_mod.EXTERNAL_CVE_VERSION, superseded_at=now, commit=False)
+            stats.external_decisions_superseded += 1
+        ledger_mod.append_decision(
+            conn, fingerprint=record.fingerprint, category=xref_mod.EXTERNAL_CVE_CATEGORY,
+            confidence=verdict.confidence, decided_by=xref_mod.EXTERNAL_CVE_RULE_ID,
+            rule_version=xref_mod.EXTERNAL_CVE_VERSION, kind=xref_mod.EXTERNAL_CVE_KIND,
+            evidence=verdict.reason, decided_at=now, input_snapshot=snapshot_json,
+            input_fresh_until=verdict.fresh_until, commit=False)
+        stats.external_decisions_appended += 1
+    elif live is not None:
+        # No longer a settle-able corroboration: retract the stale security verdict.
+        ledger_mod.supersede_rule_decisions_for_fingerprint(
+            conn, fingerprint=record.fingerprint, decided_by=xref_mod.EXTERNAL_CVE_RULE_ID,
+            rule_version=xref_mod.EXTERNAL_CVE_VERSION, superseded_at=now, commit=False)
+        stats.external_decisions_superseded += 1
+
+
 def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progress=None,
-                     reconcile=False, popcon_path=None):
+                     reconcile=False, popcon_path=None, security_tracker_path=None):
     """Record the deterministic verdicts for a corpus into ``conn``; idempotent.
 
     Registers ``registry`` (or :func:`ledger.default_registry`) into the
@@ -134,6 +223,18 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
     reach_levels = (reach_mod.reach_levels_for_index(index_path, popcon_path)
                     if popcon_path else {})
     existing_reach = reach_mod.reach_by_fingerprint(conn) if popcon_path else {}
+
+    # The phase-6 external CVE cross-reference is opt-in on a pinned Security
+    # Tracker snapshot, exactly like reach is opt-in on a popcon snapshot: with no
+    # snapshot the pass is skipped and the recorder behaves exactly as before. When
+    # supplied, open the snapshot once and register the external rule so its
+    # decisions reference a known (rule_id, version).
+    tracker_conn = None
+    tracker_date = None
+    if security_tracker_path:
+        tracker_conn = tracker_mod.open_snapshot(security_tracker_path)
+        tracker_date = tracker_mod.snapshot_meta(tracker_conn).get('snapshot_date', now[:10])
+        ledger_mod.register_rules(conn, [xref_mod.registered_rule()])
 
     stats = RecordStats()
     for record in iter_classified(corpus_dir, index_path):
@@ -227,6 +328,17 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
                     observed_by=reach_mod.REACH_OBSERVED_BY,
                     rule_version=reach_mod.REACH_VERSION, observed_at=now, commit=False)
                 stats.reach_appended += 1
+
+        # The phase-6 external CVE cross-reference -- only when a Security Tracker
+        # snapshot was supplied. Verifies the fingerprint's claimed CVEs against the
+        # snapshot and records the outcome as a provenance observation (always) plus,
+        # for a code-touching confirmed CVE over the unknown residue, a settled
+        # ``security`` decision carrying the input snapshot + freshness horizon.
+        if tracker_conn is not None:
+            _record_external_cve(conn, record, tracker_conn, tracker_date, now, stats)
+
+    if tracker_conn is not None:
+        tracker_conn.close()
 
     if progress is not None:
         progress.finish()
