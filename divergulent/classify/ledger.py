@@ -1084,6 +1084,17 @@ def _security_tracker_arg(corpus_dir: str) -> str | None:
     return path if os.path.exists(path) else None
 
 
+def _bts_arg(corpus_dir: str) -> str | None:
+    """The pinned BTS bug-index snapshot path if one exists, else None.
+
+    The phase-6 bug cross-reference is opt-in on a pulled snapshot, like the CVE
+    tier: an operator who has not run ``bts`` records exactly as before.
+    """
+    from divergulent.classify import bts as bts_mod
+    path = bts_mod.default_bts_path(corpus_dir)
+    return path if os.path.exists(path) else None
+
+
 def _cmd_build(args: argparse.Namespace) -> int:
     """``build``: create a ledger from a corpus and print the verdict report."""
     from divergulent.classify import record, verdict
@@ -1111,7 +1122,8 @@ def _cmd_build(args: argparse.Namespace) -> int:
         stats = record.record_to_ledger(
             conn, args.corpus_dir, index_path, now=_cli_now(), progress=progress,
             popcon_path=_popcon_arg(args.corpus_dir),
-            security_tracker_path=_security_tracker_arg(args.corpus_dir))
+            security_tracker_path=_security_tracker_arg(args.corpus_dir),
+            bts_path=_bts_arg(args.corpus_dir))
         rows = verdict.rebuild_current_verdict(conn)
         print(verdict.render_report(verdict.summarise_ledger(conn)))
         print('built ledger: %s' % out_path)
@@ -1169,7 +1181,8 @@ def _cmd_record(args: argparse.Namespace) -> int:
         stats = record.record_to_ledger(
             conn, args.corpus_dir, index_path, now=now, progress=progress,
             reconcile=True, popcon_path=_popcon_arg(args.corpus_dir),
-            security_tracker_path=_security_tracker_arg(args.corpus_dir))
+            security_tracker_path=_security_tracker_arg(args.corpus_dir),
+            bts_path=_bts_arg(args.corpus_dir))
         # A newly-applied rule may add a category (e.g. ``test`` at enum v2); record
         # the current enum version so ``meta`` reflects what the ledger now holds.
         conn.execute("UPDATE meta SET value = ? WHERE key = 'category_enum_version'",

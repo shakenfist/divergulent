@@ -37,6 +37,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from divergulent.classify import bts as bts_mod
 from divergulent.classify import cross_reference as xref_mod
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import reach as reach_mod
@@ -95,8 +96,9 @@ def _category_rule_versions(registry: list[ledger_mod.RegisteredRule]) -> dict[s
     return {rule.rule_id: rule.version for rule in registry}
 
 
-def _record_external_cve(conn, record, tracker_conn, tracker_date, now, stats):
-    """Record the phase-6 CVE cross-reference for one fingerprint (E3).
+def _record_external_cve(conn, record, tracker_conn, tracker_date, now, stats,
+                         bts_conn=None, bts_date=None):
+    """Record the phase-6 CVE (and BTS bug) cross-reference for one fingerprint.
 
     Two outputs, both supersede-on-change so a re-run over an unchanged snapshot
     writes nothing:
@@ -110,16 +112,26 @@ def _record_external_cve(conn, record, tracker_conn, tracker_date, now, stats):
       (past-horizon) or changed verdict supersedes the prior one, and a corroboration
       the tracker no longer supports is retracted.
     """
-    verdict = xref_mod.verify_cve(
-        record.claim.cves, record.representative_package, tracker_conn, snapshot_date=tracker_date)
+    verdict = (xref_mod.verify_cve(record.claim.cves, record.representative_package,
+                                   tracker_conn, snapshot_date=tracker_date)
+               if tracker_conn is not None else None)
 
-    # 1. The provenance observation (annotates every CVE-referencing fingerprint).
-    if verdict.outcome == xref_mod.CONFIRMED:
+    # 1. The provenance observation (annotates every CVE/bug-referencing fingerprint).
+    # The CVE signal (from the Security Tracker) is preferred; the BTS bug check is
+    # a fallback for a patch that cites a bug but no CVE.
+    if verdict is not None and verdict.outcome == xref_mod.CONFIRMED:
         detail, evidence = xref_mod.DETAIL_CVE_CONFIRMED, verdict.reason
-    elif verdict.outcome == xref_mod.CONTRADICTED:
+    elif verdict is not None and verdict.outcome == xref_mod.CONTRADICTED:
         detail, evidence = xref_mod.DETAIL_CLAIM_UNCONFIRMED, verdict.reason
     else:
         detail, evidence = None, None
+        # No CVE signal: fall back to the BTS bug check (E5). A bug reference maps
+        # to no category, so this only ever produces a provenance signal.
+        if bts_conn is not None:
+            bug_verdict = xref_mod.verify_bugs(
+                record.claim.bugs, record.representative_package, bts_conn, snapshot_date=bts_date)
+            if bug_verdict.outcome != xref_mod.UNKNOWN:
+                detail, evidence = bug_verdict.detail, bug_verdict.reason
     if detail is None:
         # No signal now: retract any stale provenance observation (no-op if none).
         ledger_mod.supersede_observations_for_fingerprint(
@@ -140,6 +152,10 @@ def _record_external_cve(conn, record, tracker_conn, tracker_date, now, stats):
         stats.external_obs_appended += 1
 
     # 2. The settled ``security`` decision (confirmed + deference + code-touch).
+    # Only the CVE tier settles a category, so this is skipped entirely without a
+    # Security Tracker snapshot (a BTS-only run never touches security decisions).
+    if tracker_conn is None:
+        return
     settle = (verdict.outcome == xref_mod.CONFIRMED and xref_mod.should_settle_security(
         record.verdict.content_category, record.profile.touches_code))
     live = ledger_mod.live_decision_for_rule(
@@ -173,7 +189,8 @@ def _record_external_cve(conn, record, tracker_conn, tracker_date, now, stats):
 
 
 def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progress=None,
-                     reconcile=False, popcon_path=None, security_tracker_path=None):
+                     reconcile=False, popcon_path=None, security_tracker_path=None,
+                     bts_path=None):
     """Record the deterministic verdicts for a corpus into ``conn``; idempotent.
 
     Registers ``registry`` (or :func:`ledger.default_registry`) into the
@@ -235,6 +252,15 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
         tracker_conn = tracker_mod.open_snapshot(security_tracker_path)
         tracker_date = tracker_mod.snapshot_meta(tracker_conn).get('snapshot_date', now[:10])
         ledger_mod.register_rules(conn, [xref_mod.registered_rule()])
+
+    # The BTS bug index (E5) is opt-in on its own pinned snapshot, layered onto the
+    # CVE pass: it only ever adds a provenance signal (a bug maps to no category),
+    # for a patch that cites a Debian bug but no CVE.
+    bts_conn = None
+    bts_date = None
+    if bts_path:
+        bts_conn = bts_mod.open_snapshot(bts_path)
+        bts_date = bts_mod.snapshot_meta(bts_conn).get('snapshot_date', now[:10])
 
     stats = RecordStats()
     for record in iter_classified(corpus_dir, index_path):
@@ -334,11 +360,14 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
         # snapshot and records the outcome as a provenance observation (always) plus,
         # for a code-touching confirmed CVE over the unknown residue, a settled
         # ``security`` decision carrying the input snapshot + freshness horizon.
-        if tracker_conn is not None:
-            _record_external_cve(conn, record, tracker_conn, tracker_date, now, stats)
+        if tracker_conn is not None or bts_conn is not None:
+            _record_external_cve(conn, record, tracker_conn, tracker_date, now, stats,
+                                 bts_conn=bts_conn, bts_date=bts_date)
 
     if tracker_conn is not None:
         tracker_conn.close()
+    if bts_conn is not None:
+        bts_conn.close()
 
     if progress is not None:
         progress.finish()

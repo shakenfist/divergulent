@@ -10,8 +10,10 @@ import tempfile
 
 import testtools
 
+from divergulent.classify import bts
 from divergulent.classify import cross_reference
 from divergulent.classify import security_tracker
+from divergulent.dep3 import BugRef
 
 
 class VerifyCveTestCase(testtools.TestCase):
@@ -76,3 +78,54 @@ class VerifyCveTestCase(testtools.TestCase):
 
     def test_fresh_until_honours_ttl(self):
         self.assertEqual('2026-07-17', cross_reference.fresh_until('2026-07-10', ttl_days=7))
+
+
+class DebianBugNumberTestCase(testtools.TestCase):
+
+    def test_extracts_from_bare_hash_and_url(self):
+        self.assertEqual(123456, cross_reference.debian_bug_number('123456'))
+        self.assertEqual(123456, cross_reference.debian_bug_number('#123456'))
+        self.assertEqual(123456, cross_reference.debian_bug_number('https://bugs.debian.org/123456'))
+
+    def test_none_when_no_number(self):
+        self.assertIsNone(cross_reference.debian_bug_number('see upstream'))
+        self.assertIsNone(cross_reference.debian_bug_number(''))
+
+
+class VerifyBugsTestCase(testtools.TestCase):
+
+    def _snapshot(self, rows):
+        tmpdir = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__('shutil').rmtree(tmpdir, ignore_errors=True))
+        path = os.path.join(tmpdir, 'bts.sqlite')
+        bts.write_snapshot(path, rows, snapshot_date='2026-07-10', source_url='x')
+        conn = bts.open_snapshot(path)
+        self.addCleanup(conn.close)
+        return conn
+
+    def test_confirmed_bug_for_this_source(self):
+        conn = self._snapshot([(123456, 'openssl', 'done')])
+        v = cross_reference.verify_bugs(
+            [BugRef('debian', '#123456')], 'openssl', conn, snapshot_date='2026-07-10')
+        self.assertEqual(cross_reference.CONFIRMED, v.outcome)
+        self.assertEqual(cross_reference.DETAIL_BUG_CONFIRMED, v.detail)
+
+    def test_unknown_bug_is_contradicted(self):
+        conn = self._snapshot([(123456, 'openssl', 'done')])
+        v = cross_reference.verify_bugs(
+            [BugRef('debian', '#999999')], 'openssl', conn, snapshot_date='2026-07-10')
+        self.assertEqual(cross_reference.CONTRADICTED, v.outcome)
+        self.assertEqual(cross_reference.DETAIL_CLAIM_UNCONFIRMED, v.detail)
+
+    def test_only_debian_tracker_refs_are_checked(self):
+        conn = self._snapshot([(123456, 'openssl', 'done')])
+        # An upstream Bug: ref (tracker 'upstream') is out of scope -> no signal.
+        v = cross_reference.verify_bugs(
+            [BugRef('upstream', 'https://example.com/issues/5')], 'openssl', conn,
+            snapshot_date='2026-07-10')
+        self.assertEqual(cross_reference.UNKNOWN, v.outcome)
+
+    def test_no_bugs_is_unknown(self):
+        conn = self._snapshot([(123456, 'openssl', 'done')])
+        self.assertEqual(cross_reference.UNKNOWN,
+                         cross_reference.verify_bugs([], 'openssl', conn, snapshot_date='2026-07-10').outcome)

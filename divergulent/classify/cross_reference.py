@@ -28,6 +28,9 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass, field
 
+import re
+
+from divergulent.classify import bts as bts_mod
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import security_tracker
 
@@ -46,7 +49,12 @@ EXTERNAL_CVE_CATEGORY = 'security'   # the only category a confirmed CVE settles
 PROVENANCE_KIND = 'provenance'
 PROVENANCE_OBSERVED_BY = EXTERNAL_CVE_RULE_ID
 DETAIL_CVE_CONFIRMED = 'cve-confirmed'
+DETAIL_BUG_CONFIRMED = 'bug-confirmed'
 DETAIL_CLAIM_UNCONFIRMED = 'claim-unconfirmed'
+
+# A Debian bug reference as declared in a DEP-3 ``Bug-Debian:`` field: a bare
+# number, ``#number``, or a bugs.debian.org URL. Extract the numeric id.
+_BUG_NUMBER_RE = re.compile(r'(\d{3,})')
 
 
 def registered_rule() -> ledger_mod.RegisteredRule:
@@ -166,3 +174,57 @@ def verify_cve(cves: list[str], source: str, conn, *, snapshot_date: str,
     return CveVerdict(outcome=CONTRADICTED, result=result, reason=reason,
                       input_snapshot=snapshot,
                       fresh_until=fresh_until(snapshot_date, ttl_days=ttl_days))
+
+
+@dataclass(frozen=True)
+class BugVerdict:
+    """The outcome of cross-referencing a patch's claimed Debian bugs (E5).
+
+    Provenance only -- a bug reference maps to no category, so this never settles
+    a verdict; ``detail`` is the observation detail (``bug-confirmed`` /
+    ``claim-unconfirmed``) and ``reason`` its evidence line.
+    """
+
+    outcome: str
+    detail: str | None = None
+    reason: str = ''
+
+
+def debian_bug_number(ref: str) -> int | None:
+    """The numeric Debian bug id in a ``Bug-Debian`` ref, or ``None``.
+
+    Accepts a bare number, ``#number``, or a bugs.debian.org URL; takes the first
+    3+ digit run so a stray year in a URL path does not masquerade as a bug.
+    """
+    match = _BUG_NUMBER_RE.search(ref or '')
+    return int(match.group(1)) if match else None
+
+
+def verify_bugs(bugs, source: str, conn, *, snapshot_date: str) -> BugVerdict:
+    """Cross-reference a patch's declared Debian bugs for ``source`` against the BTS.
+
+    Only ``tracker == 'debian'`` refs are checked (the generic upstream ``Bug:``
+    tracker is out of scope). Returns the FIRST confirmation (a bug filed against
+    this source); otherwise a contradiction when a declared bug is unknown to the
+    BTS or filed against another package; ``unknown`` when the patch declares no
+    resolvable Debian bug. Provenance only -- never a category.
+    """
+    numbers = [debian_bug_number(b.ref) for b in (bugs or []) if getattr(b, 'tracker', None) == 'debian']
+    numbers = [n for n in numbers if n is not None]
+    if not numbers:
+        return BugVerdict(outcome=UNKNOWN)
+
+    any_exists_elsewhere = False
+    for bug in numbers:
+        row = bts_mod.bug_row(conn, bug)
+        if row is not None and row['source'] == source:
+            reason = 'confirmed Debian bug #%d (%s, %s, bts %s)' % (
+                bug, source, row['status'], snapshot_date)
+            return BugVerdict(outcome=CONFIRMED, detail=DETAIL_BUG_CONFIRMED, reason=reason)
+        if row is not None:
+            any_exists_elsewhere = True
+
+    result = RESULT_WRONG_SOURCE if any_exists_elsewhere else RESULT_NOT_FOUND
+    reason = 'declared Debian bug %s not filed for %s (%s, bts %s)' % (
+        ','.join('#%d' % n for n in numbers), source, result, snapshot_date)
+    return BugVerdict(outcome=CONTRADICTED, detail=DETAIL_CLAIM_UNCONFIRMED, reason=reason)

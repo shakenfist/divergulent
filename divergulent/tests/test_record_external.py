@@ -14,6 +14,7 @@ import tempfile
 
 import testtools
 
+from divergulent.classify import bts
 from divergulent.classify import cross_reference as xref_mod
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import record
@@ -217,3 +218,64 @@ class ExternalPassTestCase(testtools.TestCase):
         self.assertEqual(0, stats.external_obs_appended)
         # No provenance observations at all.
         self.assertIsNone(self._provenance(conn, _fp(SECURITY_FIX)))
+
+
+# A substantive edit that cites a Debian bug (no CVE) -- the BTS-only path.
+BUG_FIX = (
+    'Description: correct an off-by-one\n'
+    'Bug-Debian: https://bugs.debian.org/123456\n'
+    '--- a/src/parse.c\n'
+    '+++ b/src/parse.c\n'
+    '@@ -1,2 +1,3 @@\n'
+    ' void f(void) {\n'
+    '+    fix();\n'
+    ' }\n'
+)
+
+
+class BtsPassTestCase(testtools.TestCase):
+
+    def _run(self, *, bug_rows):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        sha = body_sha256(BUG_FIX)
+        directory = os.path.join(tmp.name, 'bodies', sha[:2])
+        os.makedirs(directory, exist_ok=True)
+        with open(os.path.join(directory, sha), 'w', encoding='utf-8') as handle:
+            handle.write(BUG_FIX)
+        index_path = os.path.join(tmp.name, 'fingerprints.sqlite')
+        connection = sqlite3.connect(index_path)
+        connection.execute(
+            'CREATE TABLE patch (source_package TEXT NOT NULL, version TEXT NOT NULL, '
+            'patch_name TEXT NOT NULL, raw_sha256 TEXT NOT NULL, '
+            'normalisation_version INTEGER NOT NULL, fingerprint TEXT NOT NULL)')
+        connection.execute(
+            'INSERT INTO patch VALUES (?, ?, ?, ?, ?, ?)',
+            ('coreutils', '1-1', 'bug.patch', sha, 1, _fp(BUG_FIX)))
+        connection.commit()
+        connection.close()
+        bts_path = bts.default_bts_path(tmp.name)
+        bts.write_snapshot(bts_path, bug_rows, snapshot_date='2026-07-10', source_url='x')
+        conn = ledger_mod.create_ledger(os.path.join(tmp.name, 'ledger.sqlite'))
+        self.addCleanup(conn.close)
+        record.record_to_ledger(conn, tmp.name, index_path, now=WHEN, bts_path=bts_path)
+        return conn
+
+    def _provenance(self, conn, fingerprint):
+        for row in ledger_mod.live_observations(conn):
+            if row['fingerprint'] == fingerprint and row['kind'] == xref_mod.PROVENANCE_KIND:
+                return row
+        return None
+
+    def test_bug_confirmed_records_provenance_only(self):
+        conn = self._run(bug_rows=[(123456, 'coreutils', 'done')])
+        fp = _fp(BUG_FIX)
+        self.assertEqual(xref_mod.DETAIL_BUG_CONFIRMED, self._provenance(conn, fp)['detail'])
+        # A bug never settles a category: only the content 'unknown' decision is live.
+        cats = [row['category'] for row in ledger_mod.live_decisions(conn) if row['fingerprint'] == fp]
+        self.assertEqual(['unknown'], cats)
+
+    def test_unknown_bug_is_flagged_unconfirmed(self):
+        conn = self._run(bug_rows=[(999999, 'nginx', 'pending')])
+        self.assertEqual(xref_mod.DETAIL_CLAIM_UNCONFIRMED,
+                         self._provenance(conn, _fp(BUG_FIX))['detail'])
