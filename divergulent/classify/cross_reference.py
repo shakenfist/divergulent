@@ -58,6 +58,17 @@ def registered_rule() -> ledger_mod.RegisteredRule:
         category_enum_version=ledger_mod.CATEGORY_ENUM_VERSION)
 
 
+def provenance_by_fingerprint(conn) -> dict:
+    """``{fingerprint: detail}`` from the live phase-6 provenance observations.
+
+    ``detail`` is ``cve-confirmed`` or ``claim-unconfirmed``. Backs the review UI's
+    provenance badge; a fingerprint with no CVE reference is simply absent.
+    """
+    return {obs['fingerprint']: obs['detail']
+            for obs in ledger_mod.live_observations(conn)
+            if obs['kind'] == PROVENANCE_KIND}
+
+
 def should_settle_security(content_category: str, touches_code: bool) -> bool:
     """Whether a confirmed CVE may settle ``security`` for this fingerprint.
 

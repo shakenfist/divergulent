@@ -23,6 +23,7 @@ import os
 import sqlite3
 from urllib.parse import urlencode
 
+from divergulent.classify import cross_reference as xref_mod
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import review as review_mod
 from divergulent.classify import reach as reach_mod
@@ -280,6 +281,7 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             reviewability=None if level == 'normal' else level,
             risk=risk_mod.risk_level_by_fingerprint(conn).get(resolved),
             reach=reach_mod.reach_by_fingerprint(conn).get(resolved),
+            provenance=xref_mod.provenance_by_fingerprint(conn).get(resolved),
             oversized_lines=reviewability_mod.REVIEWABILITY_OVERSIZED_LINES,
             notes=ledger_mod.notes_for(conn, resolved), can_note=signer is not None,
             package_lines=review_mod._format_package_lines(context),
@@ -502,6 +504,10 @@ _HEAD = '''<!doctype html>
  .reach.M { color: #8a909a; }
  .reach.S { color: #6a707a; }
  .reach.XS { color: #5a606a; }
+ .prov { display: inline-block; padding: 0 0.4rem; border-radius: 0.2rem;
+         font-size: 0.8rem; font-weight: bold; }
+ .prov.cve-confirmed { background: #12331d; color: #6fe08a; }
+ .prov.claim-unconfirmed { background: #4a1c1c; color: #ff9a92; }
  .next { display: inline-block; margin: 0.5rem 0; padding: 0.4rem 0.8rem;
          background: #2563eb; color: #fff; border-radius: 0.3rem; text-decoration: none; }
  .meta-block { background: #232730; padding: 0.6rem 0.8rem; border-radius: 0.3rem; }
@@ -632,6 +638,7 @@ REVIEW_TEMPLATE = _HEAD.replace('{{ title }}', 'review') + '''
 <h1 class="mono">{{ ctx.fingerprint[:16] }}<span class="muted">{{ ctx.fingerprint[16:] }}</span>
 {% if risk %} <span class="risk {{ risk }}">risk: {{ risk }}</span>{% endif %}
 {% if reach %} <span class="reach {{ reach }}">reach: {{ reach }}</span>{% endif %}
+{% if provenance %} <span class="prov {{ provenance }}">{{ provenance }}</span>{% endif %}
 {% if reviewability %} <span class="rev {{ reviewability }}">{{ reviewability }}</span>{% endif %}</h1>
 {% if reviewability == 'oversized' %}
 <p class="rev oversized" style="padding: 0.4rem 0.6rem;">This diff is oversized (&gt;{{ oversized_lines }}
