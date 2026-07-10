@@ -279,8 +279,21 @@ first; it is opt-in on a pinned snapshot and recorded only when a bucket changes
 (no churn on count drift). See
 `docs/plans/PLAN-patch-classification-phase-04-risk-gate.md`,
 `docs/plans/PLAN-patch-classification-phase-04-reviewability-axis.md` and
-`docs/plans/PLAN-patch-classification-phase-04-reach-axis.md`. `python -m
-divergulent.classify.review` (in `review.py`) is the local, interactive,
+`docs/plans/PLAN-patch-classification-phase-04-reach-axis.md`. `cross_reference.py`
+adds the phase-6 **external** tier (`purity='external'`): it verifies the CVE/bug
+references a patch *claims* against Debian's own bulk-pinned records — the Security
+Tracker (`security_tracker.py` → `corpus/security_tracker.sqlite`) and the BTS
+(`bts.py` → `corpus/bts.sqlite`, a UDD-style flat export). A code-touching confirmed
+CVE over the `unknown` residue settles a `security` decision with an
+`input_snapshot` + `input_fresh_until` freshness horizon (re-verified past the
+horizon, retracted when the tracker stops supporting it); a contradicted claim only
+records a `claim-unconfirmed` provenance observation (a priority nudge below risk +
+a review badge), never a category or malice verdict, and defers to any
+high-confidence pure-content verdict. Opt-in on the snapshots
+(`divergulent-classify security-tracker` / `bts`); ~10% of real-corpus patches carry
+a reference (1.44% a CVE) — a scalpel. See
+`docs/plans/PLAN-patch-classification-phase-06-cross-reference.md` and its findings.
+`python -m divergulent.classify.review` (in `review.py`) is the local, interactive,
 Sigstore-signed human tier. It has three subcommands: `review <ledger>
 <corpus_dir>` drains the queue (showing each diff in its sources.debian.org
 original-source context — fetched per touched file by the file's real path, not
@@ -302,11 +315,13 @@ a `.divergulent` marker beside `corpus/`+`cache/`, discovered git-style via
 `--data`/`DIVERGULENT_DATA`/walk-up) and **forwards** to each command's existing
 module main with the ledger/corpus paths spliced in — so verbs (`status`,
 `record`, `triage`, `risk`, `review`, `web`, `report`, `requeue`, `history`,
-`popcon`, `export`, `import`, `bundle`, `init`) take no paths (`record` re-applies
-the deterministic rules to the
+`popcon`, `security-tracker`, `bts`, `export`, `import`, `bundle`, `init`) take no
+paths (`record` re-applies the deterministic rules to the
 existing ledger — the recurring "I changed a rule, re-apply it" pass; `popcon`
-pulls the reach axis's install-base snapshot into `corpus/popcon.sqlite` and is
-**corpus-only**, needing no ledger; `export`/`import` serialise the ledger to/from
+pulls the reach axis's install-base snapshot into `corpus/popcon.sqlite`,
+`security-tracker` and `bts` pull the phase-6 CVE/bug snapshots into
+`corpus/security_tracker.sqlite` / `corpus/bts.sqlite`, all **corpus-only**,
+needing no ledger; `export`/`import` serialise the ledger to/from
 the committed JSONL source of truth and `bundle` builds the publishable bundle —
 the phase-5 publish path below; `import` **creates** the ledger, so it needs none
 to pre-exist; the one-time corpus/`build` steps stay

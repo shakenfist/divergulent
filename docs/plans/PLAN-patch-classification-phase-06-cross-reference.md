@@ -16,7 +16,17 @@ schema has reserved `decision.input_snapshot` and `decision.input_fresh_until`
 (nullable, unused by the pure phase-2/4 rules) since schema v2 precisely for this
 phase, so **no migration is needed** — the columns are waiting.
 
-**Status: planned.** Nothing implemented yet.
+**Status: implemented (E1–E5); findings measured.** The Security Tracker snapshot
+(`security_tracker.py`), the CVE rule (`cross_reference.py`), the record pass
+(the external tier in `record.py`), the surfacing (bundle reason, review-queue
+priority nudge, review-web provenance badge), and the BTS bug source (`bts.py` +
+`verify_bugs`) are built and offline-tested. On the real corpus only ~10 % of
+carried patches declare a bug/CVE at all (1.44 % a CVE, 8.93 % a Debian bug), so
+the tier is a scalpel, not a broom — see
+[PLAN-patch-classification-phase-06-findings.md](PLAN-patch-classification-phase-06-findings.md).
+The BTS bulk source is an operator-configured UDD-style flat export (dependency
+minimalism rules out a Postgres client); the confirmed:contradicted:unknown split
+awaits the operator's first record-with-snapshot run.
 
 ## The thesis: verification, not trust — and disagreement is the signal
 
