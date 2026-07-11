@@ -193,7 +193,22 @@ installed-package inventory never leaves the machine.
   so reach **never crosses a risk boundary**), surfacing widely-run risky patches
   first. It is opt-in on a pinned snapshot and re-records only when a bucket changes
   (no churn when counts drift); the web worklist orders `(risk, reach, priority)`
-  and shows a reach badge. `review.py` (the
+  and shows a reach badge. `cross_reference.py` adds the phase-6 **external** tier
+  (`purity='external'`): it verifies the CVE/bug references a patch *claims* against
+  Debian's own records rather than trusting them, using two bulk-pinned snapshots —
+  the Security Tracker (`security_tracker.py` → `corpus/security_tracker.sqlite`,
+  source→CVE→status) and the BTS bug index (`bts.py` → `corpus/bts.sqlite`, a
+  UDD-style flat export). A code-touching **confirmed** CVE over the `unknown`
+  residue settles a `security` decision carrying an `input_snapshot` +
+  `input_fresh_until` freshness horizon (the recorder re-verifies past the horizon
+  and retracts a corroboration the tracker no longer supports); a **contradicted**
+  claim (an invented CVE, a wrong-source id, a non-existent bug) only records a
+  `claim-unconfirmed` provenance observation — a review nudge (a priority band below
+  risk, above reach) and a badge, never a category or a malice verdict. It defers to
+  any high-confidence pure-content verdict (a manpage citing a CVE stays
+  `documentation`). Opt-in on the snapshots (`divergulent-classify security-tracker`
+  / `bts`); on the real corpus only ~10% of patches carry any reference (1.44% a
+  CVE), so the tier is a scalpel. `review.py` (the
   `python -m divergulent.classify.review` CLI) is the local, interactive human
   tier, with three subcommands. `review` drains the queue: it shows each
   high-priority diff **in its original source context** — fetched on-demand from

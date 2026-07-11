@@ -641,6 +641,43 @@ def live_decision_exists(conn: sqlite3.Connection, *, fingerprint: str, decided_
     return row is not None
 
 
+def live_decision_for_rule(conn: sqlite3.Connection, *, fingerprint: str, decided_by: str,
+                           rule_version: int) -> sqlite3.Row | None:
+    """The LIVE decision for ``(fingerprint, decided_by, rule_version)``, or ``None``.
+
+    Unlike :func:`live_decision_exists` this returns the whole row, so an external
+    rule (phase 6) can read the stored ``input_snapshot`` / ``input_fresh_until``
+    and decide whether its prior verdict is stale or has changed.  The newest such
+    live row is returned (there is normally at most one).
+    """
+    conn.row_factory = sqlite3.Row
+    return conn.execute(
+        'SELECT * FROM decision '
+        'WHERE fingerprint = ? AND decided_by = ? AND rule_version = ? '
+        'AND superseded_at IS NULL ORDER BY id DESC LIMIT 1',
+        (fingerprint, decided_by, rule_version)).fetchone()
+
+
+def supersede_rule_decisions_for_fingerprint(conn: sqlite3.Connection, *, fingerprint: str,
+                                             decided_by: str, rule_version: int,
+                                             superseded_at: str, commit: bool = True) -> int:
+    """Supersede ONE fingerprint's live decisions from ONE rule; returns the count.
+
+    Narrower than :func:`supersede_decisions_for_fingerprint` (which is kind-wide):
+    keys on ``(fingerprint, decided_by, rule_version)`` so an external rule can
+    retire only its OWN stale verdict -- re-verifying against a fresh snapshot, or
+    retracting a corroboration the tracker no longer supports -- without touching
+    the fingerprint's content decision.  Rows are marked superseded, never deleted.
+    """
+    cursor = conn.execute(
+        'UPDATE decision SET superseded_at = ? '
+        'WHERE fingerprint = ? AND decided_by = ? AND rule_version = ? AND superseded_at IS NULL',
+        (superseded_at, fingerprint, decided_by, rule_version))
+    if commit:
+        conn.commit()
+    return cursor.rowcount
+
+
 def decisions_for(conn: sqlite3.Connection, fingerprint: str) -> list[sqlite3.Row]:
     """Every decision for ``fingerprint``, live or superseded, in id order.
 
@@ -1035,6 +1072,29 @@ def _popcon_arg(corpus_dir: str) -> str | None:
     return path if os.path.exists(path) else None
 
 
+def _security_tracker_arg(corpus_dir: str) -> str | None:
+    """The pinned Security Tracker snapshot path if one exists, else None.
+
+    The phase-6 CVE cross-reference is opt-in on a pulled snapshot, exactly like
+    reach: an operator who has not run ``security-tracker`` records exactly as
+    before, with no external decisions or provenance observations.
+    """
+    from divergulent.classify import security_tracker as tracker_mod
+    path = tracker_mod.default_security_tracker_path(corpus_dir)
+    return path if os.path.exists(path) else None
+
+
+def _bts_arg(corpus_dir: str) -> str | None:
+    """The pinned BTS bug-index snapshot path if one exists, else None.
+
+    The phase-6 bug cross-reference is opt-in on a pulled snapshot, like the CVE
+    tier: an operator who has not run ``bts`` records exactly as before.
+    """
+    from divergulent.classify import bts as bts_mod
+    path = bts_mod.default_bts_path(corpus_dir)
+    return path if os.path.exists(path) else None
+
+
 def _cmd_build(args: argparse.Namespace) -> int:
     """``build``: create a ledger from a corpus and print the verdict report."""
     from divergulent.classify import record, verdict
@@ -1061,17 +1121,22 @@ def _cmd_build(args: argparse.Namespace) -> int:
     try:
         stats = record.record_to_ledger(
             conn, args.corpus_dir, index_path, now=_cli_now(), progress=progress,
-            popcon_path=_popcon_arg(args.corpus_dir))
+            popcon_path=_popcon_arg(args.corpus_dir),
+            security_tracker_path=_security_tracker_arg(args.corpus_dir),
+            bts_path=_bts_arg(args.corpus_dir))
         rows = verdict.rebuild_current_verdict(conn)
         print(verdict.render_report(verdict.summarise_ledger(conn)))
         print('built ledger: %s' % out_path)
         print('decisions appended=%d skipped=%d; observations appended=%d skipped=%d; '
               'reviewability appended=%d skipped=%d; reach appended=%d skipped=%d unknown=%d; '
+              'external decisions appended=%d skipped=%d; external provenance appended=%d skipped=%d; '
               'fingerprints=%d; current verdicts=%d' % (
                   stats.decisions_appended, stats.decisions_skipped,
                   stats.observations_appended, stats.observations_skipped,
                   stats.reviewability_appended, stats.reviewability_skipped,
                   stats.reach_appended, stats.reach_skipped, stats.reach_unknown,
+                  stats.external_decisions_appended, stats.external_decisions_skipped,
+                  stats.external_obs_appended, stats.external_obs_skipped,
                   stats.fingerprints, rows))
     finally:
         conn.close()
@@ -1115,7 +1180,9 @@ def _cmd_record(args: argparse.Namespace) -> int:
 
         stats = record.record_to_ledger(
             conn, args.corpus_dir, index_path, now=now, progress=progress,
-            reconcile=True, popcon_path=_popcon_arg(args.corpus_dir))
+            reconcile=True, popcon_path=_popcon_arg(args.corpus_dir),
+            security_tracker_path=_security_tracker_arg(args.corpus_dir),
+            bts_path=_bts_arg(args.corpus_dir))
         # A newly-applied rule may add a category (e.g. ``test`` at enum v2); record
         # the current enum version so ``meta`` reflects what the ledger now holds.
         conn.execute("UPDATE meta SET value = ? WHERE key = 'category_enum_version'",
@@ -1130,12 +1197,16 @@ def _cmd_record(args: argparse.Namespace) -> int:
         print('dequeued %d now-settled review items' % dequeued)
         print('decisions appended=%d skipped=%d superseded=%d; observations appended=%d '
               'skipped=%d; reviewability appended=%d skipped=%d; reach appended=%d '
-              'skipped=%d unknown=%d; fingerprints=%d; current verdicts=%d' % (
+              'skipped=%d unknown=%d; external decisions appended=%d skipped=%d superseded=%d; '
+              'external provenance appended=%d skipped=%d; fingerprints=%d; current verdicts=%d' % (
                   stats.decisions_appended, stats.decisions_skipped,
                   stats.decisions_superseded, stats.observations_appended,
                   stats.observations_skipped, stats.reviewability_appended,
                   stats.reviewability_skipped, stats.reach_appended,
-                  stats.reach_skipped, stats.reach_unknown, stats.fingerprints, rows))
+                  stats.reach_skipped, stats.reach_unknown,
+                  stats.external_decisions_appended, stats.external_decisions_skipped,
+                  stats.external_decisions_superseded, stats.external_obs_appended,
+                  stats.external_obs_skipped, stats.fingerprints, rows))
     finally:
         conn.close()
     return 0

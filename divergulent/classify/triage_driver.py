@@ -98,6 +98,11 @@ class WorkItem:
     has_dangerous_construct: bool
     risk_rank: int = 0
     reach_rank: int = 0
+    has_claim_unconfirmed: bool = False
+    """A live phase-6 ``claim-unconfirmed`` provenance observation -- the patch
+    declared a CVE/bug that did not survive cross-reference. A review nudge (a
+    band below risk, above reach): a failed provenance claim is worth a human look
+    ahead of a merely widely-run patch, but never crosses a risk boundary."""
 
 
 def _fingerprints_with_dangerous_construct(conn: sqlite3.Connection) -> set[str]:
@@ -111,6 +116,19 @@ def _fingerprints_with_dangerous_construct(conn: sqlite3.Connection) -> set[str]
     return {
         obs['fingerprint'] for obs in live_observations(conn)
         if obs['kind'] == _DANGEROUS_CONSTRUCT_KIND}
+
+
+def _fingerprints_with_claim_unconfirmed(conn: sqlite3.Connection) -> set[str]:
+    """Fingerprints carrying a LIVE ``claim-unconfirmed`` provenance observation.
+
+    The phase-6 contradiction set: a declared CVE/bug that failed cross-reference.
+    A review nudge (below risk, above reach) -- not a verdict of malice.
+    """
+    from divergulent.classify import cross_reference as xref_mod  # lazy: import hygiene
+    return {
+        obs['fingerprint'] for obs in live_observations(conn)
+        if obs['kind'] == xref_mod.PROVENANCE_KIND
+        and obs['detail'] == xref_mod.DETAIL_CLAIM_UNCONFIRMED}
 
 
 def _index_groups(index_path: str) -> dict[str, dict]:
@@ -151,21 +169,24 @@ def _index_groups(index_path: str) -> dict[str, dict]:
 # occurrence is capped below REACH_PRIORITY_WEIGHT), so reach can never promote a
 # patch across a risk boundary -- the one hard rule of the reach axis.
 RISK_PRIORITY_WEIGHT = 1_000_000_000
+PROVENANCE_PRIORITY_WEIGHT = 100_000_000
 REACH_PRIORITY_WEIGHT = 1_000_000
 
 
 def _priority_key(item: WorkItem) -> tuple:
-    """Sort key (higher == triaged first): risk, dangerous, reach, occurrence.
+    """Sort key (higher == triaged first): risk, dangerous, provenance, reach, occurrence.
 
     The security-risk gate's level is the top signal -- the scariest patches are
-    triaged and reviewed first -- then a live dangerous-construct observation, then
-    the install-base reach (a widely-run patch ahead of an obscure one), then a high
-    occurrence count (one recurring fingerprint stands for many carried patches),
+    triaged and reviewed first -- then a live dangerous-construct observation, then a
+    phase-6 provenance contradiction (a declared CVE/bug that failed cross-reference),
+    then the install-base reach (a widely-run patch ahead of an obscure one), then a
+    high occurrence count (one recurring fingerprint stands for many carried patches),
     then package count, with the fingerprint as a final tie-break.
     """
     return (
         item.risk_rank,
         1 if item.has_dangerous_construct else 0,
+        1 if item.has_claim_unconfirmed else 0,
         item.reach_rank,
         item.n_occurrences,
         item.n_packages,
@@ -175,14 +196,17 @@ def _priority_key(item: WorkItem) -> tuple:
 def _stored_priority(item: WorkItem) -> int:
     """The single integer ``review_queue.priority`` for a needs-human item.
 
-    Encodes risk-first, then reach-within-risk ordering into one int
-    (``risk_rank * RISK_WEIGHT + reach_rank * REACH_WEIGHT + occurrence``) so the
-    review tool's ``ORDER BY priority DESC`` pulls the highest-risk patches first,
-    reach breaking ties within a risk tier and occurrence within a reach tier -- no
-    schema change. Occurrence is capped below ``REACH_PRIORITY_WEIGHT`` so it can
-    never bleed into the reach band, keeping the bands non-overlapping.
+    Encodes risk-first, then provenance-within-risk, then reach-within-provenance
+    ordering into one int (``risk_rank * RISK_WEIGHT + provenance * PROV_WEIGHT +
+    reach_rank * REACH_WEIGHT + occurrence``) so the review tool's ``ORDER BY
+    priority DESC`` pulls the highest-risk patches first -- a failed provenance claim
+    breaking ties within a risk tier, reach within that, occurrence within that -- no
+    schema change. The bands cannot overlap (provenance <= PROV_WEIGHT < a risk step;
+    reach + occurrence < PROV_WEIGHT), so neither provenance nor reach can ever
+    promote a patch across a risk boundary.
     """
     return (item.risk_rank * RISK_PRIORITY_WEIGHT
+            + (1 if item.has_claim_unconfirmed else 0) * PROVENANCE_PRIORITY_WEIGHT
             + item.reach_rank * REACH_PRIORITY_WEIGHT
             + min(item.n_occurrences, REACH_PRIORITY_WEIGHT - 1))
 
@@ -205,12 +229,14 @@ def reprioritise_review_queue(conn, index_path: str) -> int:
 
     risk_ranks = risk_mod.risk_rank_by_fingerprint(conn)
     reach_ranks = reach_mod.reach_rank_by_fingerprint(conn)
+    unconfirmed = _fingerprints_with_claim_unconfirmed(conn)
     groups = _index_groups(index_path)
     changed = 0
     for item in ledger_mod.pending_review_items(conn):
         fingerprint = item['fingerprint']
         occurrences = groups.get(fingerprint, {}).get('n_occurrences', 0)
         new_priority = (risk_ranks.get(fingerprint, 0) * RISK_PRIORITY_WEIGHT
+                        + (1 if fingerprint in unconfirmed else 0) * PROVENANCE_PRIORITY_WEIGHT
                         + reach_ranks.get(fingerprint, 0) * REACH_PRIORITY_WEIGHT
                         + min(occurrences, REACH_PRIORITY_WEIGHT - 1))
         if new_priority != item['priority']:
@@ -242,6 +268,7 @@ def build_work_list(conn: sqlite3.Connection, index_path: str, *,
 
     groups = _index_groups(index_path)
     dangerous = _fingerprints_with_dangerous_construct(conn)
+    unconfirmed = _fingerprints_with_claim_unconfirmed(conn)
     risk_ranks = risk_mod.risk_rank_by_fingerprint(conn)
     reach_ranks = reach_mod.reach_rank_by_fingerprint(conn)
     fingerprints = groups.keys() if scope == 'all' else verdict_mod.queue(conn)
@@ -259,7 +286,8 @@ def build_work_list(conn: sqlite3.Connection, index_path: str, *,
             n_packages=len(group['packages']),
             has_dangerous_construct=fingerprint in dangerous,
             risk_rank=risk_ranks.get(fingerprint, 0),
-            reach_rank=reach_ranks.get(fingerprint, 0)))
+            reach_rank=reach_ranks.get(fingerprint, 0),
+            has_claim_unconfirmed=fingerprint in unconfirmed))
 
     items.sort(key=_priority_key, reverse=True)
     return items

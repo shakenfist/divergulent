@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from divergulent.classify import cross_reference
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import reach as reach_mod
 from divergulent.classify import reviewability as reviewability_mod
@@ -93,6 +94,11 @@ def _reason(v: verdict_mod.Verdict) -> str:
     ships raw model responses.  The full evidence stays auditable in the ledger's
     JSONL export for anyone who wants it.
     """
+    if v.decided_by == cross_reference.EXTERNAL_CVE_RULE_ID:
+        # The phase-6 external CVE cross-reference: surface the confirmed-CVE phrase
+        # (the CVE id + snapshot date it recorded as evidence), not a generic
+        # "deterministic rule". Still evidence-free of any raw model response.
+        return v.evidence or ('confirmed CVE via Debian Security Tracker (v%d)' % v.rule_version)
     if v.kind == 'heuristic':
         return 'deterministic rule %s (v%d)' % (v.decided_by, v.rule_version)
     if v.kind == 'llm':

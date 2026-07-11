@@ -81,6 +81,21 @@ class BuildTestCase(BundleFixture, testtools.TestCase):
         self.assertEqual(3, sec['rule_version'])
         self.assertIn('verified LLM triage', sec['reason'])
 
+    def test_external_cve_reason_surfaces_the_confirmed_phrase(self):
+        from divergulent.classify import cross_reference as xref_mod
+        conn = self._seeded_ledger()
+        # An external CVE decision wins fp-ext; its reason should be the compact
+        # confirmed-CVE evidence phrase (id + snapshot date), not "deterministic rule".
+        ledger_mod.append_decision(
+            conn, fingerprint='fp-ext', category='security', confidence='high',
+            decided_by=xref_mod.EXTERNAL_CVE_RULE_ID, rule_version=xref_mod.EXTERNAL_CVE_VERSION,
+            kind='heuristic', evidence='confirmed CVE-2021-3999 (security-tracker 2026-07-10)',
+            decided_at='2026-06-26T00:06:00Z',
+            input_snapshot='{"cve": "CVE-2021-3999"}', input_fresh_until='2026-08-09')
+        conn.commit()
+        reason = self._bundle(conn).verdicts['fp-ext']['reason']
+        self.assertEqual('confirmed CVE-2021-3999 (security-tracker 2026-07-10)', reason)
+
     def test_axes_attached_when_scored_and_absent_otherwise(self):
         bundle = self._bundle(self._seeded_ledger())
         sec = bundle.verdicts['fp-sec']

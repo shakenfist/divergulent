@@ -85,6 +85,31 @@ class ForwardingTestCase(DispatcherFixture, testtools.TestCase):
         self.assertEqual(0, rc)
         m.assert_called_once_with([str(ws.corpus_dir), '--date', '2026-06-28'])
 
+    def test_security_tracker_forwards_corpus_and_rest(self):
+        ws = self._root()
+        with mock.patch('divergulent.classify.security_tracker.main', return_value=0) as m:
+            rc, _ = self._run(['--data', str(ws.root), 'security-tracker', '--release', 'trixie'])
+        self.assertEqual(0, rc)
+        m.assert_called_once_with([str(ws.corpus_dir), '--release', 'trixie'])
+
+    def test_security_tracker_does_not_require_a_ledger(self):
+        # Like popcon, security-tracker writes a corpus/*.sqlite snapshot and needs
+        # no ledger, so a missing ledger must not block it.
+        ws = self._root(with_ledger=False)
+        with mock.patch('divergulent.classify.security_tracker.main', return_value=0) as m:
+            rc, out = self._run(['--data', str(ws.root), 'security-tracker'])
+        self.assertEqual(0, rc)
+        self.assertNotIn('no ledger', out)
+        m.assert_called_once_with([str(ws.corpus_dir)])
+
+    def test_bts_forwards_corpus_and_does_not_require_a_ledger(self):
+        ws = self._root(with_ledger=False)
+        with mock.patch('divergulent.classify.bts.main', return_value=0) as m:
+            rc, out = self._run(['--data', str(ws.root), 'bts', '--url', 'http://x/bugs'])
+        self.assertEqual(0, rc)
+        self.assertNotIn('no ledger', out)
+        m.assert_called_once_with([str(ws.corpus_dir), '--url', 'http://x/bugs'])
+
     def test_bundle_forwards_ledger_and_rest(self):
         ws = self._root()
         with mock.patch('divergulent.classify.classification_bundle.main', return_value=0) as m:

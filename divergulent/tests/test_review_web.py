@@ -244,6 +244,18 @@ class ReviewPageTestCase(ReviewWebFixture, testtools.TestCase):
         self.assertIn('href="#verdict"', body)
         self.assertIn("e.key === 'v'", body)
 
+    def test_shows_the_provenance_badge(self):
+        from divergulent.classify import cross_reference as xref_mod
+        client, conn, fp_hex = self._client()
+        ledger_mod.append_observation(
+            conn, fingerprint=fp_hex, kind=xref_mod.PROVENANCE_KIND,
+            detail=xref_mod.DETAIL_CLAIM_UNCONFIRMED,
+            evidence='claimed CVE-2099-0000 not recorded (not-found, security-tracker 2026-07-10)',
+            observed_by=xref_mod.PROVENANCE_OBSERVED_BY, rule_version=xref_mod.EXTERNAL_CVE_VERSION,
+            observed_at=WHEN)
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn('claim-unconfirmed', body)
+
     def test_review_page_resolves_a_prefix(self):
         client, _conn, fp_hex = self._client()
         resp = client.get('/review/' + fp_hex[:12])

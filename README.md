@@ -270,7 +270,13 @@ patch's install-base from Debian [popcon](https://popcon.debian.org/) as a
 t-shirt size (`XS`–`XL`), so review effort goes to security-impacting
 patches in the most widely-run packages first — as a tie-break *within* a
 security tier, never above it (a popular benign patch never outranks a risky
-obscure one).
+obscure one). An **external cross-reference** tier verifies the CVE/bug a
+patch *claims* against Debian's own records (the Security Tracker and the
+BTS, pulled as pinned snapshots): a confirmed CVE over a code change can
+settle `security` without an LLM, while a claim that fails the check —
+an invented CVE, a bug filed against another package — is flagged for
+review, never pronounced malicious. Only ~10% of carried patches make any
+such claim, so it is a targeted check, not a broad one.
 The human tier is both a CLI (`python -m divergulent.classify.review`)
 and a **local web UI** (`python -m divergulent.classify.review_web`, behind
 the optional `review` extra — `pip install divergulent[review]`, or

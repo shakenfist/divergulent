@@ -68,12 +68,13 @@ test = [
     "flake8",           # mit
 ]
 
-[tool.setuptools]
-packages = [
-    "divergulent",
-    "divergulent.sources",
-    "divergulent.tests",
-]
+# Discover every divergulent subpackage (divergulent, .sources, .classify,
+# .tests, and any future one) rather than an explicit list. The client imports
+# divergulent.classify at load, so a missing subpackage is a broken wheel; an
+# explicit list silently omitted divergulent.classify and only shipped it via a
+# now-deprecated setuptools fallback -- discovery makes it deterministic.
+[tool.setuptools.packages.find]
+include = ["divergulent*"]
 
 [tool.setuptools_scm]
 git_describe_command = "git describe --dirty --tags --match v* --first-parent"

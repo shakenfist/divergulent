@@ -230,11 +230,30 @@ class PriorityTestCase(testtools.TestCase):
     """The priority bands: risk dominates, reach breaks ties within a risk tier,
     occurrence within a reach tier -- and reach NEVER crosses a risk boundary."""
 
-    def _item(self, *, fingerprint='a', risk=0, reach=0, occ=0, dangerous=False):
+    def _item(self, *, fingerprint='a', risk=0, reach=0, occ=0, dangerous=False, unconfirmed=False):
         return triage_driver.WorkItem(
             fingerprint=fingerprint, representative_sha='s', representative_patch_name='p',
             n_occurrences=occ, n_packages=1, has_dangerous_construct=dangerous,
-            risk_rank=risk, reach_rank=reach)
+            risk_rank=risk, reach_rank=reach, has_claim_unconfirmed=unconfirmed)
+
+    def test_claim_unconfirmed_nudges_above_reach_within_a_risk_tier(self):
+        # A failed provenance claim sorts ahead of a clean, even widely-run, patch
+        # in the same risk tier.
+        unconfirmed = self._item(fingerprint='u', risk=2, reach=0, occ=0, unconfirmed=True)
+        clean_xl = self._item(fingerprint='c', risk=2, reach=4, occ=999)
+        self.assertGreater(
+            triage_driver._stored_priority(unconfirmed), triage_driver._stored_priority(clean_xl))
+        self.assertGreater(
+            triage_driver._priority_key(unconfirmed), triage_driver._priority_key(clean_xl))
+
+    def test_claim_unconfirmed_never_crosses_a_risk_boundary(self):
+        # The same hard rule reach obeys: a contradiction cannot outrank a higher risk.
+        unconfirmed_low = self._item(risk=0, unconfirmed=True)
+        clean_high = self._item(risk=1)
+        self.assertGreater(
+            triage_driver._stored_priority(clean_high), triage_driver._stored_priority(unconfirmed_low))
+        self.assertGreater(
+            triage_driver._priority_key(clean_high), triage_driver._priority_key(unconfirmed_low))
 
     def test_reach_breaks_ties_within_a_risk_tier(self):
         hi = self._item(fingerprint='hi', risk=2, reach=4, occ=1)
