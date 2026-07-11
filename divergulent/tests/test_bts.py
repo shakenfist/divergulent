@@ -82,3 +82,24 @@ class SnapshotTestCase(testtools.TestCase):
         self.assertRaises(ValueError, bts.pull,
                           corpus, snapshot_date='2026-07-10', download=empty)
         self.assertFalse(os.path.exists(bts.default_bts_path(corpus)))
+
+    def test_pull_transparently_decompresses_gzip(self):
+        # The hosted artifact is bts-index.tsv.gz; pull must gunzip it and produce
+        # the same snapshot as the plain-TSV path.
+        corpus = self._corpus()
+
+        def gzipped(url, dest_path):
+            import gzip
+            with open(dest_path, 'wb') as handle:
+                handle.write(gzip.compress(FIXTURE.encode('utf-8')))
+
+        path, count = bts.pull(corpus, snapshot_date='2026-07-10', download=gzipped)
+        self.assertEqual(3, count)
+        conn = bts.open_snapshot(path)
+        self.addCleanup(conn.close)
+        self.assertEqual('openssl', bts.bug_row(conn, 123456)['source'])
+
+    def test_default_url_is_the_hosted_rolling_asset(self):
+        self.assertEqual(
+            'https://github.com/shakenfist/divergulent/releases/download/bts/bts-index.tsv.gz',
+            bts.BTS_URL)

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import gzip
 import os
 import shutil
 import sqlite3
@@ -31,11 +32,14 @@ import urllib.request
 
 from divergulent.http import DEFAULT_USER_AGENT
 
-# A UDD-style flat export of ``bug<TAB>source<TAB>status``. There is no single
-# canonical BTS flat file, so this default is a starting point an operator
-# overrides with the UDD/BTS bulk export they actually mirror (the tests never
-# hit the network -- they inject the download).
-BTS_URL = 'https://udd.debian.org/cgi-bin/bugs-export.cgi'
+# The default source is the rolling ``bts`` GitHub prerelease: a gzipped
+# ``bug<TAB>source<TAB>status`` TSV rebuilt weekly from UDD (bugs + archived_bugs)
+# and served at a stable URL, exactly like the divergence cache and classification
+# bundle. Release-independent (a bug is a bug regardless of Debian release). An
+# operator can still override ``--url`` to point at their own export -- ``pull``
+# accepts a plain TSV or a gzipped one (``file://`` URLs work), and the tests
+# inject the download so no network is hit.
+BTS_URL = 'https://github.com/shakenfist/divergulent/releases/download/bts/bts-index.tsv.gz'
 BTS_FILENAME = 'bts.sqlite'
 # BTS statuses that mean the bug is still live (vs closed/done).
 OPEN_STATUSES = frozenset({'pending', 'forwarded', 'pending-fixed'})
@@ -75,6 +79,20 @@ def _download(url: str, dest_path: str) -> None:
     request = urllib.request.Request(url, headers={'User-Agent': DEFAULT_USER_AGENT})
     with urllib.request.urlopen(request, timeout=_FETCH_TIMEOUT) as response, open(dest_path, 'wb') as out:
         shutil.copyfileobj(response, out)
+
+
+def _read_maybe_gzip(path: str) -> str:
+    """Read ``path`` as text, transparently decompressing a gzipped file.
+
+    The hosted artifact is ``bts-index.tsv.gz``; an operator's own export may be a
+    plain TSV. Detect gzip by its ``\\x1f\\x8b`` magic so ``pull`` accepts either
+    without the caller having to say which.
+    """
+    with open(path, 'rb') as handle:
+        raw = handle.read()
+    if raw[:2] == b'\x1f\x8b':
+        raw = gzip.decompress(raw)
+    return raw.decode('utf-8', errors='replace')
 
 
 def write_snapshot(path: str, rows: list[tuple[int, str, str]], *,
@@ -121,12 +139,11 @@ def pull(corpus_dir: str, *, snapshot_date: str | None = None, url: str = BTS_UR
     directory = os.path.dirname(path)
     if directory:
         os.makedirs(directory, exist_ok=True)
-    with tempfile.NamedTemporaryFile('w+', suffix='.tsv', delete=False) as handle:
+    with tempfile.NamedTemporaryFile('wb', suffix='.tsv', delete=False) as handle:
         tmp = handle.name
     try:
         download(url, tmp)
-        with open(tmp, 'r', encoding='utf-8', errors='replace') as handle:
-            rows = parse_bug_index(handle.read())
+        rows = parse_bug_index(_read_maybe_gzip(tmp))
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)

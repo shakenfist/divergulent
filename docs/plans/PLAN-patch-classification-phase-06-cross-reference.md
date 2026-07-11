@@ -24,9 +24,13 @@ priority nudge, review-web provenance badge), and the BTS bug source (`bts.py` +
 carried patches declare a bug/CVE at all (1.44 % a CVE, 8.93 % a Debian bug), so
 the tier is a scalpel, not a broom — see
 [PLAN-patch-classification-phase-06-findings.md](PLAN-patch-classification-phase-06-findings.md).
-The BTS bulk source is an operator-configured UDD-style flat export (dependency
-minimalism rules out a Postgres client); the confirmed:contradicted:unknown split
-awaits the operator's first record-with-snapshot run.
+The BTS bug index is now **hosted as a rolling artifact** — a weekly CI job queries
+UDD (`bugs ∪ archived_bugs`) and publishes a gzipped TSV to the `bts` prerelease, so
+`divergulent-classify bts` works with no operator URL (dependency minimalism ruled
+out a client-side Postgres query; hosting it centrally is the fix). See
+[PLAN-patch-classification-phase-06-bts-hosting.md](PLAN-patch-classification-phase-06-bts-hosting.md).
+The confirmed:contradicted:unknown split awaits the operator's first
+record-with-snapshot run.
 
 ## The thesis: verification, not trust — and disagreement is the signal
 
@@ -201,9 +205,9 @@ offline-tested against fixtures — no live network in the suite.
 - **Freshness TTL** — 30 days is a starting guess; E6's findings should confirm the
   Security Tracker's real churn rate for *settled* CVEs (likely allowing a longer
   horizon).
-- **BTS bulk source** — UDD (`udd.debian.org` / the `bugs` tables) vs the BTS's own
-  bulk status export; pick in E5 by which gives source-package association cleanly
-  without per-bug fetches.
+- **BTS bulk source** — RESOLVED: UDD's `bugs ∪ archived_bugs`, queried centrally
+  once a week and hosted as a gzipped TSV on the rolling `bts` prerelease (see the
+  BTS-hosting follow-up plan), so the client needs no Postgres and no per-bug fetch.
 - **Contradiction precision** — how aggressively to flag. A wrong-source CVE may be
   a legitimate cross-package fix, not deception; the flag must stay a *review nudge*,
   not an accusation. Calibrate against E6's real-corpus contradiction set.

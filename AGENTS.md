@@ -283,7 +283,9 @@ first; it is opt-in on a pinned snapshot and recorded only when a bucket changes
 adds the phase-6 **external** tier (`purity='external'`): it verifies the CVE/bug
 references a patch *claims* against Debian's own bulk-pinned records — the Security
 Tracker (`security_tracker.py` → `corpus/security_tracker.sqlite`) and the BTS
-(`bts.py` → `corpus/bts.sqlite`, a UDD-style flat export). A code-touching confirmed
+(`bts.py` → `corpus/bts.sqlite`, a gzipped `bug→source,status` TSV built weekly from
+UDD `bugs ∪ archived_bugs` and hosted on the rolling `bts` prerelease — `bts` works
+with no operator URL, `pull` gunzips transparently). A code-touching confirmed
 CVE over the `unknown` residue settles a `security` decision with an
 `input_snapshot` + `input_fresh_until` freshness horizon (re-verified past the
 horizon, retracted when the tracker stops supporting it); a contradicted claim only
