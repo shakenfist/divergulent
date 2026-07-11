@@ -20,7 +20,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, debian-13, s]
 
     permissions:
       contents: write  # publish the index to the 'bts' release
@@ -32,7 +32,7 @@ jobs:
       - name: Install build prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y -q postgresql-client gzip
+          sudo apt-get install -y -q postgresql-client
 
       - name: Build BTS index
         run: tools/build-bts.sh "bts/bts-index.tsv.gz"
