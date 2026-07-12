@@ -120,6 +120,12 @@ git diff main...HEAD -- '*.py' | grep -cE '^\+\s*def test_'
 # Documentation files touched (warns if none — the diff may have merited doc updates)
 git diff main...HEAD --name-only -- 'docs/*' '*.md'
 
+# Classifier changed without the classifier docs being touched — if the
+# first grep matches and the second is empty, the reader docs probably
+# need an update (see 2c below)
+git diff main...HEAD --name-only -- 'divergulent/classify/*' 'divergulent/dep3.py'
+git diff main...HEAD --name-only -- 'docs/deterministic-rules.md' 'docs/workflow.md'
+
 # New dependencies (supply-chain surface of the tool itself)
 git diff main...HEAD --name-only | grep -E 'requirements.*\.txt|pyproject\.toml|setup\.(py|cfg)'
 ```
@@ -234,6 +240,25 @@ Read the diff (`git diff main...HEAD`) and verify:
 - `docs/` content is in sync — in particular any description
   of how each data source is queried, what the staleness and
   divergence axes mean, and how the score is computed.
+- The reader-facing docs in `docs/` match the classifier
+  (blocking — this is how the rules stay documented):
+  - Any added, removed, re-ordered, or re-tuned deterministic
+    rule — a change to `rules.py`'s `_CATEGORY_RULES` or its
+    dangerous-construct pattern tables, `content.py`'s file
+    typing, the `reviewability.py`/`reach.py` thresholds,
+    `risk.py`'s provably-benign cull, or `cross_reference.py`'s
+    settle guards — is reflected in
+    `docs/deterministic-rules.md`: the rule tables, the
+    precedence rationale, and (for a new rule) a short section
+    saying what it matches and why it is safe to settle
+    deterministically.
+  - Any bump to a `*_VERSION` / `*_RULE_VERSION` /
+    `*_PROMPT_VERSION` constant is reflected there too.
+  - Pipeline changes (a new tier or axis, a reordering, a new
+    `divergulent-classify` verb) are reflected in
+    `docs/workflow.md`.
+  - New reader-facing documentation lands in `docs/` (not the
+    repository root) and is linked from `docs/index.md`.
 - Plan files in `docs/plans/` are up to date — completed
   phases marked complete, deferred items listed, and the
   *Plan Status* table in `docs/plans/index.md` reflects

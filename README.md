@@ -53,6 +53,19 @@ on the local machine:
 The local-package inventory is sensitive (it fingerprints the host), so
 the default posture is local-only — nothing leaves the machine.
 
+## Documentation
+
+Reader-facing documentation lives in [docs/](docs/index.md): what the
+project is and why
+([docs/what-is-divergulent.md](docs/what-is-divergulent.md)), how the
+processing pipeline works end to end
+([docs/workflow.md](docs/workflow.md)), and a complete description of
+the deterministic classification rules — every rule, its precedence,
+and its measured corpus hit rate
+([docs/deterministic-rules.md](docs/deterministic-rules.md)). The
+planning documents that drove each phase are under
+[docs/plans/](docs/plans/index.md).
+
 ## Usage
 
 List the installed packages mapped to their source packages:
@@ -257,39 +270,21 @@ is tracked in the road-to-1.0 plan.
 
 A **patch-classification** pipeline (curation-side, for whoever builds the
 published cache — not something end users run) turns the carried-patch
-residue into an explainable, signed classification: deterministic rules
-first, a verified LLM triage tier, then a Sigstore-signed human-review
-tier. A cheap, claim-blind **security-risk gate**
-(`python -m divergulent.classify.risk`) scores each patch's security risk
-so the triage and human tiers reach the riskiest carried patches first.
-A deterministic **reviewability axis** scores each patch's size
-(`normal`/`large`/`oversized` by changed-line count) for free; an
-`oversized` diff is not line-reviewable, so the LLM passes skip it and the
-web UI gives it its own bucket. A deterministic **reach axis** scores each
-patch's install-base from Debian [popcon](https://popcon.debian.org/) as a
-t-shirt size (`XS`–`XL`), so review effort goes to security-impacting
-patches in the most widely-run packages first — as a tie-break *within* a
-security tier, never above it (a popular benign patch never outranks a risky
-obscure one). An **external cross-reference** tier verifies the CVE/bug a
-patch *claims* against Debian's own records (the Security Tracker and the
-BTS, pulled as pinned snapshots): a confirmed CVE over a code change can
-settle `security` without an LLM, while a claim that fails the check —
-an invented CVE, a bug filed against another package — is flagged for
-review, never pronounced malicious. Only ~10% of carried patches make any
-such claim, so it is a targeted check, not a broad one.
-The human tier is both a CLI (`python -m divergulent.classify.review`)
-and a **local web UI** (`python -m divergulent.classify.review_web`, behind
-the optional `review` extra — `pip install divergulent[review]`, or
-`[review,verify]` to sign) that adds review-by-category, fingerprint
-cherry-picking, and an audit view for spot-checking that the deterministic
-rules classify correctly. The web UI also lets a reviewer attach **signed,
-append-only notes** to a patch — ad hoc observations ("introduces
-`sprintf()` near a privilege boundary") that don't fit a verdict — shown
-with their signer identity and signature, and surfaces **age** signals
-(the patch's DEP-3 `Last-Update` and the package's last-upload date) so a
-scary construct in ancient, unloved code reads differently from a recent
-one. Both front-ends record byte-identical verdicts against one ledger.
-See
+residue into an explainable, signed classification, layered by cost:
+free deterministic rules settle roughly a third of the ~60k distinct
+carried patches; a claim-blind, adversarially-verified LLM tier triages
+the substantive residue, prioritised by a security-risk gate; and a
+Sigstore-signed human tier (a CLI and a local web UI recording
+byte-identical verdicts against one append-only ledger) tops the
+precedence. Cheap deterministic axes — reviewability (patch size), reach
+(install base via Debian [popcon](https://popcon.debian.org/)), and an
+external CVE/bug cross-reference against pinned Debian snapshots — keep
+the expensive tiers pointed at the patches that matter most. The
+pipeline is documented end to end in
+[docs/workflow.md](docs/workflow.md), and every deterministic rule —
+what it matches, its precedence, and its measured corpus hit rate — in
+[docs/deterministic-rules.md](docs/deterministic-rules.md); the plan
+history is in
 [docs/plans/PLAN-patch-classification.md](docs/plans/PLAN-patch-classification.md).
 
 ## Development

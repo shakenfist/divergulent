@@ -87,148 +87,119 @@ installed-package inventory never leaves the machine.
   Requires `deb-src` (`deb_src_available()`). `fetch_patch_texts()` is the
   reusable, uncapped acquisition half (the patches API caps its rendered
   list at 60; reading the `.debian.tar.*` series does not).
-- `divergulent/classify/` — **curation-side only** (the central builder runs
-  it; no client command imports it). `corpus.py` crawls the archive's
-  patched packages (reusing `apt_patches`' uncapped fetch) into a resumable
-  content-addressed corpus of raw patch bodies (and, from the same
-  `.debian.tar.*`, each package's `debian/changelog` last-upload date, for
-  review-time package-age display); `fingerprint.py` is the pure,
-  versioned `normalise()`/`fingerprint()` (canonical v1 = `strip_path`,
-  `keep_context`); `measure.py` deduplicates, writes a sqlite fingerprint
-  index (a `patch` table plus a `package` table carrying the changelog
-  date), and reports the distinct-patch count. Phase 1 of the patch-
-  classification plan; it measured ≈61.5k carried patches → 60,640 distinct
-  (dedup 1.02x — carried patches are overwhelmingly bespoke). Phase 2 adds the
-  deterministic extractors: `claim.py` reads the author's (untrusted) claim
-  from the DEP-3 header, `content.py` profiles what the diff touches (typing
-  files code-vs-prose), `rules.py` settles the structurally-determined categories
-  (packaging/documentation/test — the last being patches that touch only test
-  files, non-shipping, ~15% of the phase-4 residue) and runs the code-aware
-  dangerous-construct scan
-  that surfaces candidates without ever pronouncing malice, and `classify.py`
-  drives them over the index, deriving claim/content consistency + a review
-  flag and writing a `classification` table. It measured 29.2% of patches as
-  deterministically settled, leaving ~43k substantive for the later tiers.
-  Phase 3 adds the provenance ledger: `ledger.py` (the append-only sqlite
-  schema — a `rule` registry, an immutable `decision` table only ever
-  superseded, and an `observation` table for flags — plus the supersession ops
-  and a `python -m divergulent.classify.ledger` CLI: `build` (create from
-  scratch — now guarded so it won't silently wipe a populated ledger's
-  appended llm/human work without `--force`), `record` (the non-destructive
-  counterpart — apply current/new rules to an EXISTING ledger, superseding a
-  fingerprint's stale heuristic decision when its winning rule changed, e.g.
-  rolling out `test-only`), `report`, `supersede`), `record.py` (drives the
-  rules into the ledger as decisions/observations, idempotently, with an
-  opt-in `reconcile` mode for the in-place re-record), and
-  `verdict.py` (the **derived** current verdict — the highest-precedence live
-  decision per fingerprint — plus the phase-4 residue queue and a report). The
-  current verdict is never stored, so it cannot drift, and retiring a rule
-  re-queues exactly its fingerprints. Phase 4 fills the llm/human seats:
-  `triage.py` runs the claim-blind LLM draft + adversarial verification over a
-  `call(system, user, *, model) -> CallResult(text, usage)` boundary — the static
-  rubric is the `system` prompt, the diff the variable user message. The default
-  `claude -p` backend runs with `--system-prompt` + `--tools ""`
-  + `--strict-mcp-config` + `--setting-sources ""` + `--output-format json` (no
-  new dependency): stripping the unused built-in tools, MCP, and project/global
-  `CLAUDE.md`+settings shrinks each request from ~66k to ~640 tokens (plain input,
-  no wasteful cache writes) — API-level efficiency on subscription.
-  The anthropic backend caches the rubric with `cache_control`. Each call's token
-  usage flows to a **Cost & cache** report (tokens, cache-hit ratio, cost) so a
-  run's spend is visible. Step 4c bumps the ledger to **schema v2** (a
-  `verified` flag on `decision`,
-  reserved `signature`/`signed_by` columns for signed human ManualDecisions, and
-  a `review_queue` table) and refines the precedence to `human > verified-llm >
-  heuristic > unverified-llm` via `verdict.decision_rank` — an unverified LLM
-  guess never outranks a deterministic heuristic. `triage_record.py` records a
-  `TriageResult` into the ledger: an `llm` decision keyed
-  `decided_by='llm-triage:<model>'` / `rule_version=<prompt_version>` (so a model
-  swap is a new rule identity and a prompt bump a new version, both
-  supersedable), `verified` set from the routing, and a pending `review_queue`
-  item for every `needs_human` result — idempotently. `triage_driver.py` (the
-  `python -m divergulent.classify.triage` CLI) triages a **bounded, prioritised**
-  slice of the residue (**risk then** dangerous-construct then high-occurrence
-  first, never the whole queue by accident), surfaces **candidate deterministic
-  rules** (clusters of identical verified verdicts — for human approval, never
-  auto-applied), and reports the untriaged remainder. `risk.py` (the
-  `python -m divergulent.classify.risk` CLI) is a **security-risk gate**: a cheap,
-  claim-blind LLM pass that scores **every** carried patch's security risk on a
-  coarse ordinal (`none/low/elevated/high`) — the whole corpus, not just the
-  residue, because a patch the deterministic tier settled as `packaging` can still
-  be security-relevant (a `debian/rules` hardening-flag change) — so the expensive
-  triage pass and the human reach the scariest patches **first**. It is **advisory** — it records a
-  supersedable `security-risk` **observation** (`observed_by='risk-gate:<model>'`
-  / `rule_version=RISK_PROMPT_VERSION`, the same `(model, prompt_version)`
-  provenance as the triage decisions) and feeds the work-list/`review_queue`
-  priority (risk is the top component, `risk_rank * WEIGHT + occurrence`), but
-  never the verdict precedence, so it needs no adversarial verify. Because the
-  stored `review_queue.priority` is frozen at enqueue time, a risk run re-stamps
-  every pending item from the current score (`reprioritise_review_queue`) so a
-  patch scored scary AFTER it was queued reaches the queue order; the web review
-  worklist also sorts by the LIVE risk level (and shows it as a badge), so it is
-  correct even before a re-stamp. A
-  **security-safe deterministic cull** scores provably-benign patches (empty/
-  whitespace/comment-only, doc-only, translation/changelog) `none` with no LLM
-  call — narrower than the packaging category, since a `debian/rules` change can
-  flip a hardening flag. Default model **Opus** (bake-off: 100% recall / 0%
-  false-alarm at the ≥elevated cut vs Sonnet 73%/3%). `reviewability.py` adds a
-  third, **deterministic** axis: each fingerprint's **reviewability**
-  (`normal`/`large`/`oversized`, by changed-line count) recorded as a
-  `reviewability` observation (`observed_by='size-rule'`) during the deterministic
-  `ledger build`/`record` pass — no LLM, free over the whole corpus, riding
-  alongside the category. An `oversized` patch (>5,000 changed lines) is not
-  line-reviewable and overflows the model, so the risk gate and triage **skip it
-  entirely** (the observation is its disposition; it surfaces in the review UI's
-  oversized bucket). For the merely-`large` middle the risk gate **caps** the diff
-  it sends (`RISK_MAX_DIFF_CHARS`, head-only, truncation recorded) — a coarse read
-  needs only the head, and uncapped giant diffs were the risk run's cost spikes
-  and its context-overflow error. `reach.py` adds a fourth, also **deterministic**
-  axis: each fingerprint's **install-base** as a t-shirt size (`XS`–`XL`, a `reach`
-  observation, `observed_by='popcon-rule'`) from a pinned Debian popcon snapshot
-  (`popcon.py` → `corpus/popcon.sqlite`, refreshed independently of the corpus)
-  joined against the source's binary names (the `.dsc` `Binary:` field captured
-  into `package.binaries` on the rebuild). Reach is the MAX install count over the
-  binaries of every carrying source, bucketed relative to the snapshot's
-  `max(inst)` anchor; it enters priority as a **secondary key within the security
-  tier** (`risk_rank * 1e9 + reach_rank * 1e6 + occurrence`, non-overlapping bands
-  so reach **never crosses a risk boundary**), surfacing widely-run risky patches
-  first. It is opt-in on a pinned snapshot and re-records only when a bucket changes
-  (no churn when counts drift); the web worklist orders `(risk, reach, priority)`
-  and shows a reach badge. `cross_reference.py` adds the phase-6 **external** tier
-  (`purity='external'`): it verifies the CVE/bug references a patch *claims* against
-  Debian's own records rather than trusting them, using two bulk-pinned snapshots —
-  the Security Tracker (`security_tracker.py` → `corpus/security_tracker.sqlite`,
-  source→CVE→status) and the BTS bug index (`bts.py` → `corpus/bts.sqlite`, a
-  UDD-style flat export). A code-touching **confirmed** CVE over the `unknown`
-  residue settles a `security` decision carrying an `input_snapshot` +
-  `input_fresh_until` freshness horizon (the recorder re-verifies past the horizon
-  and retracts a corroboration the tracker no longer supports); a **contradicted**
-  claim (an invented CVE, a wrong-source id, a non-existent bug) only records a
-  `claim-unconfirmed` provenance observation — a review nudge (a priority band below
-  risk, above reach) and a badge, never a category or a malice verdict. It defers to
-  any high-confidence pure-content verdict (a manpage citing a CVE stays
-  `documentation`). Opt-in on the snapshots (`divergulent-classify security-tracker`
-  / `bts`); on the real corpus only ~10% of patches carry any reference (1.44% a
-  CVE), so the tier is a scalpel. `review.py` (the
-  `python -m divergulent.classify.review` CLI) is the local, interactive human
-  tier, with three subcommands. `review` drains the queue: it shows each
-  high-priority diff **in its original source context** — fetched on-demand from
-  sources.debian.org **per touched file by the file's real `+++ b/<path>` path**
-  (not the patch filename), with an **epoch-stripped version fallback** — beside
-  the LLM draft and the **source package(s) that carry the fingerprint** (a
-  deduplicated fingerprint can span dozens of packages; the list is capped). A
-  **files-changed summary** (per-file added/removed counts, largest change
-  first) precedes the diff, so on a huge multi-file patch — e.g. a full
-  autotools regeneration — the bulk and the small hand-edits buried in it are
-  visible before scrolling begins. It records a **Sigstore-signed
-  ManualDecision** (`kind='human'`,
-  with `signature` + `signed_by`) that tops the precedence. It authenticates to
-  Sigstore **once per session** (the identity token is reused, not re-prompted
-  per item). `requeue <fingerprint>` sends one patch back for re-review
-  (superseding its live human verdict — preserved as history — and re-opening its
-  queue item, then rebuilding the verdict cache); `history` lists recent verdicts
-  including superseded ones, so a reviewer can spot and reconsider a past call.
-  The LLM backends (`claude -p` default, Anthropic API optional) and signing are
-  curation-side only; clients never run either.
+- `divergulent/classify/` — **curation-side only** (the central builder
+  runs it; no client command imports it except its two shareable
+  leaves: `fingerprint.py`, to hash a fetched patch for bundle lookup,
+  and `classification_bundle.py`, to load the published classification
+  bundle). The pipeline's narrative lives in
+  [docs/workflow.md](docs/workflow.md) and every deterministic rule is
+  documented in
+  [docs/deterministic-rules.md](docs/deterministic-rules.md); what
+  follows is the module map.
+  - `corpus.py` — crawls the archive's patched packages (reusing
+    `apt_patches`' uncapped fetch) into a resumable, content-addressed
+    corpus of raw patch bodies, capturing each package's
+    `debian/changelog` last-upload date for review-time package-age
+    display.
+  - `fingerprint.py` — the pure, versioned `normalise()`/`fingerprint()`
+    (canonical v1 = `strip_path`, `keep_context`); the identity every
+    later phase keys on.
+  - `measure.py` — deduplicates into a sqlite fingerprint index (a
+    `patch` table plus a `package` table carrying the changelog date and
+    `.dsc` binary names). Measured ≈61.5k carried patches → 60,640
+    distinct (dedup 1.02x — carried patches are overwhelmingly bespoke).
+  - `claim.py` / `content.py` / `rules.py` / `classify.py` — the
+    deterministic extractors: the author's (untrusted) DEP-3 claim; the
+    content profile (code-vs-prose file typing, conservative
+    trivial-change flags); the precedence-ordered category rules plus
+    the code-aware dangerous-construct scan (flags, never verdicts); and
+    the driver deriving claim/content consistency + a review flag.
+    Measured 29.2% of patches deterministically settled before
+    `test-only` was added.
+  - `ledger.py` — the append-only provenance schema: a `rule` registry,
+    an immutable `decision` table (only ever superseded), an
+    `observation` table, and schema v2's `verified` flag,
+    `review_queue`, and reserved signature columns. CLI: `build`
+    (guarded — refuses to wipe a populated ledger's llm/human work
+    without `--force`), `record` (apply current rules to an existing
+    ledger, superseding a fingerprint's stale decision when its winning
+    rule changed), `report`, `supersede`.
+  - `record.py` — drives the deterministic tiers into the ledger
+    idempotently (category decisions, dangerous-construct observations,
+    reviewability, reach, and the opt-in phase-6 cross-reference), with
+    an opt-in `reconcile` mode for in-place re-records.
+  - `verdict.py` — the **derived** current verdict: precedence
+    `human > verified-llm > heuristic > unverified-llm`
+    (`decision_rank`), then recency, confidence, and id; plus the
+    phase-4 residue queue. Never stored, so it cannot drift, and
+    retiring a rule re-queues exactly its fingerprints.
+  - `triage.py` / `triage_record.py` / `triage_driver.py` — the
+    claim-blind LLM draft + adversarial verification over a
+    `call(system, user, *, model) -> CallResult` boundary. The default
+    `claude -p` backend runs `--system-prompt` + `--tools ""` +
+    `--strict-mcp-config` + `--setting-sources ""` +
+    `--output-format json` (no new dependency; stripping unused context
+    shrank each request from ~66k to ~640 tokens); the anthropic backend
+    caches the rubric with `cache_control`; per-call usage feeds a
+    **Cost & cache** report. Ledger decisions are keyed
+    `decided_by='llm-triage:<model>'` / `rule_version=<prompt_version>`
+    (a model swap is a new rule identity, a prompt bump a new version),
+    `verified` set from the routing, with a pending `review_queue` item
+    for every `needs_human` result — idempotently. The driver triages a
+    **bounded, prioritised** slice (risk, then dangerous-construct, then
+    high-occurrence — never the whole queue by accident), surfaces
+    **candidate deterministic rules** (clusters of identical verified
+    verdicts, for human approval, never auto-applied), and reports the
+    untriaged remainder.
+  - `risk.py` — the **security-risk gate**: a deterministic
+    provably-benign cull (no LLM call), else a cheap claim-blind LLM
+    score (`none/low/elevated/high`) over the **whole corpus** — a
+    patch settled as `packaging` can still be security-relevant.
+    Advisory only: a supersedable `security-risk` observation feeding
+    work-list/`review_queue` priority (a risk run re-stamps pending
+    items via `reprioritise_review_queue`; the web worklist also sorts
+    by the live level), never the verdict precedence. Failures degrade
+    to `elevated` (recall-safe); `large` diffs are head-capped
+    (`RISK_MAX_DIFF_CHARS`, truncation recorded). Default model Opus
+    (bake-off: 100% recall / 0% false-alarm at the ≥elevated cut vs
+    Sonnet 73%/3%).
+  - `reviewability.py` — the deterministic size axis
+    (`normal`/`large`/`oversized` at 500/5,000 changed lines,
+    `observed_by='size-rule'`), recorded during the deterministic
+    record pass; an `oversized` diff skips the LLM passes entirely and
+    gets its own review-UI bucket.
+  - `reach.py` / `popcon.py` — the deterministic install-base axis
+    (`XS`–`XL` from a pinned popcon snapshot in
+    `corpus/popcon.sqlite`, max-over-binaries, bucketed relative to the
+    snapshot's `max(inst)` anchor, `observed_by='popcon-rule'`). A
+    secondary priority key **within** a security tier
+    (`risk_rank * 1e9 + reach_rank * 1e6 + occurrence`, non-overlapping
+    bands), never across one; re-records only when a bucket changes.
+  - `cross_reference.py` / `security_tracker.py` / `bts.py` — the
+    phase-6 **external** tier (`purity='external'`): claimed CVEs
+    verified against a pinned Security Tracker snapshot
+    (`corpus/security_tracker.sqlite`) and claimed Debian bugs against
+    a BTS index snapshot (`corpus/bts.sqlite`). A code-touching
+    **confirmed** CVE over the `unknown` residue settles `security`,
+    carrying an `input_snapshot` + `input_fresh_until` horizon (the
+    recorder re-verifies past it and retracts a corroboration the
+    tracker no longer supports); a **contradicted** claim records only
+    a `claim-unconfirmed` provenance observation — a review nudge,
+    never a malice verdict. Only ~10% of patches claim any reference
+    (1.44% a CVE), so the tier is a scalpel.
+  - `review.py` — the local, interactive human tier (`review` /
+    `requeue <fingerprint>` / `history`): each queued diff shown **in
+    its original source context** (fetched on-demand per touched file
+    by its real `+++ b/<path>` path, with an epoch-stripped version
+    fallback) beside the LLM draft and the carrying source package(s),
+    with a **files-changed summary** (per-file added/removed counts,
+    largest change first) before the diff so the bulk of a huge
+    multi-file patch and the small hand-edits buried in it are visible
+    before scrolling begins;
+    records a **Sigstore-signed ManualDecision** (`kind='human'`) that
+    tops the precedence, authenticating once per session. The LLM
+    backends and signing are curation-side only; clients never run
+    either.
 - `divergulent/classify/review_web.py` (the
   `python -m divergulent.classify.review_web` tool) is a **local web UI over the
   same review machinery** — a presentation swap, not a second implementation. It

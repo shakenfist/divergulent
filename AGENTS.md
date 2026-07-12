@@ -440,3 +440,20 @@ persists `DIVERGULENT_CACHE_DIR` via `actions/cache`.
 Plans live in `docs/plans/` — a master plan plus one file per phase,
 created from [PLAN-TEMPLATE.md](PLAN-TEMPLATE.md). Pre-push checks are in
 [PUSH-TEMPLATE.md](PUSH-TEMPLATE.md).
+
+## Documentation workflow
+
+Reader-facing documentation lives in `docs/` (see
+[docs/index.md](docs/index.md)); the repository-root files are for
+contributors (this file, ARCHITECTURE.md) and CLI users (README.md).
+Two documents track the code and must move with it:
+
+- [docs/deterministic-rules.md](docs/deterministic-rules.md) — any
+  change to the deterministic classifier (a category rule, a
+  dangerous-construct pattern, file typing, an axis threshold, a
+  `*_VERSION` constant) must be reflected there, including the rule
+  tables and precedence rationale.
+- [docs/workflow.md](docs/workflow.md) — any change to the pipeline's
+  stages, tiers, or CLI verbs must be reflected there.
+
+PUSH-TEMPLATE.md's documentation-review wave checks both.
