@@ -1,0 +1,11 @@
+---
+# This file defines the ordering and page titles for the import of
+# this content into `shakenfist/docs/components/divergulent/`. The
+# plans/ directory deliberately has no order.yml of its own: its files
+# are still copied (so cross-links from these pages resolve) but the
+# ~40 plan documents stay out of the site navigation.
+
+- index.md: Introduction
+- what-is-divergulent.md: What is divergulent?
+- workflow.md: The processing workflow
+- deterministic-rules.md: The deterministic rules
