@@ -179,7 +179,11 @@ installed-package inventory never leaves the machine.
     phase-6 **external** tier (`purity='external'`): claimed CVEs
     verified against a pinned Security Tracker snapshot
     (`corpus/security_tracker.sqlite`) and claimed Debian bugs against
-    a BTS index snapshot (`corpus/bts.sqlite`). A code-touching
+    a BTS index snapshot (`corpus/bts.sqlite`, a gzipped
+    `bug→source,status` TSV built weekly from UDD
+    (`bugs ∪ archived_bugs`) and hosted on the rolling `bts`
+    prerelease, so `bts` works with no operator URL — `pull`
+    transparently gunzips it). A code-touching
     **confirmed** CVE over the `unknown` residue settles `security`,
     carrying an `input_snapshot` + `input_fresh_until` horizon (the
     recorder re-verifies past it and retracts a corroboration the
