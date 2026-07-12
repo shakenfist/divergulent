@@ -215,8 +215,12 @@ installed-package inventory never leaves the machine.
   sources.debian.org **per touched file by the file's real `+++ b/<path>` path**
   (not the patch filename), with an **epoch-stripped version fallback** — beside
   the LLM draft and the **source package(s) that carry the fingerprint** (a
-  deduplicated fingerprint can span dozens of packages; the list is capped), and
-  records a **Sigstore-signed ManualDecision** (`kind='human'`,
+  deduplicated fingerprint can span dozens of packages; the list is capped). A
+  **files-changed summary** (per-file added/removed counts, largest change
+  first) precedes the diff, so on a huge multi-file patch — e.g. a full
+  autotools regeneration — the bulk and the small hand-edits buried in it are
+  visible before scrolling begins. It records a **Sigstore-signed
+  ManualDecision** (`kind='human'`,
   with `signature` + `signed_by`) that tops the precedence. It authenticates to
   Sigstore **once per session** (the identity token is reused, not re-prompted
   per item). `requeue <fingerprint>` sends one patch back for re-review
@@ -246,7 +250,8 @@ installed-package inventory never leaves the machine.
   observations, in an OPTIONAL `note` table existing ledgers gain via
   `ensure_note_table`), signed with the same session signer as verdicts
   (`record_note`/`canonical_note`), shown with their identity + signature, badged
-  on the worklist, and never published. Flask +
+  on the worklist, and never published. The review page's files-changed list
+  anchor-links each row to its per-file block in the rendered diff. Flask +
   Jinja2 (autoescaping HTML) live behind the optional **`review` extra**
   (`pip install divergulent[review]`, or `[review,verify]` to sign), off the
   default scan/report path; the server binds **loopback only**, has no auth, and
