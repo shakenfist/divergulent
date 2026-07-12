@@ -244,6 +244,46 @@ def split_diff_by_file(diff_body: str) -> list[_FileDiff]:
     return segments
 
 
+@dataclass(frozen=True)
+class FileStat:
+    """One touched file's added/removed line counts -- a diffstat row.
+
+    ``path`` matches the per-file ``### <path>`` header the context view renders
+    (the ``+++ b/<path>`` target), so a file list built from these rows lines up
+    one-to-one with the diff blocks that follow it.
+    """
+
+    path: str
+    added: int
+    removed: int
+
+
+def diff_file_stats(diff_body: str) -> list[FileStat]:
+    """Per-file added/removed counts for every file ``diff_body`` touches.
+
+    A large multi-file patch (autotools regeneration, vendored trees) is hard to
+    judge from the diff alone; this summary -- shown BEFORE the diff -- tells the
+    reviewer at a glance which files carry the bulk of the change and which small
+    hand-written edits ride along with it.  Splits per file exactly as the
+    context view does (:func:`split_diff_by_file`) so the list matches the diff
+    blocks one-to-one, and counts each file's ``+``/``-`` lines from its parsed
+    hunks (so ``---``/``+++`` headers are never miscounted).  A file whose
+    segment has no parseable hunks counts as ``(0, 0)`` rather than failing; a
+    body with no file headers yields an empty list (the caller omits the list).
+    """
+    stats: list[FileStat] = []
+    for segment in split_diff_by_file(diff_body):
+        added = removed = 0
+        for hunk in _parse_hunks(segment.body):
+            for line in hunk.lines:
+                if line.startswith('+'):
+                    added += 1
+                elif line.startswith('-'):
+                    removed += 1
+        stats.append(FileStat(segment.path, added, removed))
+    return stats
+
+
 def build_context_view(source_package: str, version: str, diff_body: str, *,
                        fetch, area: str = 'main') -> str:
     """Render a whole patch in the context of EACH original file it touches.
@@ -1108,6 +1148,24 @@ def _format_package_lines(context: ReviewContext, *, limit: int = MAX_PACKAGES_S
     return lines
 
 
+def _format_file_list(stats: list[FileStat]) -> list[str]:
+    """The files-changed summary lines shown before the diff.
+
+    A totals line then one aligned row per file, largest change first -- so on a
+    huge patch (e.g. a full autotools regeneration) the reviewer immediately sees
+    where the bulk lands and which small hand-edits are buried in it.  The paths
+    match the diff's ``### <path>`` block headers, so the list doubles as a table
+    of contents for the render that follows.
+    """
+    lines = ['files changed: %d (+%d / -%d)' % (
+        len(stats),
+        sum(stat.added for stat in stats),
+        sum(stat.removed for stat in stats))]
+    for stat in sorted(stats, key=lambda s: (-(s.added + s.removed), s.path)):
+        lines.append('  %7d+ %7d-  %s' % (stat.added, stat.removed, stat.path))
+    return lines
+
+
 def _assignable_categories() -> tuple[str, ...]:
     """The categories a human reviewer may assign -- the FULL category enum.
 
@@ -1125,9 +1183,11 @@ def _assignable_categories() -> tuple[str, ...]:
 def _interactive_ask(context: ReviewContext) -> str:
     """The real interactive ``ask``: page the context + draft + claim, read stdin.
 
-    Pages the diff IN CONTEXT, the LLM draft (category + confidence + reasoning),
-    the author's claim, and the routing reason through ``$PAGER`` so a large diff
-    is navigable, then reads the human's choice from stdin: accept the LLM draft,
+    Pages the files-changed summary (largest first, so a huge patch's bulk is
+    visible before scrolling begins), the diff IN CONTEXT, the LLM draft
+    (category + confidence + reasoning), the author's claim, and the routing
+    reason through ``$PAGER`` so a large diff is navigable, then reads the
+    human's choice from stdin: accept the LLM draft,
     override to a named category (the full enum, including ``test``), or defer.
     The reading of stdin is confined here (the CLI entry); every other path takes
     ``choice`` as data.
@@ -1156,6 +1216,10 @@ def _interactive_ask(context: ReviewContext) -> str:
     else:
         view.append('LLM draft: (none)')
     view.append('-' * 78)
+    stats = diff_file_stats(context.diff_body)
+    if stats:
+        view.extend(_format_file_list(stats))
+        view.append('-' * 78)
     view.append(context.context_view)
     view.append('-' * 78)
     _page('\n'.join(view))

@@ -295,7 +295,8 @@ a reference (1.44% a CVE) — a scalpel. See
 `docs/plans/PLAN-patch-classification-phase-06-cross-reference.md` and its findings.
 `python -m divergulent.classify.review` (in `review.py`) is the local, interactive,
 Sigstore-signed human tier. It has three subcommands: `review <ledger>
-<corpus_dir>` drains the queue (showing each diff in its sources.debian.org
+<corpus_dir>` drains the queue (showing a files-changed summary — per-file
+added/removed counts, largest first — then each diff in its sources.debian.org
 original-source context — fetched per touched file by the file's real path, not
 the patch filename, with epoch-stripped version fallback, alongside the source
 package(s) carrying the fingerprint — and authenticating to

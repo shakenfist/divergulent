@@ -622,6 +622,43 @@ class SplitDiffByFileTestCase(testtools.TestCase):
         self.assertEqual([], review.split_diff_by_file('not a diff at all\n'))
 
 
+class DiffFileStatsTestCase(testtools.TestCase):
+
+    def test_counts_added_and_removed_per_file_in_diff_order(self):
+        stats = review.diff_file_stats(
+            '--- a/src/foo.c\n+++ b/src/foo.c\n@@ -1,2 +1,1 @@\n-a\n-b\n+c\n'
+            '--- a/inc/bar.h\n+++ b/inc/bar.h\n@@ -2,1 +2,2 @@\n-d\n+e\n+f\n')
+        self.assertEqual(
+            [('src/foo.c', 1, 2), ('inc/bar.h', 2, 1)],
+            [(s.path, s.added, s.removed) for s in stats])
+
+    def test_no_file_headers_yields_empty(self):
+        self.assertEqual([], review.diff_file_stats('not a diff at all\n'))
+
+    def test_segment_without_hunks_counts_zero(self):
+        # A file header with no parseable @@ hunk degrades to (0, 0), not a crash.
+        stats = review.diff_file_stats('--- a/odd\n+++ b/odd\nno hunks here\n')
+        self.assertEqual([('odd', 0, 0)],
+                         [(s.path, s.added, s.removed) for s in stats])
+
+
+class FormatFileListTestCase(testtools.TestCase):
+
+    def test_totals_line_then_largest_change_first(self):
+        lines = review._format_file_list([
+            review.FileStat('src/hand-edit.c', 1, 0),
+            review.FileStat('configure', 100, 50)])
+        self.assertEqual('files changed: 2 (+101 / -50)', lines[0])
+        self.assertIn('configure', lines[1])       # bulk first
+        self.assertIn('src/hand-edit.c', lines[2])  # small edit last
+        self.assertIn('100+', lines[1])
+
+    def test_counts_are_shown_per_file(self):
+        lines = review._format_file_list([review.FileStat('f.c', 3, 2)])
+        self.assertIn('3+', lines[1])
+        self.assertIn('2-', lines[1])
+
+
 class SourceTreePathTestCase(testtools.TestCase):
     """The sources.debian.org fetch path: strip a tarball root, keep real paths."""
 

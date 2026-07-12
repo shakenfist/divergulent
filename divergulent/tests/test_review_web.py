@@ -488,6 +488,42 @@ class DiffLinesTestCase(testtools.TestCase):
         delete = next(r for r in rows if r['text'] == '-old')
         self.assertEqual('del block-start', delete['css'])
 
+    def test_numbers_the_per_file_block_headers(self):
+        rows = review_web.diff_lines(
+            '### src/a.c\n@@ -1 +1 @@\n-x\n+y\n\n### src/b.c\n@@ -1 +1 @@\n+z')
+        files = [(r['file_index'], r['text']) for r in rows if r['cls'] == 'file']
+        self.assertEqual([(1, '### src/a.c'), (2, '### src/b.c')], files)
+
+
+class FileRowsTestCase(testtools.TestCase):
+
+    def test_sorted_largest_first_keeping_the_diff_order_index(self):
+        rows = review_web.file_rows(
+            '--- a/small.c\n+++ b/small.c\n@@ -1 +1 @@\n-a\n+b\n'
+            '--- a/big.c\n+++ b/big.c\n@@ -1,3 +1,3 @@\n-c\n-d\n-e\n+f\n+g\n+h\n')
+        self.assertEqual(['big.c', 'small.c'], [r['path'] for r in rows])
+        # big.c is the SECOND file in the diff, so its anchor index stays 2.
+        self.assertEqual([2, 1], [r['index'] for r in rows])
+        self.assertEqual([(3, 3), (1, 1)],
+                         [(r['added'], r['removed']) for r in rows])
+
+    def test_no_file_headers_yields_no_rows(self):
+        self.assertEqual([], review_web.file_rows('not a diff at all\n'))
+
+
+class FileListWebTestCase(ReviewWebFixture, testtools.TestCase):
+
+    def test_review_page_lists_the_files_before_the_diff(self):
+        client, _conn, fp_hex = self._client()
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn('Files changed (1', body)
+        self.assertLess(body.index('Files changed'),
+                        body.index('Diff in upstream context'))
+        # The list row links to the diff's per-file block anchor.
+        self.assertIn('href="#file-1"', body)
+        self.assertIn('id="file-1"', body)
+        self.assertIn('src/reader.c', body)
+
 
 class ReviewabilityWebTestCase(ReviewWebFixture, testtools.TestCase):
     """The size axis surfaced in the UI: a row badge, a size filter, a warning."""

@@ -65,11 +65,20 @@ def diff_lines(text: str) -> list[dict]:
     the review page's keyboard navigation jumps between, so a reviewer can skip
     from change to change instead of scrolling through the expanded context. A
     delete-then-add modification is one block (both lines are "changed").
+
+    The context view's per-file ``### <path>`` block headers are classed
+    ``file`` and numbered (``file_index``, 1-based, in render order) so the
+    files-changed list above the diff can anchor-link each row to its block --
+    the segment order matches ``review.diff_file_stats`` exactly, since both
+    come from ``split_diff_by_file``.
     """
     rows = []
     prev_changed = False
+    file_index = 0
     for line in text.splitlines():
-        if line.startswith('@@'):
+        if line.startswith('### '):
+            cls = 'file'
+        elif line.startswith('@@'):
             cls = 'hunk'
         elif line.startswith(('+++', '---')):
             cls = 'meta'
@@ -81,11 +90,32 @@ def diff_lines(text: str) -> list[dict]:
             cls = 'ctx'
         changed = cls in ('add', 'del')
         block_start = changed and not prev_changed
-        rows.append({
+        row = {
             'cls': cls, 'text': line, 'block_start': block_start,
-            'css': cls + (' block-start' if block_start else '')})
+            'css': cls + (' block-start' if block_start else '')}
+        if cls == 'file':
+            file_index += 1
+            row['file_index'] = file_index
+        rows.append(row)
         prev_changed = changed
     return rows
+
+
+def file_rows(diff_body: str) -> list[dict]:
+    """The files-changed rows for the review page, largest change first.
+
+    Sorted by total churn so a huge patch's bulk (e.g. a full autotools
+    regeneration) tops the list and the small hand-written edits buried in it
+    stand out at the bottom.  Each row keeps its 1-based position in DIFF order
+    (``index``) so its link still targets the matching ``### <path>`` block
+    anchor (``diff_lines``'s ``file_index``) after sorting.
+    """
+    stats = review_mod.diff_file_stats(diff_body)
+    indexed = sorted(enumerate(stats, start=1),
+                     key=lambda pair: (-(pair[1].added + pair[1].removed), pair[1].path))
+    return [{'index': index, 'path': stat.path,
+             'added': stat.added, 'removed': stat.removed}
+            for index, stat in indexed]
 
 
 def category_chips(counts: dict) -> list[dict]:
@@ -285,6 +315,7 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             oversized_lines=reviewability_mod.REVIEWABILITY_OVERSIZED_LINES,
             notes=ledger_mod.notes_for(conn, resolved), can_note=signer is not None,
             package_lines=review_mod._format_package_lines(context),
+            files=file_rows(context.diff_body),
             diff=diff_lines(context.context_view))
 
     @app.route('/review/<fingerprint>', methods=['POST'])
@@ -312,6 +343,7 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
                 categories=categories,
                 notes=ledger_mod.notes_for(conn, resolved), can_note=True,
                 package_lines=review_mod._format_package_lines(context),
+                files=file_rows(context.diff_body),
                 diff=diff_lines(context.context_view),
                 error='pick a verdict: accept the draft, a category, or defer'), 400
 
@@ -528,6 +560,11 @@ _HEAD = '''<!doctype html>
  pre.diff span { display: block; min-width: 100%; width: fit-content; min-height: 1.4em; }
  pre.diff .add { color: #5fd17a; } pre.diff .del { color: #ff7b72; }
  pre.diff .hunk { color: #9aa0aa; background: #232730; } pre.diff .meta { color: #6b7280; }
+ pre.diff .file { color: #e0e3e8; background: #232730; font-weight: bold; }
+ table.files td { padding: 0.1rem 0.6rem; font: 12px/1.4 ui-monospace, monospace; }
+ table.files td.n { text-align: right; }
+ table.files .add, h2 .add { color: #5fd17a; }
+ table.files .del, h2 .del { color: #ff7b72; }
  pre.diff .block-current { box-shadow: inset 3px 0 0 #6cb6ff; }
  /* Upstream context (lines not part of the patch) gets a faint purple wash so the
     added/removed lines, left on the base background, read as the changed regions. */
@@ -748,8 +785,24 @@ document.addEventListener('keydown', function(e) {
     <p class="muted">(read-only instance: notes need a signer)</p>
   {% endif %}
 </div>
+{% if files %}
+<h2>Files changed ({{ files | length }},
+  <span class="add">+{{ files | sum(attribute='added') }}</span>
+  <span class="del">-{{ files | sum(attribute='removed') }}</span>)</h2>
+<table class="files">
+  {% for f in files %}
+  <tr>
+    <td class="n add">+{{ f.added }}</td>
+    <td class="n del">-{{ f.removed }}</td>
+    <td><a href="#file-{{ f.index }}">{{ f.path }}</a></td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
 <h2>Diff in upstream context</h2>
-<pre class="diff">{% for line in diff %}<span class="{{ line.css }}">{{ line.text }}</span>{% endfor %}</pre>
+<pre class="diff">{% for line in diff %}<span{% if line.file_index
+  %} id="file-{{ line.file_index }}"{% endif
+  %} class="{{ line.css }}">{{ line.text }}</span>{% endfor %}</pre>
 <p class="muted">diff: <span class="key">[</span> previous change &middot;
   <span class="key">]</span> next change
   {% if queued and can_verdict %}&middot; <span class="key">v</span> jump to verdict
