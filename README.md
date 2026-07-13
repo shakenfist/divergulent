@@ -55,16 +55,16 @@ the default posture is local-only — nothing leaves the machine.
 
 ## Documentation
 
-Reader-facing documentation lives in [docs/](docs/index.md): what the
+Reader-facing documentation lives in [docs/](https://github.com/shakenfist/divergulent/blob/main/docs/index.md): what the
 project is and why
-([docs/what-is-divergulent.md](docs/what-is-divergulent.md)), how the
+([docs/what-is-divergulent.md](https://github.com/shakenfist/divergulent/blob/main/docs/what-is-divergulent.md)), how the
 processing pipeline works end to end
-([docs/workflow.md](docs/workflow.md)), and a complete description of
+([docs/workflow.md](https://github.com/shakenfist/divergulent/blob/main/docs/workflow.md)), and a complete description of
 the deterministic classification rules — every rule, its precedence,
 and its measured corpus hit rate
-([docs/deterministic-rules.md](docs/deterministic-rules.md)). The
+([docs/deterministic-rules.md](https://github.com/shakenfist/divergulent/blob/main/docs/deterministic-rules.md)). The
 planning documents that drove each phase are under
-[docs/plans/](docs/plans/index.md).
+[docs/plans/](https://github.com/shakenfist/divergulent/blob/main/docs/plans/index.md).
 
 ## Usage
 
@@ -247,13 +247,13 @@ upstream, via Repology), `divergulent divergence` (carried distro-only
 patches, via sources.debian.org), `divergulent score` (both axes
 combined into a ranked, whole-machine drift report), and `divergulent
 show` (per-package patch detail with Debian bug references). The plan
-lives in [docs/plans/PLAN-initial.md](docs/plans/PLAN-initial.md); see
-[docs/plans/index.md](docs/plans/index.md) for the plan index, including
+lives in [docs/plans/PLAN-initial.md](https://github.com/shakenfist/divergulent/blob/main/docs/plans/PLAN-initial.md); see
+[docs/plans/index.md](https://github.com/shakenfist/divergulent/blob/main/docs/plans/index.md) for the plan index, including
 planned next steps (Debian BTS cross-referencing, and a patch-hygiene
 assessment).
 
 A **published precomputed cache** is in progress
-([docs/plans/PLAN-published-cache.md](docs/plans/PLAN-published-cache.md)):
+([docs/plans/PLAN-published-cache.md](https://github.com/shakenfist/divergulent/blob/main/docs/plans/PLAN-published-cache.md)):
 the slow half of a cold run (staleness + divergence) is a function of the
 Debian release, not of your machine, so it can be computed once centrally
 and downloaded as a small signed bundle. Two pieces exist now: a central
@@ -281,11 +281,11 @@ precedence. Cheap deterministic axes — reviewability (patch size), reach
 external CVE/bug cross-reference against pinned Debian snapshots — keep
 the expensive tiers pointed at the patches that matter most. The
 pipeline is documented end to end in
-[docs/workflow.md](docs/workflow.md), and every deterministic rule —
+[docs/workflow.md](https://github.com/shakenfist/divergulent/blob/main/docs/workflow.md), and every deterministic rule —
 what it matches, its precedence, and its measured corpus hit rate — in
-[docs/deterministic-rules.md](docs/deterministic-rules.md); the plan
+[docs/deterministic-rules.md](https://github.com/shakenfist/divergulent/blob/main/docs/deterministic-rules.md); the plan
 history is in
-[docs/plans/PLAN-patch-classification.md](docs/plans/PLAN-patch-classification.md).
+[docs/plans/PLAN-patch-classification.md](https://github.com/shakenfist/divergulent/blob/main/docs/plans/PLAN-patch-classification.md).
 
 ## Development
 
@@ -309,13 +309,13 @@ the rolling `cache` prerelease daily — incremental each day, a full
 rebuild weekly — so `divergulent cache pull` serves a fresh, signed
 bundle. Software releases are tag-driven
 (`v*`) and publish to PyPI via Sigstore-signed tags and PyPI trusted
-publishing — see [RELEASE-SETUP.md](RELEASE-SETUP.md) for the one-time
+publishing — see [RELEASE-SETUP.md](https://github.com/shakenfist/divergulent/blob/main/RELEASE-SETUP.md) for the one-time
 configuration.
 
 Planning and pre-push workflow templates live at the repository root:
-[PLAN-TEMPLATE.md](PLAN-TEMPLATE.md) and
-[PUSH-TEMPLATE.md](PUSH-TEMPLATE.md).
+[PLAN-TEMPLATE.md](https://github.com/shakenfist/divergulent/blob/main/PLAN-TEMPLATE.md) and
+[PUSH-TEMPLATE.md](https://github.com/shakenfist/divergulent/blob/main/PUSH-TEMPLATE.md).
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](https://github.com/shakenfist/divergulent/blob/main/LICENSE).
