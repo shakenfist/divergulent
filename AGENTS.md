@@ -437,6 +437,18 @@ tools rule). It runs Tier 1 in full (no `--limit`) — the polite full run
 is the point — plus a small `--limit`ed `--classify` sample, and
 persists `DIVERGULENT_CACHE_DIR` via `actions/cache`.
 
+## Prompt-injection screening (evaluation)
+
+`tools/injection-screening/` holds evaluation prototypes for screening
+LLM-bound patch text for prompt-injection attempts (see
+`docs/plans/PLAN-prompt-injection-screening.md` and its findings): a
+deterministic regex/Unicode tripwire (fast enough for the full corpus,
+~70s) and a learned encoder-classifier scorer that needs a scratch venv —
+torch/transformers must never reach the package's own dependency set. The
+posture is tripwire-not-shield: a hit routes to a human with a priority
+bump; nothing is silently dropped, and no claim is made against targeted
+adversaries (the detectors are open weights).
+
 ## Planning workflow
 
 Plans live in `docs/plans/` — a master plan plus one file per phase,
