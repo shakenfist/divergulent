@@ -378,3 +378,9 @@ cache pull: --cache-url (or default for release)  ->  HttpClient.get_bytes() bun
 - See `docs/plans/` Future work for BTS cross-referencing (open Debian
   bugs a package's patches do not reference) and the candidate "patch
   hygiene & justification" master plan.
+- Prompt-injection screening of LLM-bound patch text is under evaluation
+  (`docs/plans/PLAN-prompt-injection-screening.md`, prototypes in
+  `tools/injection-screening/`): if a technique graduates it lands as an
+  `llm-injection-suspect` observation mirroring the dangerous-construct
+  scan — skip the LLM passes, raise review priority, badge the UI; never
+  a category, never a malice verdict.
