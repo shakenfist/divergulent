@@ -31,7 +31,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, static]
 
     permissions:
       contents: write  # publish the bundle to the 'classification' release
@@ -49,11 +49,6 @@ jobs:
           repository: ${{ vars.LEDGER_REPO || 'shakenfist/divergulent-reviews' }}
           token: ${{ secrets.LEDGER_REPO_TOKEN || github.token }}
           path: ledger-data
-
-      - name: Install build prerequisites
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y -q python3 python3-venv python3-pip
 
       - name: Build classification bundle
         run: >-
