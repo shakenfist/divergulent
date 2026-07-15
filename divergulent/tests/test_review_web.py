@@ -12,6 +12,7 @@ import tempfile
 
 import testtools
 
+from divergulent.classify import injection as injection_mod
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import reach
 from divergulent.classify import review as review_mod
@@ -585,6 +586,40 @@ class RiskWebTestCase(ReviewWebFixture, testtools.TestCase):
         self._seed_risk(conn, fp_hex, 'elevated')
         body = client.get('/review/%s' % fp_hex).get_data(as_text=True)
         self.assertIn('risk: elevated', body)
+
+
+class InjectionWebTestCase(ReviewWebFixture, testtools.TestCase):
+    """The injection tripwire surfaced in the UI: a worklist badge and a review-page
+    banner, both honestly worded (human-routed, not 'malicious')."""
+
+    def _seed_injection(self, conn, fingerprint, *, region='diff', family='instruction-phrase'):
+        ledger_mod.append_observation(
+            conn, fingerprint=fingerprint, kind=injection_mod.INJECTION_KIND,
+            detail='%s/%s' % (family, region), evidence='ignore previous instructions',
+            observed_by='injection-scan', rule_version=injection_mod.INJECTION_RULES_VERSION,
+            observed_at=WHEN)
+        conn.commit()
+
+    def test_worklist_badges_injection_suspect(self):
+        client, conn, fp_hex = self._client()
+        self._seed_injection(conn, fp_hex)
+        body = client.get('/').get_data(as_text=True)
+        # The badge is present and titled with the families; never claims malice.
+        self.assertIn('class="inj"', body)
+        self.assertIn('instruction-phrase', body)
+        self.assertNotIn('malicious', body.lower())
+
+    def test_review_page_shows_injection_banner(self):
+        client, conn, fp_hex = self._client()
+        self._seed_injection(conn, fp_hex)
+        body = client.get('/review/%s' % fp_hex).get_data(as_text=True)
+        self.assertIn('injection-suspect', body)
+        self.assertIn('not sent to the LLM', body)
+
+    def test_clean_patch_has_no_injection_badge(self):
+        client, conn, fp_hex = self._client()
+        body = client.get('/').get_data(as_text=True)
+        self.assertNotIn('class="inj"', body)
 
 
 class ReachWebTestCase(ReviewWebFixture, testtools.TestCase):

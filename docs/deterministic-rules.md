@@ -242,10 +242,10 @@ actually be looked at.
 
 ## The deterministic axes
 
-Beyond the category, three cheap deterministic axes are recorded for
-every patch, and one deterministic cull runs inside the risk gate.
-Each rides alongside the category as a supersedable observation with
-its own provenance.
+Beyond the category, three cheap deterministic axes plus a
+prompt-injection tripwire are recorded for every patch, and one
+deterministic cull runs inside the risk gate. Each rides alongside the
+category as a supersedable observation with its own provenance.
 
 ### Reviewability (size) — `size-rule`
 
@@ -284,6 +284,42 @@ The one hard rule: **reach orders patches within a security tier,
 never across tiers**. Popularity is not risk — a ubiquitous package
 carrying a benign patch is not a concern, and a widely-installed
 nothing must never outrank an obscure something. (`reach.py`)
+
+### Prompt-injection tripwire — `injection-scan`
+
+The diff bodies we send to the LLM tier are attacker-authorable text: a
+patch is exactly where a supply-chain attacker has write access, so
+patch text aimed at the *classifier* rather than the *compiler* is a
+live concern. A tuned regex/Unicode scan looks for injection-shaped
+text in five separately-versioned families:
+
+| family | fires on |
+| --- | --- |
+| `instruction-phrase` | imperatives aimed at a model ("ignore previous instructions", "system prompt", …) |
+| `chat-template-marker` | chat/instruction-tuning turn structure (`<\|im_start\|>`, `[INST]`, `role: system`, …) |
+| `invisible-tag-block` | the Unicode tag block (U+E0000–E007F), the invisible-instruction vector |
+| `zero-width` | a run of ≥ 4 zero-width characters (emoji ZWJ U+200D excluded) — hidden-text encoding |
+| `bidi-control` | bidi embedding/override controls (the Trojan Source vector) |
+
+The scan runs over the **diff region** (what the LLM reads, via
+`triage.diff_body`) and the **header region** separately. A
+**diff-region** hit makes triage **skip the LLM entirely** and route
+the patch to a human — feeding attacker instructions to the model they
+target is the thing we avoid — with a priority band below risk and
+above provenance (never crossing a risk tier). A header-region hit is
+recorded for provenance but does not divert triage (the model never
+reads the header). The review UI badges a hit.
+
+This is a **tripwire, not a shield**: the patterns are public, so a
+targeted attacker can iterate offline until a payload scores clean. What
+it buys is every lazy, untargeted, or copy-pasted payload, and a forced
+increase in attacker effort — a candidate for a human, never a verdict
+or a claim of malice. Tuned against the full corpus it fires on 4 benign
+patches (3 distinct); the learned-classifier alternatives (Llama Prompt
+Guard 2, LLM Guard) were measured and dropped — 28% false positives on
+benign patches and a torch/transformers dependency that must never reach
+the package. Pattern source is kept pure ASCII (`\u`/`\U` escapes — no
+literal invisible or bidi characters). (`injection.py`)
 
 ### The provably-benign risk cull — `risk-cull`
 

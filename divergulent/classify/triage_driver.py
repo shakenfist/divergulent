@@ -41,6 +41,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
 from divergulent.classify import content as content_mod
+from divergulent.classify import injection as injection_mod
 from divergulent.classify import measure
 from divergulent.classify import triage as triage_mod
 from divergulent.classify import triage_record
@@ -63,6 +64,14 @@ MAX_DIFF_CHARS_FOR_LLM = 400_000
 # ``record.py`` / the ledger).  A live observation of this kind on a fingerprint
 # both raises its triage priority and forces the result to human review.
 _DANGEROUS_CONSTRUCT_KIND = 'dangerous-construct'
+
+# The prompt-injection tripwire observation kind (``record.py`` / the ledger). A
+# live DIFF-region observation of this kind means the diff carries injection-
+# shaped text aimed at the classifier: the driver SKIPS the LLM entirely (the
+# whole point is not to feed attacker instructions to the model they target) and
+# routes the patch to a human with a priority bump. A header-only hit does NOT
+# skip -- the LLM never reads the header.
+_INJECTION_KIND = injection_mod.INJECTION_KIND
 
 # Default cluster threshold for rule discovery: a candidate rule is proposed only
 # when at least this many triaged fingerprints share one (verified category,
@@ -103,6 +112,24 @@ class WorkItem:
     declared a CVE/bug that did not survive cross-reference. A review nudge (a
     band below risk, above reach): a failed provenance claim is worth a human look
     ahead of a merely widely-run patch, but never crosses a risk boundary."""
+
+    has_injection_suspect: bool = False
+    """A live DIFF-region ``llm-injection-suspect`` observation -- the diff carries
+    injection-shaped text aimed at the classifier. Skips the LLM (routed to a
+    human) and takes a priority band just below risk, above provenance: a possible
+    attack on the classifier is worth a human look ahead of a failed provenance
+    claim, but never crosses a risk boundary."""
+
+
+def _fingerprints_with_injection_suspect(conn: sqlite3.Connection) -> set[str]:
+    """Fingerprints carrying a LIVE DIFF-region ``llm-injection-suspect`` observation.
+
+    These SKIP the LLM: the diff body holds injection-shaped text, and feeding it
+    to the model is exactly what we avoid. A header-only hit is deliberately NOT
+    in this set (the LLM never reads the header). Delegates to the injection
+    module so the diff-region filter lives in one place.
+    """
+    return injection_mod.injection_suspect_fingerprints(conn, region=injection_mod.DIFF_REGION)
 
 
 def _fingerprints_with_dangerous_construct(conn: sqlite3.Connection) -> set[str]:
@@ -164,27 +191,33 @@ def _index_groups(index_path: str) -> dict[str, dict]:
 
 # Priority is a single integer with non-overlapping bands so the riskiest patches
 # always sort first: risk_rank is the TOP band (scaled past any realistic reach +
-# occurrence), reach_rank a SECONDARY band within a risk tier, and occurrence the
-# within-reach tie-break. The bands cannot overlap (reach 0..4 < RISK/REACH ratio;
-# occurrence is capped below REACH_PRIORITY_WEIGHT), so reach can never promote a
-# patch across a risk boundary -- the one hard rule of the reach axis.
+# occurrence), then an injection-suspect band (a possible attack on the classifier),
+# then provenance, then reach a SECONDARY band within a risk tier, and occurrence the
+# within-reach tie-break. The bands cannot overlap (injection + provenance + reach +
+# occurrence all sum below one risk step, and injection sits above provenance+reach+
+# occurrence), so neither injection, provenance nor reach can ever promote a patch
+# across a risk boundary -- the one hard rule of the axis.
 RISK_PRIORITY_WEIGHT = 1_000_000_000
+INJECTION_PRIORITY_WEIGHT = 500_000_000
 PROVENANCE_PRIORITY_WEIGHT = 100_000_000
 REACH_PRIORITY_WEIGHT = 1_000_000
 
 
 def _priority_key(item: WorkItem) -> tuple:
-    """Sort key (higher == triaged first): risk, dangerous, provenance, reach, occurrence.
+    """Sort key (higher == first): risk, injection, dangerous, provenance, reach, occurrence.
 
     The security-risk gate's level is the top signal -- the scariest patches are
-    triaged and reviewed first -- then a live dangerous-construct observation, then a
-    phase-6 provenance contradiction (a declared CVE/bug that failed cross-reference),
-    then the install-base reach (a widely-run patch ahead of an obscure one), then a
-    high occurrence count (one recurring fingerprint stands for many carried patches),
-    then package count, with the fingerprint as a final tie-break.
+    triaged and reviewed first -- then a live injection-suspect observation (a
+    possible attack on the classifier, routed to a human ahead of the rest), then a
+    live dangerous-construct observation, then a phase-6 provenance contradiction (a
+    declared CVE/bug that failed cross-reference), then the install-base reach (a
+    widely-run patch ahead of an obscure one), then a high occurrence count (one
+    recurring fingerprint stands for many carried patches), then package count, with
+    the fingerprint as a final tie-break.
     """
     return (
         item.risk_rank,
+        1 if item.has_injection_suspect else 0,
         1 if item.has_dangerous_construct else 0,
         1 if item.has_claim_unconfirmed else 0,
         item.reach_rank,
@@ -196,16 +229,19 @@ def _priority_key(item: WorkItem) -> tuple:
 def _stored_priority(item: WorkItem) -> int:
     """The single integer ``review_queue.priority`` for a needs-human item.
 
-    Encodes risk-first, then provenance-within-risk, then reach-within-provenance
-    ordering into one int (``risk_rank * RISK_WEIGHT + provenance * PROV_WEIGHT +
-    reach_rank * REACH_WEIGHT + occurrence``) so the review tool's ``ORDER BY
-    priority DESC`` pulls the highest-risk patches first -- a failed provenance claim
-    breaking ties within a risk tier, reach within that, occurrence within that -- no
-    schema change. The bands cannot overlap (provenance <= PROV_WEIGHT < a risk step;
-    reach + occurrence < PROV_WEIGHT), so neither provenance nor reach can ever
-    promote a patch across a risk boundary.
+    Encodes risk-first, then injection-within-risk, then provenance-within-injection,
+    then reach-within-provenance ordering into one int (``risk_rank * RISK_WEIGHT +
+    injection * INJECTION_WEIGHT + provenance * PROV_WEIGHT + reach_rank * REACH_WEIGHT
+    + occurrence``) so the review tool's ``ORDER BY priority DESC`` pulls the
+    highest-risk patches first -- an injection-suspect breaking ties within a risk
+    tier, a failed provenance claim within that, reach within that, occurrence within
+    that -- no schema change. The bands cannot overlap (injection = INJECTION_WEIGHT >
+    PROV_WEIGHT + reach + occurrence, and injection + provenance + reach + occurrence <
+    a risk step), so none of injection, provenance nor reach can ever promote a patch
+    across a risk boundary.
     """
     return (item.risk_rank * RISK_PRIORITY_WEIGHT
+            + (1 if item.has_injection_suspect else 0) * INJECTION_PRIORITY_WEIGHT
             + (1 if item.has_claim_unconfirmed else 0) * PROVENANCE_PRIORITY_WEIGHT
             + item.reach_rank * REACH_PRIORITY_WEIGHT
             + min(item.n_occurrences, REACH_PRIORITY_WEIGHT - 1))
@@ -230,12 +266,14 @@ def reprioritise_review_queue(conn, index_path: str) -> int:
     risk_ranks = risk_mod.risk_rank_by_fingerprint(conn)
     reach_ranks = reach_mod.reach_rank_by_fingerprint(conn)
     unconfirmed = _fingerprints_with_claim_unconfirmed(conn)
+    suspects = _fingerprints_with_injection_suspect(conn)
     groups = _index_groups(index_path)
     changed = 0
     for item in ledger_mod.pending_review_items(conn):
         fingerprint = item['fingerprint']
         occurrences = groups.get(fingerprint, {}).get('n_occurrences', 0)
         new_priority = (risk_ranks.get(fingerprint, 0) * RISK_PRIORITY_WEIGHT
+                        + (1 if fingerprint in suspects else 0) * INJECTION_PRIORITY_WEIGHT
                         + (1 if fingerprint in unconfirmed else 0) * PROVENANCE_PRIORITY_WEIGHT
                         + reach_ranks.get(fingerprint, 0) * REACH_PRIORITY_WEIGHT
                         + min(occurrences, REACH_PRIORITY_WEIGHT - 1))
@@ -269,6 +307,7 @@ def build_work_list(conn: sqlite3.Connection, index_path: str, *,
     groups = _index_groups(index_path)
     dangerous = _fingerprints_with_dangerous_construct(conn)
     unconfirmed = _fingerprints_with_claim_unconfirmed(conn)
+    suspects = _fingerprints_with_injection_suspect(conn)
     risk_ranks = risk_mod.risk_rank_by_fingerprint(conn)
     reach_ranks = reach_mod.reach_rank_by_fingerprint(conn)
     fingerprints = groups.keys() if scope == 'all' else verdict_mod.queue(conn)
@@ -287,7 +326,8 @@ def build_work_list(conn: sqlite3.Connection, index_path: str, *,
             has_dangerous_construct=fingerprint in dangerous,
             risk_rank=risk_ranks.get(fingerprint, 0),
             reach_rank=reach_ranks.get(fingerprint, 0),
-            has_claim_unconfirmed=fingerprint in unconfirmed))
+            has_claim_unconfirmed=fingerprint in unconfirmed,
+            has_injection_suspect=fingerprint in suspects))
 
     items.sort(key=_priority_key, reverse=True)
     return items
@@ -318,6 +358,7 @@ class TriageRunStats:
     untriaged_remaining: int = 0
     # Items in the slice that did NOT go through the model this run.
     skipped_already_triaged: int = 0   # a live decision already existed (resume)
+    skipped_injection: int = 0         # injection-suspect diff -> never sent to the LLM -> human
     skipped_oversized: int = 0         # not line-reviewable (reviewability axis) -> human
     too_large: int = 0                 # diff too big for the model -> routed to a human
     errored: int = 0                   # the backend raised -> routed to a human
@@ -369,6 +410,7 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
     pending_work = [item for item in work_list if item.fingerprint not in done]
     selected = pending_work[:limit]
     oversized_fps = reviewability_mod.oversized_fingerprints(conn)
+    injection_fps = _fingerprints_with_injection_suspect(conn)
 
     stats = TriageRunStats(queue_size=len(verdict_mod.queue(conn)), model=model)
     stats.skipped_already_triaged = len(work_list) - len(pending_work)
@@ -379,6 +421,23 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
     for position, item in enumerate(selected, start=1):
         body = measure.read_body(corpus_dir, item.representative_sha)
         claim_category = extract_claim(item.representative_patch_name, body).claimed_category
+
+        # Injection-suspect diff: the body carries injection-shaped text aimed at
+        # the classifier. NEVER send it to the model -- that is the attack we are
+        # guarding against -- so skip the LLM and route to a human, checked BEFORE
+        # every other skip. A tripwire, not a shield: it catches lazy/untargeted
+        # payloads and forces attacker effort up; it does not claim to stop an
+        # adaptive attacker iterating offline against the public patterns.
+        if item.fingerprint in injection_fps:
+            families = injection_mod.injection_by_fingerprint(conn).get(item.fingerprint, '')
+            reason = 'llm-injection-suspect (%s): not sent to the LLM; routed to a human' % families
+            triage_record.record_triage_to_human(
+                conn, item.fingerprint, reason, now=now, model=model, priority=_stored_priority(item))
+            stats.skipped_injection += 1
+            stats.needs_human += 1
+            if progress is not None:
+                progress('[%d/%d]   -> injection-suspect (%s) -> needs_human' % (position, total, families))
+            continue
 
         # Oversized by changed-line count (the reviewability axis): not
         # line-reviewable, so route to a human disposition without an LLM call --
@@ -750,6 +809,7 @@ def render_run_report(stats: TriageRunStats, scan: RuleScan) -> str:
     lines.append('- Needs human review: %d' % stats.needs_human)
     lines.append('- Claim/content mismatches: %d' % stats.claim_mismatches)
     lines.append('- Skipped (already triaged on a prior run): %d' % stats.skipped_already_triaged)
+    lines.append('- Routed to human, injection-suspect (never sent to the LLM): %d' % stats.skipped_injection)
     lines.append('- Routed to human, oversized (not line-reviewable): %d' % stats.skipped_oversized)
     lines.append('- Routed to human, too large for the model: %d' % stats.too_large)
     lines.append('- Routed to human, triage error: %d' % stats.errored)
@@ -792,9 +852,12 @@ def print_run_summary(stats: TriageRunStats, scan: RuleScan) -> None:
     print('triaged %d of %d queued; verified=%d needs_human=%d claim_mismatches=%d' % (
         stats.triaged, stats.queue_size, stats.verified, stats.needs_human,
         stats.claim_mismatches))
-    if stats.skipped_already_triaged or stats.skipped_oversized or stats.too_large or stats.errored:
-        print('skipped (already triaged)=%d; routed-to-human oversized=%d, too-large=%d, errored=%d' % (
-            stats.skipped_already_triaged, stats.skipped_oversized, stats.too_large, stats.errored))
+    if (stats.skipped_already_triaged or stats.skipped_injection or stats.skipped_oversized
+            or stats.too_large or stats.errored):
+        print('skipped (already triaged)=%d; routed-to-human injection-suspect=%d, oversized=%d, '
+              'too-large=%d, errored=%d' % (
+                  stats.skipped_already_triaged, stats.skipped_injection, stats.skipped_oversized,
+                  stats.too_large, stats.errored))
     if stats.by_category:
         print('drafted categories:')
         for category in sorted(stats.by_category, key=lambda k: (-stats.by_category[k], k)):
