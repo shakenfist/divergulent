@@ -168,6 +168,21 @@ installed-package inventory never leaves the machine.
     `observed_by='size-rule'`), recorded during the deterministic
     record pass; an `oversized` diff skips the LLM passes entirely and
     gets its own review-UI bucket.
+  - `injection.py` — the deterministic prompt-injection tripwire over
+    LLM-bound patch text (`observed_by='injection-scan'`). A tuned
+    regex/Unicode family set (instruction phrases, chat-template
+    markers, the Unicode tag block, long zero-width runs, bidi
+    controls) scans the diff region (LLM-visible) and the header region
+    separately, recording `llm-injection-suspect` observations during
+    the record pass. A **diff-region** hit makes triage **skip the LLM
+    entirely** and route the patch to a human (priority band below risk,
+    above provenance, never crossing a risk tier); a header-region hit
+    is recorded for provenance but does not divert triage. A tripwire,
+    not a shield (the patterns are public): a candidate for a human,
+    never a verdict or a malice claim. Pattern source is pure ASCII
+    (`\u`/`\U` escapes). Measured 4 benign hits / 3 patches over the
+    corpus; the learned-classifier alternatives were dropped (28% FP +
+    a torch/transformers dependency wall).
   - `reach.py` / `popcon.py` — the deterministic install-base axis
     (`XS`–`XL` from a pinned popcon snapshot in
     `corpus/popcon.sqlite`, max-over-binaries, bucketed relative to the
@@ -378,9 +393,3 @@ cache pull: --cache-url (or default for release)  ->  HttpClient.get_bytes() bun
 - See `docs/plans/` Future work for BTS cross-referencing (open Debian
   bugs a package's patches do not reference) and the candidate "patch
   hygiene & justification" master plan.
-- Prompt-injection screening of LLM-bound patch text is under evaluation
-  (`docs/plans/PLAN-prompt-injection-screening.md`, prototypes in
-  `tools/injection-screening/`): if a technique graduates it lands as an
-  `llm-injection-suspect` observation mirroring the dangerous-construct
-  scan — skip the LLM passes, raise review priority, badge the UI; never
-  a category, never a malice verdict.

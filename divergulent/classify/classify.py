@@ -234,6 +234,11 @@ class ClassifiedFingerprint:
     verdict: object
     """The ``rules.ContentVerdict`` for the body (category + signals + flags)."""
 
+    body: str
+    """The representative raw patch body.  Carried so the recorder can run the
+    injection tripwire over the diff/header regions without re-reading the file
+    -- the diff is read exactly once per fingerprint, in this one place."""
+
 
 def iter_classified(corpus_dir: str, index_path: str):
     """Yield one :class:`ClassifiedFingerprint` per distinct fingerprint.
@@ -268,6 +273,7 @@ def iter_classified(corpus_dir: str, index_path: str):
             claim=claim,
             profile=prof,
             verdict=verdict,
+            body=body,
         )
 
 

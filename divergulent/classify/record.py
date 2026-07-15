@@ -39,16 +39,23 @@ from dataclasses import dataclass
 
 from divergulent.classify import bts as bts_mod
 from divergulent.classify import cross_reference as xref_mod
+from divergulent.classify import injection as injection_mod
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import reach as reach_mod
 from divergulent.classify import reviewability as reviewability_mod
 from divergulent.classify import security_tracker as tracker_mod
+from divergulent.classify import triage as triage_mod
 from divergulent.classify.classify import iter_classified
 from divergulent.classify.rules import RULES_VERSION
 
 # The observation source: the single dangerous-construct scan rule.  All
 # dangerous-construct flags are recorded under this id at ``RULES_VERSION``.
 _SCAN_RULE_ID = 'dangerous-construct-scan'
+
+# The observation source for the prompt-injection tripwire.  All
+# ``llm-injection-suspect`` flags are recorded under this id at
+# ``injection.INJECTION_RULES_VERSION``.
+_INJECTION_RULE_ID = 'injection-scan'
 
 
 @dataclass
@@ -73,6 +80,14 @@ class RecordStats:
     reach_appended: int = 0
     reach_skipped: int = 0
     reach_unknown: int = 0
+    # The deterministic prompt-injection tripwire observation. ``injection_appended``
+    # counts rows newly written (one per firing family/region); ``injection_skipped``
+    # counts fingerprints whose live injection set was already exactly right;
+    # ``injection_superseded`` counts stale rows retired when the hit set changed
+    # (e.g. a version bump or a body that no longer hits).
+    injection_appended: int = 0
+    injection_skipped: int = 0
+    injection_superseded: int = 0
     # The phase-6 external CVE cross-reference (only when a Security Tracker
     # snapshot is supplied). ``external_decisions_*`` count the settled ``security``
     # category decision; ``external_obs_*`` count the provenance observation
@@ -330,6 +345,40 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
                 rule_version=reviewability_mod.REVIEWABILITY_VERSION,
                 observed_at=now, commit=False)
             stats.reviewability_appended += 1
+
+        # The deterministic prompt-injection tripwire -- its own rule identity.
+        # Scans the LLM-visible diff body and, separately, the author-controlled
+        # header for injection-shaped text; each firing family/region becomes an
+        # ``llm-injection-suspect`` observation. The body is fingerprint-stable, so
+        # the hit set is stable at a fixed version: an unchanged set skips (no
+        # churn on the ~60k clean fingerprints); a changed set (a version bump, or
+        # a body that no longer hits) supersedes the fingerprint's prior injection
+        # rows before appending the current ones. A diff-region hit later skips the
+        # LLM in the triage driver; a header-region hit is recorded for provenance
+        # only. NEVER a verdict -- an evidence-bearing candidate for a human.
+        diff_region = triage_mod.diff_body(record.body)
+        header_region = (record.body[:len(record.body) - len(diff_region)]
+                         if diff_region else record.body)
+        injection_flags = (injection_mod.scan_injection(diff_region, region=injection_mod.DIFF_REGION)
+                           + injection_mod.scan_injection(header_region, region=injection_mod.HEADER_REGION))
+        desired_injection = {(flag.detail, flag.evidence, injection_mod.INJECTION_RULES_VERSION)
+                             for flag in injection_flags}
+        live_injection = {(obs['detail'], obs['evidence'], obs['rule_version'])
+                          for obs in ledger_mod.observations_for(conn, record.fingerprint)
+                          if obs['kind'] == injection_mod.INJECTION_KIND and obs['superseded_at'] is None}
+        if desired_injection == live_injection:
+            stats.injection_skipped += 1
+        else:
+            stats.injection_superseded += ledger_mod.supersede_observations_for_fingerprint(
+                conn, fingerprint=record.fingerprint, kind=injection_mod.INJECTION_KIND,
+                superseded_at=now, commit=False)
+            for flag in injection_flags:
+                ledger_mod.append_observation(
+                    conn, fingerprint=record.fingerprint, kind=injection_mod.INJECTION_KIND,
+                    detail=flag.detail, evidence=flag.evidence,
+                    observed_by=_INJECTION_RULE_ID, rule_version=injection_mod.INJECTION_RULES_VERSION,
+                    observed_at=now, commit=False)
+                stats.injection_appended += 1
 
         # The deterministic reach (install-base) observation -- its own rule
         # identity, recorded only when a popcon snapshot was supplied. A

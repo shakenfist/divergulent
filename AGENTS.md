@@ -437,17 +437,27 @@ tools rule). It runs Tier 1 in full (no `--limit`) — the polite full run
 is the point — plus a small `--limit`ed `--classify` sample, and
 persists `DIVERGULENT_CACHE_DIR` via `actions/cache`.
 
-## Prompt-injection screening (evaluation)
+## Prompt-injection screening (`llm-injection-suspect`)
 
-`tools/injection-screening/` holds evaluation prototypes for screening
-LLM-bound patch text for prompt-injection attempts (see
-`docs/plans/PLAN-prompt-injection-screening.md` and its findings): a
-deterministic regex/Unicode tripwire (fast enough for the full corpus,
-~70s) and a learned encoder-classifier scorer that needs a scratch venv —
-torch/transformers must never reach the package's own dependency set. The
-posture is tripwire-not-shield: a hit routes to a human with a priority
-bump; nothing is silently dropped, and no claim is made against targeted
-adversaries (the detectors are open weights).
+`divergulent/classify/injection.py` is the shipped deterministic
+prompt-injection tripwire over LLM-bound patch text (see
+`docs/plans/PLAN-prompt-injection-screening.md` and its phase-3 findings).
+`scan_injection` returns evidence-bearing `llm-injection-suspect` flags
+from a tuned family set (instruction phrases, chat-template markers, the
+Unicode tag block, long zero-width runs, bidi controls; the noisy base64
+family was dropped and zero-width narrowed to exclude emoji ZWJ). The
+recorder (`record.py`) writes them as versioned ledger observations over
+the diff region (LLM-visible) and the header region separately; a
+**diff-region** hit makes the triage driver **skip the LLM entirely** and
+route the patch to a human (priority band below risk, above provenance),
+and the review UI badges it. Posture is tripwire-not-shield: a hit is a
+candidate for a human, never a verdict or a claim of malice, and no claim
+is made against targeted adversaries (the patterns are public). Keep the
+pattern source pure ASCII (`\u`/`\U` escapes — never literal invisible or
+bidi characters). `tools/injection-screening/` retains the original
+evaluation prototypes (including the learned encoder-classifier scorer,
+which was measured and dropped: 28% false positives + a torch/transformers
+dependency wall that must never reach the package's own dependency set).
 
 ## Planning workflow
 

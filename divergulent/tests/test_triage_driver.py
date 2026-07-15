@@ -29,6 +29,7 @@ from contextlib import redirect_stdout
 
 import testtools
 
+from divergulent.classify import injection as injection_mod
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import reviewability
 from divergulent.classify import triage as triage_mod
@@ -355,6 +356,83 @@ class RunTriageTestCase(DriverFixture, testtools.TestCase):
         self.assertEqual(5, stats.by_category['bugfix'])
         # The doc patch claims documentation but content reads bugfix -> mismatch.
         self.assertGreaterEqual(stats.claim_mismatches, 1)
+
+
+def _seed_injection(conn, fingerprint_hex, *, region):
+    """Add a live ``llm-injection-suspect`` observation on ``fingerprint_hex``."""
+    ledger_mod.append_observation(
+        conn, fingerprint=fingerprint_hex, kind=injection_mod.INJECTION_KIND,
+        detail='instruction-phrase/%s' % region, evidence='ignore previous instructions',
+        observed_by='injection-scan', rule_version=injection_mod.INJECTION_RULES_VERSION,
+        observed_at=WHEN)
+    conn.commit()
+
+
+class InjectionSkipTestCase(DriverFixture, testtools.TestCase):
+    """A diff-region injection-suspect skips the LLM and routes to a human; a
+    header-only hit does not skip; the LLM is never called on a suspect."""
+
+    def test_diff_region_suspect_skips_the_llm_and_routes_to_human(self):
+        corpus_dir, index_path, _, conn, fingerprints = self._setup()
+        suspect = fingerprints['bug-b.patch']
+        _seed_injection(conn, suspect, region='diff')
+        recorder = []
+        call = _fixed_call(
+            triage_response=_triage_json(category='bugfix'),
+            verify_response=_verify_json(agrees=True), recorder=recorder)
+        stats, triaged = triage_driver.run_triage(
+            conn, corpus_dir, index_path, call=call, now=WHEN, limit=5)
+        # The suspect was never triaged (no TriagedItem for it) ...
+        self.assertNotIn(suspect, {t.item.fingerprint for t in triaged})
+        # ... and the LLM was never called on its diff (no recorded prompt cites it).
+        self.assertFalse(any('src/b.c' in message for message in recorder))
+        # It skipped as injection and enqueued a pending review item with the reason.
+        self.assertEqual(1, stats.skipped_injection)
+        pending = {item['fingerprint']: item for item in ledger_mod.pending_review_items(conn)}
+        self.assertIn(suspect, pending)
+        self.assertIn('llm-injection-suspect', pending[suspect]['reason'])
+
+    def test_header_only_hit_does_not_skip(self):
+        corpus_dir, index_path, _, conn, fingerprints = self._setup()
+        header_only = fingerprints['bug-b.patch']
+        _seed_injection(conn, header_only, region='header')
+        recorder = []
+        call = _fixed_call(
+            triage_response=_triage_json(category='bugfix'),
+            verify_response=_verify_json(agrees=True), recorder=recorder)
+        stats, triaged = triage_driver.run_triage(
+            conn, corpus_dir, index_path, call=call, now=WHEN, limit=5)
+        # A header-only hit is NOT in the skip set: the fingerprint is triaged
+        # normally (the LLM never reads the header).
+        self.assertEqual(0, stats.skipped_injection)
+        self.assertIn(header_only, {t.item.fingerprint for t in triaged})
+        self.assertTrue(any('src/b.c' in message for message in recorder))
+
+    def test_injection_suspect_prioritised_below_risk_above_provenance(self):
+        item = triage_driver.WorkItem(
+            fingerprint='a', representative_sha='s', representative_patch_name='p',
+            n_occurrences=0, n_packages=1, has_dangerous_construct=False)
+        suspect = triage_driver.WorkItem(
+            fingerprint='b', representative_sha='s', representative_patch_name='p',
+            n_occurrences=0, n_packages=1, has_dangerous_construct=False,
+            has_injection_suspect=True)
+        unconfirmed_xl = triage_driver.WorkItem(
+            fingerprint='c', representative_sha='s', representative_patch_name='p',
+            n_occurrences=999, n_packages=1, has_dangerous_construct=False,
+            reach_rank=4, has_claim_unconfirmed=True)
+        higher_risk = triage_driver.WorkItem(
+            fingerprint='d', representative_sha='s', representative_patch_name='p',
+            n_occurrences=0, n_packages=1, has_dangerous_construct=False, risk_rank=1)
+        # A suspect outranks a plain item and even a widely-run failed-provenance one ...
+        self.assertGreater(
+            triage_driver._stored_priority(suspect), triage_driver._stored_priority(unconfirmed_xl))
+        self.assertGreater(
+            triage_driver._priority_key(suspect), triage_driver._priority_key(item))
+        # ... but never crosses a risk boundary.
+        self.assertGreater(
+            triage_driver._stored_priority(higher_risk), triage_driver._stored_priority(suspect))
+        self.assertGreater(
+            triage_driver._priority_key(higher_risk), triage_driver._priority_key(suspect))
 
 
 class CandidateRulesTestCase(DriverFixture, testtools.TestCase):

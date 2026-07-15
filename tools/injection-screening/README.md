@@ -5,6 +5,16 @@ Evaluation prototypes for
 These are measurement tools, not shipped classifier code; results are
 recorded in the plan's findings documents.
 
+> **The tripwire graduated (phase 3).** The deterministic tripwire now
+> ships as `divergulent/classify/injection.py` — a tuned `scan_injection`
+> whose hits become `llm-injection-suspect` ledger observations that skip
+> the LLM and route a patch to a human (see the phase-3
+> [plan](../../docs/plans/PLAN-prompt-injection-screening-phase-03-observation.md)
+> and [findings](../../docs/plans/PLAN-prompt-injection-screening-phase-03-findings.md)).
+> `tripwire.py` here remains the standalone measurement harness (it can
+> also be run over a corpus without a ledger); `model_scorer.py` is the
+> learned-classifier scorer that was measured and dropped.
+
 ## tripwire.py — the deterministic regex/Unicode tripwire
 
 Zero heavyweight dependencies (needs only divergulent importable, e.g. the

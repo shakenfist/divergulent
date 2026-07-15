@@ -24,15 +24,18 @@ suspect" signal:
    Python library wrapping `deberta-v3-base-prompt-injection-v2` with a
    thresholded score.
 
-**Status: evaluation measured (2026-07-12).** The tripwire found zero
-suspected attacks in 60,642 patches (81 raw hits, all adjudicated
-benign); the learned classifier false-positives on 28% of benign
-patches. Recommendation in the
-[findings](PLAN-prompt-injection-screening-phase-01-findings.md):
-graduate the tripwire as an observation rule, drop the learned
-classifiers. Phase 3 awaits the operator's decision. The worst case was
-always a slightly interesting blog post; the best case is catching
-something real in the wild.
+**Status: graduated (2026-07-15).** The tripwire found zero suspected
+attacks in 60,642 patches (81 raw hits, all adjudicated benign); the
+learned classifier false-positives on 28% of benign patches
+([phase 1–2 findings](PLAN-prompt-injection-screening-phase-01-findings.md)).
+Phase 3 graduated the tuned tripwire into divergulent proper as a
+versioned `llm-injection-suspect` observation that skips the LLM and
+routes a patch to a human; the learned classifiers were dropped. The
+tuned full-corpus re-run is 4 benign hits in 3 patches
+([phase 3 findings](PLAN-prompt-injection-screening-phase-03-findings.md) ·
+[phase 3 plan](PLAN-prompt-injection-screening-phase-03-observation.md)).
+The worst case was always a slightly interesting blog post; the best
+case is catching something real in the wild.
 
 ## Why — and the posture
 
@@ -150,10 +153,10 @@ the findings can retire noisy families without losing the quiet ones.
 |-------|------|--------|
 | 1. Regex tripwire prototype + full-corpus measurement | [findings](PLAN-prompt-injection-screening-phase-01-findings.md) | Measured: 81/60,642 hits (0.13%), all benign |
 | 2. Model-based scorers (Prompt Guard 2, LLM Guard) on the sample | (findings in the same document) | Measured: 28% FP; Prompt Guard 2 leg blocked by the HF license gate |
-| 3. Decision: graduate a technique to an observation rule, or shelve with findings | — | Recommendation written; operator decision pending |
+| 3. Graduate the tripwire as an `llm-injection-suspect` observation | [plan](PLAN-prompt-injection-screening-phase-03-observation.md) · [findings](PLAN-prompt-injection-screening-phase-03-findings.md) | Implemented: tuned scanner → ledger observation → skip-LLM routing → review badge; 4 benign hits / 3 patches on the corpus |
 
-Phase 3 only gets its own plan file if something graduates; a shelve
-decision is recorded in the findings document.
+The learned classifiers were dropped, not graduated; only the
+deterministic tripwire proceeded to phase 3.
 
 ## Success criteria
 
