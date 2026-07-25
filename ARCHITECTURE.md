@@ -168,6 +168,22 @@ installed-package inventory never leaves the machine.
     `observed_by='size-rule'`), recorded during the deterministic
     record pass; an `oversized` diff skips the LLM passes entirely and
     gets its own review-UI bucket.
+  - `generated.py` — the deterministic generated-output mark (phase 1:
+    scanner + measurement only; the ledger observation is phase 2 of
+    [its plan](docs/plans/PLAN-generated-marking.md)). Marks diff
+    files that *claim* to be build-system generator output — exact
+    autotools basenames (backup suffixes classify as what they copy;
+    `Makefile.in` requires banner corroboration, measured ~⅔
+    hand-written otherwise) and generator banners with versions
+    captured as the-file-as-the-patch-leaves-it evidence — plus the
+    residue arithmetic (changed lines outside marked files) the
+    routing phases will consume. A mark, never a verdict: a
+    generated-claiming file can still carry a backdoor (xz), so
+    nothing may map the mark to a category. Measured: 60,642
+    fingerprints in ~76 s; 41 generated-dominated patches (coverage
+    ≥0.5, ≥1,000 changed lines); the gatos motivating case reads
+    98.7% generated / 603-line residue. `tools/generated-marking/`
+    holds the measurement prototype and full-corpus results.
   - `injection.py` — the deterministic prompt-injection tripwire over
     LLM-bound patch text (`observed_by='injection-scan'`). A tuned
     regex/Unicode family set (instruction phrases, chat-template
