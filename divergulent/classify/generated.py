@@ -27,12 +27,22 @@ Posture (see ``docs/plans/PLAN-generated-marking.md``):
   (rebuilding the era's autotools output and subtracting it) is deliberately out of
   scope; the vocabulary here says "claims" and means it.
 
-Pure: no I/O, no network.  ``scan(text)`` is the whole public surface, plus
-``candidate_banner_hits(text)`` which reports the unmeasured generic do-not-edit family
-for the phase-1 measurement tool WITHOUT ever marking on it.
+The scanner is pure: no I/O, no network.  ``scan(text)`` is its whole public surface,
+plus ``candidate_banner_hits(text)`` which reports the unmeasured generic do-not-edit
+family for the phase-1 measurement tool WITHOUT ever marking on it.  Beside it sit the
+observation helpers: a scan that marks anything rides alongside the category as ONE
+supersedable ``generated-content`` observation per fingerprint (``observed_by=
+'generated-scan'``, ``rule_version=GENERATED_RULES_VERSION``), recorded by the
+deterministic record pass -- ``detail_for(scan)`` builds its compact ``'<family>/
+<percent>'`` detail, ``evidence_for(scan)`` its canonical-JSON per-file breakdown, and
+``generated_marks(conn)`` reads the live rows back for later phases.  A scan that marks
+nothing records nothing: absence means "nothing claimed generation".  Recording the mark
+does not promote it -- it is still a mark and never a verdict, and nothing downstream may
+map it to a category.
 """
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 
@@ -42,6 +52,14 @@ from divergulent.classify import fingerprint as fp
 # Folds the name set + banner patterns into a version the phase-2 observation records;
 # bumping it supersedes prior observations and re-scans, like every deterministic rule.
 GENERATED_RULES_VERSION = 1
+
+# The observation kind a marked fingerprint records.  A single string shared by the
+# recorder (``record.py``), and later the routing and the review UI, so the wire name is
+# defined in exactly one place -- the shape ``injection.INJECTION_KIND`` uses.
+GENERATED_KIND = 'generated-content'
+
+# The observation's source id, mirroring ``size-rule`` / ``injection-scan``.
+GENERATED_OBSERVED_BY = 'generated-scan'
 
 # The signals a file can carry.  Reported separately (and sorted) so evidence says which
 # of the two independent claims fired.
@@ -474,3 +492,107 @@ def candidate_banner_hits(text: str) -> list[tuple[str, str]]:
                 hits.append((section.path, line.strip()[:120]))
                 break
     return hits
+
+
+# ---------------------------------------------------------------------------
+# The ledger observation
+# ---------------------------------------------------------------------------
+
+def _dominant_family(scan: GeneratedScan) -> str:
+    """The family accounting for the most generated changed lines in ``scan``.
+
+    Ties are broken ALPHABETICALLY, not by diff order: the detail string is compared
+    against the live observation to decide whether a re-record is a no-op, so it must be
+    a pure function of the scan's content and not of an ordering that a cosmetic diff
+    reshuffle could change.  ``ValueError`` on a scan that marked nothing -- there is no
+    dominant family of no files, and the recorder never asks (an unmarked scan records no
+    observation at all).
+    """
+    if not scan.files:
+        raise ValueError('no marked files: an unmarked scan has no dominant family')
+
+    totals: dict[str, int] = {}
+    for entry in scan.files:
+        totals[entry.family] = totals.get(entry.family, 0) + entry.added + entry.removed
+    return min(totals, key=lambda family: (-totals[family], family))
+
+
+def detail_for(scan: GeneratedScan) -> str:
+    """The observation ``detail`` for ``scan``: ``'<family>/<percent>'``.
+
+    The dominant family (most generated changed lines, ties broken alphabetically) plus
+    the coverage as a rounded
+    integer percent -- ``'autotools/99'`` for gatos.  Compact enough for a worklist badge
+    and stable per fingerprint at a fixed rule version, which is what lets the recorder
+    skip an unchanged re-record.  ``ValueError`` on an empty scan.
+    """
+    return '%s/%d' % (_dominant_family(scan), round(scan.coverage * 100))
+
+
+def evidence_for(scan: GeneratedScan) -> str:
+    """Canonical JSON evidence for a ``generated-content`` observation.
+
+    The per-file breakdown in DIFF order (``path``, ``family``, ``signals`` as a list,
+    ``generator``, ``version``, ``added``, ``removed``) plus the arithmetic later phases
+    route on: ``generated_changed``, ``residue_changed``, ``total_changed``.
+
+    ``generator`` and ``version`` are always present, explicitly ``null`` where the file
+    carries no version evidence, rather than omitted: a uniform schema means a consumer
+    reads ``entry['version']`` unconditionally and a human diffing two evidence blobs
+    sees a value change, not a key appearing.
+
+    Stable: two calls on the same scan produce byte-identical output (``sort_keys``, and
+    the file list carries no set or dict iteration), which the recorder's idempotency
+    skip depends on.
+    """
+    return json.dumps(
+        {'files': [
+            {'path': entry.path,
+             'family': entry.family,
+             'signals': list(entry.signals),
+             'generator': entry.generator,
+             'version': entry.version,
+             'added': entry.added,
+             'removed': entry.removed}
+            for entry in scan.files],
+         'generated_changed': scan.generated_changed,
+         'residue_changed': scan.residue_changed,
+         'total_changed': scan.total_changed},
+        sort_keys=True)
+
+
+def generated_marks(conn) -> dict[str, dict]:
+    """``{fingerprint: record}`` from the live ``generated-content`` observations.
+
+    The consumer side of the mark: each record carries the observation's ``detail`` plus
+    the parsed evidence (``files``, ``generated_changed``, ``residue_changed``,
+    ``total_changed``) -- the residue arithmetic the routing reads and the per-file claims
+    the review UI badges.  A fingerprint with no live observation is absent, which is the
+    common case: nothing claimed generation.
+
+    A row whose evidence is missing or not parseable JSON of the expected shape is SKIPPED
+    rather than raised on.  The ledger is append-only operator data that outlives any one
+    version of this module (an old row, a hand-edited import, a future schema); one bad
+    row must degrade to one missing mark, not brick every consumer of the axis.
+    """
+    from divergulent.classify import ledger as ledger_mod  # lazy: keep this module import-light
+    marks: dict[str, dict] = {}
+    for obs in ledger_mod.live_observations(conn):
+        if obs['kind'] != GENERATED_KIND:
+            continue
+        try:
+            payload = json.loads(obs['evidence'])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(payload, dict) or not isinstance(payload.get('files'), list):
+            continue
+        try:
+            marks[obs['fingerprint']] = {
+                'detail': obs['detail'],
+                'files': payload['files'],
+                'generated_changed': int(payload['generated_changed']),
+                'residue_changed': int(payload['residue_changed']),
+                'total_changed': int(payload['total_changed'])}
+        except (KeyError, TypeError, ValueError):
+            continue
+    return marks
