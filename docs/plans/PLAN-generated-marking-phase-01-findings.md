@@ -677,3 +677,131 @@ Not flagged, because the data settled them: `config.status` /
 `configure.lineno` (drop — 0 hits), the short generic names (keep —
 1 FP in 41 matches across five names), and the `DO NOT EDIT` family
 (no-go for v1).
+
+## Adopted v1 set (post-adjudication, S4)
+
+The management session adjudicated the three flagged items above.
+Still `GENERATED_RULES_VERSION = 1` — nothing has shipped. This
+section records what was applied to `generated.py` and the
+re-measured numbers; it does not rewrite anything above, which stays
+the pre-tuning record.
+
+### The three adjudicated decisions
+
+1. **`Makefile.in` corroboration — adopted, banner-only.** The name
+   signal for `Makefile.in` now counts only alongside a banner hit in
+   the same region; with no banner the file is not marked at all (see
+   `_NAME_REQUIRES_BANNER` in `generated.py`). Precision over recall:
+   a missed mark is honest, a false mark is not, and a genuine
+   regeneration rewrites the file from line 1, so it shows its banner
+   anyway — the requirement costs the target population nothing.
+2. **The libtool-paste banner — adopted as a content-claim banner.**
+   `libtool\.m4 - Configure libtool for the (?:target|host) system`
+   is now in `BANNERS`. It marks `acinclude.m4` (and anything else
+   carrying the pasted header) banner-only, on the strength of what
+   the file's *content* claims, not its name — the honest resolution
+   of the `acinclude.m4` deliberate-absence question.
+3. **Added-lines-preferred banner selection — adopted.** `_banner_hit`
+   now groups a region's lines by first character (`+` added, `-`
+   removed, else context) and prefers the first hit among added
+   lines, then context, then removed. The captured version is
+   evidence about the file *as the patch leaves it*; a file whose
+   only banner is on a removed line still reports it unchanged.
+
+### Applied drops and pattern changes
+
+- Name set: dropped `GNUmakefile.in` (7/7 measured hand-written),
+  `config.status` and `configure.lineno` (0 corpus hits each).
+- `BANNERS`: narrowed the bare libtool pattern from `\bGNU Libtool\b`
+  to `This file is part of GNU Libtool` (kept all 10 real hits,
+  killed both prose false positives — `datfiles/computers` and
+  `libtool.texi`); added the automake ≤1.4 form
+  (`generated automatically by automake <v>`); added the
+  libtool-paste header pattern (decision 2 above). `_VERSION` grew a
+  hyphen to its allowed character class so the automake ≤1.4 form's
+  hyphenated versions (`1.4-p6`, `1.4-p5`, …) capture whole.
+
+### Re-measured numbers
+
+Full corpus, same 60,642 fingerprints, 0 bodies missing, 75.8s wall
+clock (`tools/generated-marking/results-full-corpus.json`, which this
+run overwrote — the pre-tuning numbers above remain this document's
+history).
+
+- **Name-signal file matches: 698, across 429 fingerprints** (down
+  from 1,876 across 1,272 — almost entirely the `Makefile.in`
+  corroboration requirement: 1,280 matches fell to 112, all 112 of
+  them now banner-corroborated).
+- **Banner-marked file regions: 229 total** — 204 on name-matched
+  files (**29.2%** of the 698 name matches now carry a corroborating
+  banner, up from 9.5% pre-tuning, exactly as expected once
+  banner-less `Makefile.in` noise is gone) and 25 banner-only outside
+  the name set (up from 24: `computers`/`libtool.texi` dropped out,
+  `acinclude.m4` entered with 3 hits from the libtool-paste pattern).
+- **Any-signal marked files: 723, across 442 fingerprints** (this is
+  the population phase 2/3 would observe — includes the 25
+  banner-only files the name-match count above excludes).
+
+Coverage distribution:
+
+| Bucket | Fingerprints | % of corpus |
+|--------|-------------:|------------:|
+| coverage 0 | 60,200 | 99.27% |
+| 0 < coverage < 0.5 | 151 | 0.25% |
+| 0.5 ≤ coverage < 0.9 | 85 | 0.14% |
+| coverage ≥ 0.9 | 206 | 0.34% |
+
+The ≥0.5 population is **291 fingerprints** (down from 956). Its
+residue-changed-line distribution:
+
+| Statistic | Residue changed lines |
+|-----------|----------------------:|
+| min | 0 |
+| median | 0 |
+| mean | 54.8 |
+| max | 3,575 |
+
+| Residue ≤ | Fingerprints (of 291) |
+|-----------|-----------------------:|
+| 0 | 167 |
+| 10 | 242 |
+| 50 | 265 |
+| 100 | 275 |
+| 500 | 282 |
+| 2,000 | 288 |
+
+**≥0.5 coverage and ≥1,000 changed lines: 41 fingerprints** — in line
+with the pre-tuning modelled estimate of ~42 and the master plan's
+original ~39. The corroboration requirement removed the tiny
+`*akefile.in`-only patches that dominated the pre-tuning ≥0.5
+population (median residue was 0 there; here mean residue rises to
+54.8 because the population is now almost entirely genuine
+generated-dominated patches, not one-file coincidental matches).
+
+### The gatos reference re-check
+
+Fingerprint `c1ed3922b369…`, re-scanned directly with the adopted
+rules:
+
+- **Coverage 0.9870** (≈0.987, as the libtool-paste pattern's earlier
+  measurement predicted) — up from 0.9087 pre-tuning.
+- **Residue 603 changed lines** — down from 4,250, matching the
+  hand analysis's second figure exactly. The full pre-tuning residue
+  was `acinclude.m4` (3,647) + `src/Makefile.am.ori` (411) + 192
+  lines of genuine hand-written source; only the last 192 plus
+  `src/Makefile.am.ori`'s 411 remain (603 total) now that
+  `acinclude.m4` is marked banner-only.
+- **`acinclude.m4` is now marked**, banner-only (`('banner',)`),
+  generator `libtool`, no version — exactly the disposition decision
+  2 adopted. `src/Makefile.am.ori` is still correctly unmarked (it
+  strips to `Makefile.am`, outside the name set).
+- **21 marked files** (up from 20: the 12 `Makefile.in`s keep their
+  `automake 1.9.6` banner and both signals unchanged; `acinclude.m4`
+  is the one addition).
+- The arithmetic invariant still holds: 45,958 + 603 = 46,561.
+
+No surprises here: every number the adjudication predicted (coverage
+≈0.987, residue ≈603, `acinclude.m4` marked banner-only) landed
+exactly on the predicted value, because the libtool-paste pattern was
+already measured against this exact fingerprint in the pre-tuning
+pass.

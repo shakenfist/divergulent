@@ -1,7 +1,9 @@
 {
   "acinclude": {
-    "banner_marked": 0,
-    "generators": [],
+    "banner_marked": 3,
+    "generators": [
+      "libtool"
+    ],
     "touched": 67
   },
   "candidate_family": {
@@ -143,10 +145,10 @@
   },
   "coverage_distribution": {
     "buckets": {
-      "ge_0_5_lt_0_9": 221,
-      "ge_0_9": 735,
-      "lt_0_5": 316,
-      "zero": 59370
+      "ge_0_5_lt_0_9": 85,
+      "ge_0_9": 206,
+      "lt_0_5": 151,
+      "zero": 60200
     },
     "ge_0_5_list": [
       {
@@ -165,108 +167,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "0149d7cd396dabc92c8df594c6ac3cfde4f7043ef9cb1afda7e2e08d833bc3a9",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "01ae4e9b6b2304a83ec1209976f35d301ac0de08d7483c72589e5e18ec7a2da8",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "02c19c75da3207d13a79ef7cd58521c2b97b6f67407556a2eb34b8c6dfb72ff4",
         "generated_changed": 178,
         "residue_changed": 0,
         "total_changed": 178
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "02cbd9b18ce4e59fe5f005f63def6e680ec90feb96e599ebe7e8ea151bb16266",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0322152de00c4f0931c38dce0772f04657c8ba8b2849458f3217898a265fc0b7",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "04032f1846880974e75ec473043765657a4eaeb287e0e936df16233c8b3b2d5c",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0415731a3464bebaf6d2d152575c9091facf740fa03c4a93b50e09d66b78dd77",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "043764f18cbe7b2023e61e71d36afc540df8c779e1bc98c2d73df4b61f6d90aa",
-        "generated_changed": 35,
-        "residue_changed": 0,
-        "total_changed": 35
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "049c51039dfab5400190b8de5c873665c56f4feeb238a92e40597c4eb71f41e9",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "05862bd83dcd563fad959f894b89f025823c57269ad5ac3a8d3cd69eaf0f6a67",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "05a63459243d6cc3a0c3cbd49f51ef6e66353072fc3dca9cf11ad99c9ede3e21",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "05f6c113e7c2c5732e2e4df7482e1a53f1134170265d6fbc863b1fbb56344c37",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0693d7eec6e61cd4b5aed5f79d7d76ecfe050f0eb69aa181f347e83537ca93b4",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "06b337df5d196b8a6609c22a1db622f7bf11f91ce9478c1df232adaf28e610ce",
-        "generated_changed": 9,
-        "residue_changed": 0,
-        "total_changed": 9
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "06e13b01219d01645c58568387f98610a695d7f1a587e16372b4d8ca8362779a",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
       },
       {
         "coverage": 1.0,
@@ -277,59 +181,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "078e6570ccc21fba59605e63a14bbab4e584e57c63a67d3a6b4a349afcd252ef",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "07bdb2a415c00474b4e1ffe1b3523014e46b64162c0f9c21b3d7833965b02db2",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0837cc66e16d9f5469fea67a2e0c7101fb08260c7adfdf09084a2848878779e0",
-        "generated_changed": 15,
-        "residue_changed": 0,
-        "total_changed": 15
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0892f63fab0171e441a18d3a409c54e3aabdbc619ac79aaf1c5abe2d74018816",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "08a36ba421c82558eaac7e7af8ec59be5db5c440b3497275baf8356a67fa2908",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "08b21a3525a531593fd641dadbcd6dacce7b418f5774068193b9937225d9e78b",
         "generated_changed": 1,
         "residue_changed": 0,
         "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "08bebd30d67d7f52e7acd637f9e4121c62cd2954162016bc4b6179c72d0cbc84",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "090c3d9f59a36086a921fef5f077fc6e567ce2fc29ba01b30efaf21aff171abd",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
       },
       {
         "coverage": 1.0,
@@ -340,234 +195,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "0afa643549520cf0f5fc08ce60f68153c8ac094673933070ba0b5dae93e61a34",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0b21f693ffd7961664f9838e840ee8f9642a51f69be008b6b6932e1742f45ea8",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "0b5fe4380466af65c73a84243aea52a0d1d4dbdb92ca6208fe8c2381c0d00e9e",
         "generated_changed": 13479,
         "residue_changed": 0,
         "total_changed": 13479
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0b817b3628dfc142f6efa86a37cf80a9fe343aaa7163d9f166826e964aca5af4",
-        "generated_changed": 28,
-        "residue_changed": 0,
-        "total_changed": 28
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0ba2ba69e6cb4ee89b70da594066da224f5293c1e0018a8df70fd18b6074d95e",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0bba00cf019812b2d38a956232c7d7dabc49cd1461209a78d9c4a5b069edd2f1",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0be3ff700095aeb8914efb55dace2bb15fc5057e8dfd35f9a78434d7415cbb1f",
-        "generated_changed": 11,
-        "residue_changed": 0,
-        "total_changed": 11
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0c008966b13e658cafbed218a3d7a23e373f426a2351ee9d7da10a4cc1b7a9d7",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0c313bfe3d6072f3725e6b6dc47ce79b9f4d6cc0a7f28d30f5a7cb62ac7c65a8",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0d23df79dd81ece0f701963c1aeb0b37bda6204468d4a65750e9ebcc5340eb43",
-        "generated_changed": 14,
-        "residue_changed": 0,
-        "total_changed": 14
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0d3f853b4cac461bd598f0c0a037278af971f8bf38939b3455db25d7a3119ce4",
-        "generated_changed": 58,
-        "residue_changed": 0,
-        "total_changed": 58
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0d5b40411d116c1ca39c2eb536eb5b760eec241549f0c8891863ff5548c7740d",
-        "generated_changed": 7,
-        "residue_changed": 0,
-        "total_changed": 7
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0d5bc28998b9a540a01ed2befd45225cd8eb2ddd97020a824d30327f0e32d7b0",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0d8e7afadb90c21b75d3f4bad21dc2d4866dbaa3c7ae46fa6a937ec72760c301",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0dbf38b0b9857944295d9040959e4c4b6493c457ddf8134d5e227ace711befee",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0dc6d0dd240a29fcfb65aa47f77e1089b3c9d6bb87e0d5734bfc42f47f82fb4f",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0df219c7e22db0446b8706c174ff2f819e9a064cbac7de5b648b4b7379706290",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0eda159276c0b26810cacd136fe23e8550378afc9e0b317ce99ad1af8b511841",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0f4477f7102c7bfa7b20bde6240dac3bef4c89ee037df9e58bbe616bd5af60c7",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "0ff4619d2b64c45061cd7cbccd6c58891899a95acbcb1f68945aba53c7099a77",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "101efe129b6bbd6465c51aa59e33feecb5b7f15d208786169474461e0a216a15",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "102bff133061859dc818af03e37028aac92409271be0ef10269f4ff0382adf89",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "10ce0792e4fa0e31e2aa8b3ad076b4ae8afcdc8ecee8814574bcfb2b90d30100",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "10e7492d6b38eb9d77a0288bf5d7db01a88c23d9b8c7e249a23920d70a196684",
-        "generated_changed": 24,
-        "residue_changed": 0,
-        "total_changed": 24
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "118d33aae29cc3f57fd78befc001f628c439f9c7b908dace09514013302491f1",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "12094e720efb345882b8a080ba9eb14a9d11496647f864b5efdd9ad6a536127a",
-        "generated_changed": 22,
-        "residue_changed": 0,
-        "total_changed": 22
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "1244b21012738b2cfbc2b6b28322d42fe6feb01fd9f9f94d6d7e82c2d910202f",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "124b3c9341155e4d78c58db088118e474af6151fce335701e5a40550d8ffb37f",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "136492cfcdccce5037a4df30d50c33c63ee48f00635d94b773bb7bad1865b344",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "13b4657274d778499a3520029b5ec842630884ccde736dacd2a6056867a7e9e8",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "13c7ef0e177be9aad6ba229fe4ae5483e1664c445156b0e59b037530a0825169",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "14d25ac0d58b841860a923d82b99546cb3bc65b073aed4e13a34db3353e65946",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "156ab31a87752c82739e7fba5ef067bb045c6ab0d02646db866d6e8d2d4d6108",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
       },
       {
         "coverage": 1.0,
@@ -585,56 +216,7 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "163716b0d9ab579b7e4c5049c83fc7631c1b43fe00e2cce544471b1f69c07075",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "165ca34f4636c32ad8875b3bcb2f40f6756582e84532579a4e3eb3063e002633",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "1660d10b9122bfccabac95baae3a38dba14ef06edd4c9eaa713d28995191189b",
-        "generated_changed": 7,
-        "residue_changed": 0,
-        "total_changed": 7
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "16ef2546eb39891b37de4fc273fa96c3c1771300c686e6b8322d59954ae24d52",
-        "generated_changed": 9045,
-        "residue_changed": 0,
-        "total_changed": 9045
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "17318abd804beba35b6e97f7dd2a60accb697092696b65b170bce56bb0cdd8dc",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "1753dd012d571d5a94401e7672d951afb8cf4370732d701884da317937d50829",
-        "generated_changed": 12,
-        "residue_changed": 0,
-        "total_changed": 12
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "177fb875b4b7e346418de1fa9d5eef23617ad0b9f69c1971a5a6392fb4f4c9ad",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "17a6727eb6c119ae5e80644227ee95adab04208f1b25af6bcd58ff84ac9a8fc9",
         "generated_changed": 4,
         "residue_changed": 0,
         "total_changed": 4
@@ -648,66 +230,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "186fd5fdb439e023ccbd88b7e94ec4dc00029e03a94699cbcc8cd6c0c9c30c2e",
-        "generated_changed": 7,
-        "residue_changed": 0,
-        "total_changed": 7
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "188d23ca1b1be724ba3ab4396d300011f54c492d7b921c9f63f4b073c8e870b7",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "19062051f508e325770ecf6518d2bba939424a2b318453613f0870e15bf9e36a",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "192317c48109ab51b83d7e1eade1b48016f0a9b46d13922d665ef7c51916b016",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "1926e8178e3a9b3a4f9aba515c61b2b3fea4bfc95f7e8b2c72e642f941892fac",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "1943769606893013b66c48b7d106a2d66a5a230469189691b01d3ef04dfc1b2d",
-        "generated_changed": 40,
-        "residue_changed": 0,
-        "total_changed": 40
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "19b70859c7ead1a42d448c88ef754aeb7009258ab2519661703e73c6d6923a98",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "19f0b678f0a5dfbed8ffe754ab737f21d36c98a7cd5700f6a2cc4d3dac476ff1",
         "generated_changed": 40,
         "residue_changed": 0,
         "total_changed": 40
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "19fe446ce3a1ea6a65269b403cdeb92dbfde85de0c97b893ffe1505acdbc1098",
-        "generated_changed": 54,
-        "residue_changed": 0,
-        "total_changed": 54
       },
       {
         "coverage": 1.0,
@@ -718,45 +244,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "1a13742df4d988ffcb4bd9b5d828035778b808e473159566ebaa09b8ac03805a",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "1a602edefc8d4ffbe5233fc3cb0a201216d3cbfca14a47f3e272debe27c58114",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "1a6c590a1550a20c23630cd70d6802357714d487d590ccff27f02228ae0ca70e",
-        "generated_changed": 16,
-        "residue_changed": 0,
-        "total_changed": 16
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "1ae9698e87c9e6f2658c03069ce0771146460e46228459e8a3c8cbd39a5e9572",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "1ba59a362186b5643277b482301b3303dc6c90f8b26e4cea0ab2c561fe4bc77f",
         "generated_changed": 5,
         "residue_changed": 0,
         "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "1bed73cd41765dde7e9b6433089e949ad0d08f92d62daf5703352ddb189807c0",
-        "generated_changed": 7,
-        "residue_changed": 0,
-        "total_changed": 7
       },
       {
         "coverage": 1.0,
@@ -767,69 +258,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "1c2ba542acc368f6649f438e3547f776d8073a62574aebbf0d819ca8e322494a",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "1c8b771c02bf8231b822879fdda69fbb0782e9d3f06fe8704c904b94b0533c2c",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "1cdab68340241ddd2b6079f518b3d1b12f02d3183107ecfac3edbc582bb2f23a",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "1d02c3cfbc00ee673ced390822b43cb62e7e8c71eaa094197e43d02333854bcc",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "1df9bfaff8e28c97873d77899d92ef90a3e109fb155b6e175b2740abce730f9d",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "1e8d4654467c2cbae06bb1c6352c0316809b8187d9433c75d44e94a72d2a018e",
-        "generated_changed": 19,
-        "residue_changed": 0,
-        "total_changed": 19
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "1f78d94a0502279b25450e73cc569a6fbbd69f73b381613005bb28c88d8c816c",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "20392b153754c853dc68e211610891a19c6743f9f50063ae2c5bd31c5a5f24d2",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "206248ed6a14d138cc07163aae982eb87d15e831f4e40d006cf4a90208ecf859",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "20938576b79e8cda01b07f4d9306670725aabb3ee5bdbd9367940bc915be4b70",
         "generated_changed": 8,
         "residue_changed": 0,
@@ -837,45 +265,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "211dc95150ab4a3ffa8118d0fe5b59780c9c1540a0507cef31f63c786231992f",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "2142e367aa6dc99505221136b33870e0f46c59c7afc91c247f5394adfa177a8b",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "216a0ae85faf619085afaef6673057c5d224c8dd313fb4c9c4b1c4967bcdfea8",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "218ee5d5bfd6d3ea653b1f01feb7bf8b8d2a588c97c306f64e5e3ea38887b423",
         "generated_changed": 975,
         "residue_changed": 0,
         "total_changed": 975
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "21bfdb6e3dee2947190cb77ef92c3a897175eb6e686dc571a7b0497f44bea641",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "223737b43c07501ff4bb79e7ef5c8f058d385abcf0c9f38fa17f276077de883f",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
       },
       {
         "coverage": 1.0,
@@ -900,38 +293,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "240ede5d9c722eef18f785531b16a29ee9be8cfa70dadc54e637da990871c1bc",
-        "generated_changed": 16,
-        "residue_changed": 0,
-        "total_changed": 16
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "2448a253f2e07dc92cf205e2bb1d1f789773e63186e12604799b93dd8c915753",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "24627d9aa83003c664b168365c7f9e4a91d16ef5d31d38c75a67388d4c87a256",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "2502b533adf82de32c99a8253b9ce9832964cc9cdca882182edc96ecefd240cf",
         "generated_changed": 3,
         "residue_changed": 0,
         "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "2512b5413b1550602bf6c2d59c3efec2426d3243d8aba2450e64c34f40a4bac0",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
       },
       {
         "coverage": 1.0,
@@ -949,94 +314,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "25780fe93d7e8b37bf5d61c6288f2060c9e0d0459384393efc7e781f9f252a83",
-        "generated_changed": 31,
-        "residue_changed": 0,
-        "total_changed": 31
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "264982896a7ece077fb64ff80fbc036e546f19e99802a7d2da0293e948111b88",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "284b5195dd73388e297dfb668920ff6006039e692bc34f806ca7b02cdf3808b4",
-        "generated_changed": 48,
-        "residue_changed": 0,
-        "total_changed": 48
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "2870dd4645f58a0c1b5893c7a7e499946c463d87687ce5ebfd5b2d01b44b898e",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "28adebd4f2db399a64ad389ac83a4e37b5c741942f3be4dab9b9363dc65174c8",
         "generated_changed": 2,
         "residue_changed": 0,
         "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "28c9f88b0f5d9ec88730e974c14456a5ead85ba29ffd1625b6b5eff0c810a7f6",
-        "generated_changed": 12,
-        "residue_changed": 0,
-        "total_changed": 12
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "2901a404b7032f7ed390e52218501a315d33652f3a0708475adad8e420d81443",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "290e8321731368b43dd3c00a15c67dfe6f7f6060115cc9c846bf7caddc18ff31",
-        "generated_changed": 12,
-        "residue_changed": 0,
-        "total_changed": 12
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "29553378342af09c4b6d98d64403913dc684217749b940fa56dedb8669049ba1",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "299469a06e2d6dcdb08a8b21df2e795508dbcffd178f9475079bc6aa53d25674",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "29cb223c10db3dbdb15633fffd8ed4701a176f941ab9b0f97f2d1fe2d1fea1f9",
-        "generated_changed": 11,
-        "residue_changed": 0,
-        "total_changed": 11
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "29f95b8f4cdce082dbca1daa590840ed4e3deef1c9be5168c4c45614f6f8960f",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "29fd47f1059b5011d2a1a85cb9e3fe36846bf34d3beb66451dd40d85b2299660",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
       },
       {
         "coverage": 1.0,
@@ -1047,20 +328,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "2a47584b7ba744676f39164cbb6e4acc3d3f96f870505e6c3d995e1f607b989e",
-        "generated_changed": 14,
-        "residue_changed": 0,
-        "total_changed": 14
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "2af2887f17598af1fb986c58bd13cc29de39f2e437ebb95decd864db0d52c949",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "2b17b50dc8fde3aba2ae0cadf308c4c737e19eee6738c155986d570b26a73f60",
         "generated_changed": 4185,
         "residue_changed": 0,
@@ -1068,73 +335,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "2bcb78aafd138a63b6c92c1aaf04620a79839aac721c3d25285d31fdf277d793",
-        "generated_changed": 9,
-        "residue_changed": 0,
-        "total_changed": 9
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "2c9f773c191d87effc455f529a8567a038154fde7bcac85f22f4c142566cc3d4",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "2cc1c5dba1524dbedb5966a9466884fa61755210a36d1881dfc4d84c542ceaf4",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "2d0d4d78ad6df1927254185013caf429f4b4c60332f73b08f1aef7e226175920",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "2d43031af6fbd15bf2870a444327af21dac50bc42199733bef328457426e0b02",
-        "generated_changed": 21,
-        "residue_changed": 0,
-        "total_changed": 21
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "2d7410c410307f19223f931c8f0e154656a6021c84b6a0e851856c1d4754bdbc",
-        "generated_changed": 26,
-        "residue_changed": 0,
-        "total_changed": 26
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "2d84105e459cbf79ddb34c70582e0e6021966f77390c476d202363a8dda8fc6b",
         "generated_changed": 3,
         "residue_changed": 0,
         "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "2e378c406e5ab9a5c639633c7b4aeda58df821f4df75ba1e198d074665f6d6d5",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "2e3bf7e71d790a3e9dc335730e8ca0ef435a1f06fd2d92366d0ffd5545d65126",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "2effec63eca017c7cb0bd591888a68b479d34226e059d048ea2381eed13941f9",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
       },
       {
         "coverage": 1.0,
@@ -1152,52 +356,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "301d671245f3fff4914ef942c07b024dc1829e2ed98a2cd135abc1cd144758f0",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "311217b5b183c47fee5600bf69ccda83e553f8de4ef2e0a4a23f85dd9ccbc853",
-        "generated_changed": 12,
-        "residue_changed": 0,
-        "total_changed": 12
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "32067e4dde82da140823f3d02edef15cd83a6faece8b4280e85fa83668f69465",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "320cec7fb36113600a1e509f328f375c360f8ab402331e56a6ac7b41c544a0cc",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "32b1aafeb8679ca1c3829254a1cd4127c84eec8e1d1abfb00ab92d945082f662",
         "generated_changed": 4,
         "residue_changed": 0,
         "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "32c6bc7031384a3dffc8bfd5c1bb2f31511a1e70ae4bfbf0bd2afb95a24d0678",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "33a8f0faec982081c3ae2f02fc3da5220d386f2a4cc324e3a4265179b0c06f2a",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
       },
       {
         "coverage": 1.0,
@@ -1208,48 +370,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "34e5aedeabc2171202cf5784412aeaf3d72fee58b973852a18ceb15cc3865dd6",
-        "generated_changed": 16,
-        "residue_changed": 0,
-        "total_changed": 16
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "356e9ee92ac3007a759ac0c67155859be99803f358faa4872b1ed37ae8b5ed65",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "367ef188332d256bdffe9114c88616b350dcad439cbc3ea95d16923b69afd8c7",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "369e04399c118003526439e2b461ca549f4e8ad766a2a90c85cff7410839e020",
-        "generated_changed": 90,
-        "residue_changed": 0,
-        "total_changed": 90
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "36a5f1ac6769477d6056bce1d97de9c52145ca66a69eb3e5d8bf3c4d9656dccb",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "36b671732fcaf0d26864be03fba1559b48856205cc9ca0e0853927015e390b8f",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "371d1c537a596cd1f6b7c13f5728496548ea4c1607b74ef259196ec0c4c42d48",
         "generated_changed": 2,
         "residue_changed": 0,
@@ -1257,56 +377,7 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "377fb455ef1ba2d96c573c05a30a3d91bea9ead5a84a75240beb7744d5f12010",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "37a3712083230908906e172b1f94ce150816e0294a790c63f0a47898ef2afcb5",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "399e71caf15c9e394783135e748a0c55eae365116d5bf3c467973d42deeed594",
-        "generated_changed": 22,
-        "residue_changed": 0,
-        "total_changed": 22
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "3a1c1e1d20395ae294cbf747fee93ba30b7373485178c80e53cda35c953afc01",
-        "generated_changed": 31,
-        "residue_changed": 0,
-        "total_changed": 31
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "3ad219ea4f2f3b00b00a44011a6e66ce4a151237944bdd1f390e9bdf212d39a7",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "3b04d50645ef3a58a75085546b4d1aa3e9b9160571ab194b5089ef5ace537d75",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "3b7fd579dda94d8eb1f11dc27617cf004d791ddecf4602e7099947c9d1b0bd21",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "3c5d2e310e4d6d9e963049c246ee9fc6713ccac355ebc666fbd6551d9827a494",
         "generated_changed": 2,
         "residue_changed": 0,
         "total_changed": 2
@@ -1320,108 +391,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "3ea014330f432a500030f8a160f4d8fa72c7074afc1bd4273f2185bbf016f6ee",
-        "generated_changed": 218,
-        "residue_changed": 0,
-        "total_changed": 218
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "3eb437d1f6a25f37928183d628e9bf1efbdc8e20ac9ac56a27caba368d70b908",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "3ec3db13739cfaeb21d6aba04dbe86219d705124f3dfcf7d941d72542cd1e89e",
         "generated_changed": 8,
         "residue_changed": 0,
         "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "3efdbb401a4cbd9b8cf60463f70091dd40e48ab44ea850d753fccf961d3d35ac",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "3f775843ef6f09b0ac15bdd6db53edb761c66f838735c9c0c4283d93442a9eb2",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "3fa3ff4096d6dcfee2ccaa7420cfee185dc87bb43b8e77422ac4ee0aa43a13b5",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "405a89ef4a0cfd2fe2750da99558a9f50f68243312ba81c028a4b08539c72905",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "40a64944d94d58ec77c8d73831d127d3720d544eacbd852cf2b0ad26feb89102",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "40d04c8e8e492478777a4d9dfb5bb6022bb463e4224dd2a6316d9fec4fd31919",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "41019e021e72ec31d21db0eb74a346ee3f471236553f4a9f3bb12dd6b13a2c47",
-        "generated_changed": 22,
-        "residue_changed": 0,
-        "total_changed": 22
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "4134e88f56f9813242d68ba1eca8de371d9b2b8baaf8b0f4b34a92406d28e992",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "4191eb1c83216875c11ffdc7a04ba6f9fa66ae03f10a7794b9915b5a38b16f7b",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "41ea6796e60db21128d8d2c2485aa9cf3f46c17f318bb9764f38d048f3d08fdf",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "4254b79688e05931e9ab687b8d55481161c5812c3923f194b0606e798c0f6279",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "42f6af03c3eff5df7e77d691d7c8b20ebdc8a1710a8f45b6d1f9bd476fac5f9e",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
       },
       {
         "coverage": 1.0,
@@ -1432,45 +405,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "43e277eb34a709d746b31244d423981284eb676e88266a824b28bca60b20b6f7",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "44431f0eab7b5a23c2183cadec5717b175c54f2fbfb0c8537073cf2c3dd04254",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "4458e6bae0e88e508bd68cf8cfff6589f45f878e975102be094434ee84901cc5",
         "generated_changed": 15,
         "residue_changed": 0,
         "total_changed": 15
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "44a52a55af6dcf2576ba83503260bd3a94325d644ff46f17798799f2bd425a26",
-        "generated_changed": 11,
-        "residue_changed": 0,
-        "total_changed": 11
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "44c3bfdccc0e97d8ac05e08f4a9e0c7fa63de93cbd5b0a502dc6af670f18ed6b",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "44c4e48356e953b18de2239acaef7a3f16ba6a3b768352a51d44d53efa03698f",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
       },
       {
         "coverage": 1.0,
@@ -1481,13 +419,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "453b5ffa1a543b6efdd4cf009b7ee8906f651c7dd29a4a499f00fb2cfefd9b7a",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "4547c1827d10051adf8299dc608c12fc0903198afcc750a1001f39bf402d32f5",
         "generated_changed": 19015,
         "residue_changed": 0,
@@ -1495,45 +426,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "454ed084d0e6fe1e121267bbbdea8020b1230c98a8937e3b656e7e7bb7f8e105",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "46551b728a666f95ce1233450029f8af8606492a0b274f373c27e80e91aec800",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "467098e2e13266ed4b9549b9c912a46f738a1f165c8505579c51109ac960e300",
         "generated_changed": 2,
         "residue_changed": 0,
         "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "46a39bb974182e01910e75129fafe1edc16ad7e0244fdfae4915522c48fcdb55",
-        "generated_changed": 14,
-        "residue_changed": 0,
-        "total_changed": 14
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "4704fc2ce60504f6c2dfb719d3e15ff4bd4064bc1d08e80f312dc893c176277b",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "47186f223ba78f2d4f6f166074df8e68594eb3032d61bc262c6032dc20b4d631",
-        "generated_changed": 9,
-        "residue_changed": 0,
-        "total_changed": 9
       },
       {
         "coverage": 1.0,
@@ -1551,38 +447,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "480dfeb6ba3d041b4096ed514875831330e53389282d01c2437ec5ada15e9f4e",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "48220e8e769c3bdcce567ea985c31a2b67a65e4e07bd5aa5c8c3fba506ab6c54",
         "generated_changed": 4,
         "residue_changed": 0,
         "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "48762607f288be56efc87c0f4ce4fc2cf8ca9749fb03a6fc39e888af7e654595",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "49190f12a8c67939945c5f232f187637bee507c5b3c64d89772b5945045aa60a",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "492afb8f736b600e280675338639388efb26cd4a2ab860ca668b3283827c4f98",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
       },
       {
         "coverage": 1.0,
@@ -1593,66 +461,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "4a0620ce599c100d5e7cd832d56c1aed79b11c96c59dc548b6b4a39a6b18eae1",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "4a0b403cc147346b6db4f9b0952eee55577e844c6083c45bd089ce96a17e4b7c",
         "generated_changed": 31,
         "residue_changed": 0,
         "total_changed": 31
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "4a32d90bb4b63a654b8c5f86c0ab708206318bca06c28eb36ce345408e873f23",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "4a90e8730b8ab18d59a9d35b22c2b6957365090bb029ec7ce68defe6605d8cc7",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "4af46c0576312d6e8792ba21aaf35be71ffd7823e8555b51153c9037e3d81eab",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "4afdf274a68a110b48563860135ba92755f500201a253df198c0a0a8d3ba2e12",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "4afe4f316e498eb93afa80b81dbe0853283345b1e3e0ec9cf70decf7e0ad9a43",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "4b61a0aa097f07b2d9842fa2572669edaca76ee79658b24323b898eec1b6bd87",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "4c61d70cbc3aec9d75283bcdc56fd7208d52f446c4a101ef6bc6f43cf165890d",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
       },
       {
         "coverage": 1.0,
@@ -1677,27 +489,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "4d85e553819ad64fac997ccdf77a35165711e72449fef917dd2d0bd05f24c29c",
-        "generated_changed": 11,
-        "residue_changed": 0,
-        "total_changed": 11
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "4d8e0a9cc1adc52f90e128ac8b10f6ac319ea845e77925872fad080f6cb427bf",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "4de384ac8d0217de315be1db95061f5355e8839b4d31846116650f509deb6ed4",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "4e94744d5a7aba78ae3eebc985c6d6389581910e38197644bcf5e343b3cb57c2",
         "generated_changed": 2,
         "residue_changed": 0,
@@ -1705,49 +496,7 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "4ebac5b3e2a7897d19d5bd9e81712e89d25ef79e7a98ca89c6e1dc33665fe3e9",
-        "generated_changed": 34,
-        "residue_changed": 0,
-        "total_changed": 34
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "502202e20d52d1dcefedcc832c1d4aeb4ce848127239d18ed5cb7d44fed8c7ec",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "50999a4f406825829650768629f33cf4ca0ebd8cecec77ab2ce3dda57535d797",
-        "generated_changed": 12,
-        "residue_changed": 0,
-        "total_changed": 12
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "50cd451ea885054511411f2182f3deae74a16b173fb8efbbd229a83fd0089919",
-        "generated_changed": 20,
-        "residue_changed": 0,
-        "total_changed": 20
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "50f1640bc56becefd1d716142a4ae5e2dc1e6e0cf3a9c40bf75d745fb10a3ef2",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "51e7f2d51178d5a0b00d50d56a8fce136fff848091b27945e6e0236296ce8023",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "51f2b8bc087c5bedb7f114ed036f2f00297e80e0df5ce97153cd21722c69fcf0",
         "generated_changed": 2,
         "residue_changed": 0,
         "total_changed": 2
@@ -1761,38 +510,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "5291c8bd6f05002370f37a26c1abcb80208153fc1eae5c9d3d1f8159e5c677df",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "530ab64580e36ece73e6cfde8f4be9d27aec0387a7cfcd8fdea4e5b4fd247749",
         "generated_changed": 2,
         "residue_changed": 0,
         "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "532ce00aa8fda5b0742c02e56fe9af51cab291052761c747737375e746cabce6",
-        "generated_changed": 34,
-        "residue_changed": 0,
-        "total_changed": 34
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "537f330cc95747fac2d10f1a256723fb7e4966d44f18dba8784295c0a128db61",
-        "generated_changed": 7,
-        "residue_changed": 0,
-        "total_changed": 7
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "5385b3536f9c98d84fc4f45b905550114b274c0e46dedddc466d7f6bfc9125b7",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
       },
       {
         "coverage": 1.0,
@@ -1803,45 +524,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "53d85c2d25eae50581e1ff643d2fd5d1c27d47010dc29f90c53aa74718125c3e",
-        "generated_changed": 9,
-        "residue_changed": 0,
-        "total_changed": 9
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "5450a4d167b94c01134b613630ac66cd24653b80129986b0113a4c87aebd34be",
         "generated_changed": 8,
         "residue_changed": 0,
         "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "547d0d9e245e2b7109f8b712050b65633d8f10641a293fd566566445f41e4957",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "548b76ced0b343d504e65f2f2cfec57794695e38630803f534e5d1c1f96df379",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "54a58890d7326f5be177e025b17b186c3c7ac5826945b92fd4bf016052466e73",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "54c862dc3c990e9e148664bab7cbbf12bb7657cb0af5c466621587b58e93d512",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
       },
       {
         "coverage": 1.0,
@@ -1852,34 +538,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "55868e79d034b32c524984682984bc5e2932123f47d5a476b4e4f2c9090bba3b",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "564a93843b5355371e7415e01e2c724487ee30455977e8d3dc44cbf6a9c74365",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "56aab4a02021d6570dba889c174c50d5d2565316c85562c92e1c2a98c0c3104c",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "5846b20d6892f38638fb4abdf02ed0ed68d8254158982d5de138ab0cefa773ac",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "585d11d2651d5f709b159f76ac5b88e14e9eb8d832f18fc3fda869b344d94cd8",
         "generated_changed": 801,
         "residue_changed": 0,
@@ -1887,28 +545,7 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "589d376e26bba8025000ccf745973c0f17939e7258e8022cc824100e987c662f",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "59b93761e96dcc0aead72c0ad9a9786a92e8dcc00791cbb4f79df7e2c0b3afcd",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "5a425d3f3881211d8a65717481701f8d3ec6e39e5cbebe35349a31c500c13d26",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "5a546c91cb2fff3823b49f4591d02693c345a984dd6462c0d5a8423bc5012d3a",
         "generated_changed": 2,
         "residue_changed": 0,
         "total_changed": 2
@@ -1922,45 +559,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "5b0a6d205bc74f7b6ce406f51e31b43f5fdd01b2fcd03df71d953e91e7fab4be",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "5bf1d87ae42b7f3b3c18d4a546164f2b7fa52f451e6384cfc834cd5f5feeb0a1",
         "generated_changed": 8,
         "residue_changed": 0,
         "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "5c36bed080b5a88067e09f8b9772919a663cd79e5cea2cc1618bf1bccdf10bfa",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "5c4632ecb448c912cd8ea7c71f86d0baa723d83f5dabe24397fed6919459dcb1",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "5c90b018ccf348edaf5d910f2eea81d2226124df0ce27e0bcfd38aabbb4a5eed",
-        "generated_changed": 9,
-        "residue_changed": 0,
-        "total_changed": 9
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "5cd9c779fda685411c91e522f604acd768fc2b28e8ce172b1f0a7d4f4ea21ce9",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
       },
       {
         "coverage": 1.0,
@@ -1971,69 +573,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "5d76c68080f0d4122b1d38d6ff554711476dbca77fe01b699201bd718ae5b5f2",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "5db18012a699a635a2dbc72a6df2b03f0842de82d7d1e1a9aa8210131365344e",
-        "generated_changed": 26,
-        "residue_changed": 0,
-        "total_changed": 26
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "5e31af99bb0f604cbf9ace99a8aaec9d551baf5ccaf1c9fc3558b73d29a63952",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "5e67c64a402aeb0ac1327802c86d37a2b63836ac4fce241cf692466128a0848f",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "5e84f0384a5b01c1950a201b9f33054601d5377ad806605221d2c5a8cedf4876",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "60649d174347cee9ca3026fca4223373d5ab25c5c2c01afbfb97354932203450",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "61172bf575fcaa72d981ec3bfb21b8a68c1f384c2c2131fbe32e72870f96c6dd",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "61b9493aa26162871618589bde11ff5bbfbccc3c65018c83b27e9003c3e0f507",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "6237c10766612f3b17e28423eba772ec6143abfd4cf2ec54e39acc0db0459811",
-        "generated_changed": 11,
-        "residue_changed": 0,
-        "total_changed": 11
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "627adba43ef9372cc09d6af66e19bc9073d7655f5edf22435fa780a0bfad7954",
         "generated_changed": 18,
         "residue_changed": 0,
@@ -2041,70 +580,7 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "6302aed1a8699409e44a073c2028a97f0ec95375ca0589981e3ccfa9cd167210",
-        "generated_changed": 151,
-        "residue_changed": 0,
-        "total_changed": 151
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "634a7e379e1f518f771b9e669f76c8e76e4509670ea60442566a736ccdcc7b22",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "63eefa107187acc532be73365a7d522fa45cdc30ff5fd90171a16f0564913c68",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "648fb3c183a84ffe895af343eedc9ec1d0f00f5a8ca27ddf29884094043ba3b0",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "669c51c52f5f42e42789b3fab6135e65186aa9e6cff162b6c07a8f1610fab59c",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "66e19b8803a2e1e95fa197393bf55a260cf5b81fb89437b2569a55e5bde0167a",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "675a7fe56f5c2ee11dc8a3d2e7214ef50796c58de31d823634831815ca898283",
-        "generated_changed": 86,
-        "residue_changed": 0,
-        "total_changed": 86
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "677aae04d59ba7fe1fef1c18ac5e5e1137de8544e3ba6014f33dff0933bb008d",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "67d48dfc76ab973aa0bdda76325fe0e99299e87ad659f74c5a56643d6df7d4f8",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "67f853765960b2196e9b80efbadb742edfab9f08f15bb20f3b3a87d6fe908e98",
         "generated_changed": 2,
         "residue_changed": 0,
         "total_changed": 2
@@ -2118,45 +594,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "68d74f5cecb757a728b13fecf8374a8c898998f2b46412d669722798d101f0ca",
-        "generated_changed": 7,
-        "residue_changed": 0,
-        "total_changed": 7
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "68e53db3935b7bafd1786a0b8b20936653b8cbab765628df8ae24c6fd1a1ec9c",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "69099e7a85111f343feaeecbb9e3134b34bc0515f234e97cda76660614a7d8e9",
         "generated_changed": 4,
         "residue_changed": 0,
         "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "6973ca905a5d32971b839ee02404665d77ff9e2d6d8b0cfb1058e0e851f7ec8c",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "6983124c38c0e96f82387e94aab493e5c5dd3fbc1939f5893166270adf7c38df",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "69a81a802d0276081d90a80817f1f22a2dd91c4f657d1f078abe5d22d7fad0bb",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
       },
       {
         "coverage": 1.0,
@@ -2167,73 +608,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "6ac47503685cc614f22c5acb2867dfe86c949584eff73e9a4451a10119b1c8a2",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "6b081c8171465604f6658cb747d9479ff865429c951bd8418065cef79bc48c69",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "6b0cab99c122a332624e77832f1a1d27f86a4e6fe92ef7b87b42c17ab8da38ad",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "6b12d88a207b3601fcb8426bf2a42f032e2b04d4313f35134d6a33586f790c7a",
         "generated_changed": 2,
         "residue_changed": 0,
         "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "6be2e1fb6f43a040d4605becfb3e42cfff9a968e2e7b01c6f7e2a7afa0372fe8",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "6bed21028cabff4859531d04093c2fd31d95c97add77aa811c2d2c693d1201bf",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "6c28d6ed30b99302ce261d1f855974a6a90d64e897807a4fa0857e6bb8d21dda",
-        "generated_changed": 67,
-        "residue_changed": 0,
-        "total_changed": 67
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "6cca29b11ef9a1d103bc5389b5336c3cd5cec0bec137dfbef092be0df080b632",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "6cd64bc432a32c13e014a474c394bf8a592a9193118df52c921be47643220f02",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "6d82c83e52765fd9c14e9600d5046222ad86553ac6c576987cd559541b851b8c",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
       },
       {
         "coverage": 1.0,
@@ -2244,45 +622,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "6e93e660ccc487a8ee1fae94402219686ec83837b946ce8a8bc3fc2046054f2c",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "6f0702b423e433b6567ff98d8ca0f0215a8637327cf28e4425ff0e9c22b01b2f",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "6f60a3044d0e829892dadc061ca183033637fa597b4059e66ae7cfa46554192d",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "6fc0b40a7d5592b667a57c2661810129c7db06cb7aec84c3c4d9feacde493311",
         "generated_changed": 75,
         "residue_changed": 0,
         "total_changed": 75
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "6fea3e914ff8275793178ff6b40f8d33d5b69a1d90215abae4037ce7eb213ab0",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "6ff826c46343dc9c3a8a725f00efb93544d52bb2585f7164063debc21980094b",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
       },
       {
         "coverage": 1.0,
@@ -2307,20 +650,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "71d12954127e9b471c5c047820960d2b1fcae93e089df6f3481faf89e69398c5",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "7219281bdd733630dcd848e67cdd3b38b0f13d9c396cf198bdf92cc5487119cf",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "72247b5eacd822bf111c2141d3de32a41fc4933bc9306d9558ab583a7ea68ffc",
         "generated_changed": 3,
         "residue_changed": 0,
@@ -2335,59 +664,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "723ebe061a0260d1c44c05d64083248f9b8825f309fc41c29268465a05dcbce1",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "72599499a4dffa0e3ac1c655f30e548c37f7a954251c4560b7f2c6728ff62150",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "73118562907fe38f741dadb26ba5270270f3f9cc6b5b9a7f79c11bd1fd15f424",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "73da237b2b1dc9f728fc2acef6ac494efcb52ffa05091dcb622a498ebe1c1b50",
         "generated_changed": 14,
         "residue_changed": 0,
         "total_changed": 14
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "74434205dd6d3b74bfbca99c4a0dca5bb7946d50a6f81c09cc0b69adeb0d3701",
-        "generated_changed": 28,
-        "residue_changed": 0,
-        "total_changed": 28
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "74819b6dd3dcd11df2a05e32c1d79693426920ee0f90667798b85dfef4257ee0",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "760133ac00e2eccc105f64da25028e809ae068e8ab164b83abd912305590e927",
-        "generated_changed": 23,
-        "residue_changed": 0,
-        "total_changed": 23
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "760eb04fd3ffb8e558410b10c0de380e6a219fc8ccbbb52fae21150bc20e6e8e",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
       },
       {
         "coverage": 1.0,
@@ -2419,66 +699,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "783e7fe3b150afcc44122ded9242d0ddee504dbe5d0d74b7e60bc6b752f685b9",
-        "generated_changed": 1,
+        "fingerprint": "7bc159e556e03081d0ef158c47c39a4c0f67f8a809064602687237579f9a8455",
+        "generated_changed": 434,
         "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "794bc455e28cece97980aaeb8c54b5886f65500f50f46ac69be7bdcc13174871",
-        "generated_changed": 32,
-        "residue_changed": 0,
-        "total_changed": 32
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "7992bc19089189ed3d27d22aa450fee8194ebde4853c75fec9102707c91c4ebb",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "79dceba399e734828ec9774a52265623552b9fc8d368457b4ce8e59c6d7443e7",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "79df7c50f2fa30a1c3996eb01de89d09de8fa187de4dcb37389eca2d147f9b88",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "7b9b9535c770a9415c9c07db05d84ae14def999c684b7ffc889ce565fc2cb4cc",
-        "generated_changed": 525,
-        "residue_changed": 0,
-        "total_changed": 525
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "7c56361f1444ecfb933c2bf79316428a7120cdbeeaa08491d4e123615b7da5d6",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "7cd0110ccba1275897677a705fa1a1825de7f6858ed8f2e50566763b0bdbaae9",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "7ce259041a24443e6a9c492550f1493f697abdc02db2ccad9099d5aafe1b4b7a",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
+        "total_changed": 434
       },
       {
         "coverage": 1.0,
@@ -2503,20 +727,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "7da0a637317da466cb4a2591db0baf098ae61dbff3a040b4cbf66f6b747a27b5",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "7e594f727e6c51d124cc3822e19da75412faf37f2e020d3fe3265ff30380d677",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "7ebbc1655231e9fa37b298522f0534829ab757f6269fa4e45472dab89d092314",
         "generated_changed": 43,
         "residue_changed": 0,
@@ -2531,66 +741,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "7f172d5864aea2317ee4a94f64481c0115f12ead0ac853b6e246bf2c70ddba91",
-        "generated_changed": 11,
-        "residue_changed": 0,
-        "total_changed": 11
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "7f96922d8b1cac3414b3bed89d16041e4a3db2b9bf7901814a7473be3ba7531e",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "8013c42bfe5924aed21d5b686beaf2f6d7c463d4ee522f6b11a224c67fe042b8",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "801adf9e6576561c89be166095315cd490301e86fb8fed875bde51c25630438a",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "802cc00fb0343b0aefa6313c8a69c904c6ab836bfa1b13489b4986489a4e775a",
-        "generated_changed": 13,
-        "residue_changed": 0,
-        "total_changed": 13
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "8041516d44d5e3d2dfd32b05d9222abac454590f9a1fc6af5ba87ff18b8fa10f",
         "generated_changed": 2,
         "residue_changed": 0,
         "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "805ddcf970cf5891d8bd1e32bb4041976f663e729a54c0547259264883af3155",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "807a523d7c819ca0a859a9a9cc79c860825a153e948df3d7a0ade11d4034f9fa",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "80bc9ed283fde31a5b5f1a9733dfe081831067c65e556b0bd67760161bda09d5",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
       },
       {
         "coverage": 1.0,
@@ -2608,13 +762,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "81840f37639413278055166f0c31163670f849d93438011cf8c9eedabea2f9e6",
-        "generated_changed": 7,
-        "residue_changed": 0,
-        "total_changed": 7
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "81cd32ff3b57e5cb302d810d7d8f5865dca9abd30bffed06587d24d13094df25",
         "generated_changed": 8,
         "residue_changed": 0,
@@ -2629,94 +776,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "82045cfdc325e207b35f02f1d25276b5d13239e82d6ec5976c3862f8f6444071",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "8285d1468d8cdf1815adb1ef06e989a5d8784edad647b904eaa1dedb4162534d",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "829235cabf5026f395896dcae3dc445f4b99ac3f5c6c442ac5eefb079bf5cf28",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "82d6e33c4ee8dec459a898913fcc25ea1241da6e4d6bfba59a0c5a0d1141f445",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "8310e2918a1a6231187c558d0834045e5bb560e9d4711bd630ebf3b4cfea4754",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "83564cb9ccd3841fa865d1f255b23a26fb143cfcbbc7514d3e41a4f145087a34",
-        "generated_changed": 7,
-        "residue_changed": 0,
-        "total_changed": 7
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "83638cdb9c6cd06ea4ebc1cc7cb2bc4baacaa06519864b10fdc4eec935514d58",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "83fa8aac644762b09ccc6361505d4fe1ba1126c2e1c3df6b5333d098ffed39ce",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "850123d45b6ef38ca2a30956493f70af734e0709a838d24b07e999502fba7851",
         "generated_changed": 2,
         "residue_changed": 0,
         "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "857ebed7ac0a84e3c20786f24354f43ac797b73c75b8ddd9214341c81daf0b91",
-        "generated_changed": 30,
-        "residue_changed": 0,
-        "total_changed": 30
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "8592bcd0d480affcf4fd7cadda962e89ecae17ad4c4e5848d7301ed56c99278c",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "85f0c863109ee58a7c0ff1133a5ac87206aeb0bf161b6400ba6ee9a8b544acca",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "87f5360affb9e4fdfd49ed52577727140297281bf39376d717e1dd3eb903cb3d",
-        "generated_changed": 13,
-        "residue_changed": 0,
-        "total_changed": 13
       },
       {
         "coverage": 1.0,
@@ -2727,38 +790,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "894333a636be3f0a1d4b84d01ac9a5f5381393b55524cf403cfc3ad87ae7bb6f",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "8a5dd3397edb9bff5dc4f161a9f6d2cf02c62521ad9f6efb42b1537f32a732e8",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "8a6045acddb85ea0e3ae7749470540796a92c1afb44163d2801f640e825790b9",
-        "generated_changed": 7,
-        "residue_changed": 0,
-        "total_changed": 7
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "8ada25aebfb04f4d38ba68762f70ff167b0d734f6ff4cb8fd0c0e7bb40151d05",
         "generated_changed": 7,
         "residue_changed": 0,
         "total_changed": 7
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "8af87ca4b7fa7c7bf3c2fa5ff518d0d8fd9ee05e359ea24c7dd33ca9430d7b9e",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
       },
       {
         "coverage": 1.0,
@@ -2769,48 +804,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "8c3c484e13ce0879528159806597a55dcc1be88d0083907e7d63b202a2dfd2e6",
-        "generated_changed": 25,
-        "residue_changed": 0,
-        "total_changed": 25
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "8cab48f5aad48f8d7900a857be1fbe4437dc3228e1cf79432a2562c80fdcb236",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "8cef76be962a58366bdd2eaf0ab90c708d07a3b68181c12eda51ef0c653fa165",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "8d79b1437055a1d20a1d0d6fd0f0134da49bb19a35d3c642947c0fa0e346744b",
-        "generated_changed": 13,
-        "residue_changed": 0,
-        "total_changed": 13
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "8dce70e66b5568e10dfa1fd4c9e2473d745ce1743748d246d1264cbab8e71934",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "8ddd657acc4a79afb019b45c54bb6f150cb7ca2d4b685d854e58b64abcd02e33",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "8e9b72c2da8410bff47803e1ba3a02b365a8adeb6f3783f5da2a48862d5fb3be",
         "generated_changed": 14,
         "residue_changed": 0,
@@ -2818,38 +811,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "8f63b42c3bb44346d8564e3aaed733e625cef787e0bddcb8e4864eeea1527caf",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "8f7a0d1874d15f4b9306dd25ff93d81423217eadb58e66349363d3c3aac6a60d",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "8f7ff6028e09cf165ad39fa4e648e0d55a32231d665f550cfd67d3ecba24951d",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "8fc0105d59cdeec2ab60c81a84a469124b80d50acf2de146c5488efe9909953c",
         "generated_changed": 185,
         "residue_changed": 0,
         "total_changed": 185
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "8fdecc8d071f5461b3336fa3931cdf8f87b88168c07d93d6f24cc3cf6b9efff8",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
       },
       {
         "coverage": 1.0,
@@ -2874,34 +839,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "92a419c91d86b54444de65993ff47582689b9de231a335c497024249d3d645d6",
-        "generated_changed": 12,
-        "residue_changed": 0,
-        "total_changed": 12
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "92f2e611db226853be5a0ea81c1067127f62763d20e248669eef0c00f9f59fca",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "93ecc8428d8331e7c823780a1f2a74085e109a39ed1e4ae5b283ec00418249df",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "93f32b09bd23171a6228f884db55db6ca7600bd54bee28190277bca99fe7a3ed",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "942c4e3b9658b0ff90582fc69a702b95e1f7a4c24e83da8e9611b8416c335c50",
         "generated_changed": 3,
         "residue_changed": 0,
@@ -2923,41 +860,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "95673b354e7c3dabe184f3b04bc7acfacddc72502000c13fe479bb0b7cec888c",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "95b8cf673a2943ffe4b290fcb645c919ee45a77c1d51560e39f69f6178e95acc",
-        "generated_changed": 9,
-        "residue_changed": 0,
-        "total_changed": 9
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "96f44ba79244f600932b91af307843d83d85efea103a50252baebfa91f74382e",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "970aec83c2fc78392782dc73d51d91fa6cfbbd24d265035106b177680f1f4a30",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "9735ef495638983816ef027b9e5c5260e7c45e225019842b159a5dbd6588437a",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "9815be2c2bdfb4002c26ade690df7872b90b21345ecd66a4f0a7b6fbdf1bced4",
         "generated_changed": 2,
         "residue_changed": 0,
@@ -2969,13 +871,6 @@
         "generated_changed": 8,
         "residue_changed": 0,
         "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "986bcb4ef34937ec1a9cafb5010583a3a20dcd33ccb67ce684b14a67bb12daf6",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
       },
       {
         "coverage": 1.0,
@@ -3014,31 +909,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "9936920e7e10601922d09ad7579370f97a6ac2a8bc7948717ab79832263899ca",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "995e33ca69ab42203652a87095de30621a71ec332a3b13175c3397779feda402",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "997bd7b200cb4915b8f72b6cf4177a6707c33d9baaf0933e47316ac4735d1903",
         "generated_changed": 23,
         "residue_changed": 0,
         "total_changed": 23
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "99c0794d4ff0ba3553d50550fb4b8fe299d419a623a6c39c54ac31971723d42b",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
       },
       {
         "coverage": 1.0,
@@ -3049,20 +923,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "9ac28022ae5ee744f40ca36c7171cd118a51d54d4b3a45c72e40f5f4f403ae02",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "9ae97299c1bb8b260fff73269ab75248981d02acf8d1b9fdf58dcb64e91a3400",
-        "generated_changed": 11,
-        "residue_changed": 0,
-        "total_changed": 11
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "9b7a81a66082b55ae467a17b55fc536e81dd56201d1dda51bbaa706ef590af2e",
         "generated_changed": 4,
         "residue_changed": 0,
@@ -3070,157 +930,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "9b9455fb3d37f331174122a5f93d34e3d74a290d86639fb65f84577d67b9718e",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "9bdfde0ec812900f3bfcb8b653d328e9a4219c4c3318172f774eb967175c0a57",
-        "generated_changed": 14,
-        "residue_changed": 0,
-        "total_changed": 14
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "9bf52248403a46024f925d2c232233e44a048b92d41aa481f67b3f60406f6025",
-        "generated_changed": 9,
-        "residue_changed": 0,
-        "total_changed": 9
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "9c62873808f936a3cecd91f3da1f88a64e8e84aca05017fa351d1bc9ff4e923c",
         "generated_changed": 13,
         "residue_changed": 0,
         "total_changed": 13
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "9cd45fcddc84ad9f9ef53cd45576360292231e42c9452ea670a4965e8d32bc95",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "9cd9d9dc9af4fcbfc8c46089bb228adf876ea7d27d274b09ff34e7848c76a537",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "9d85dd5a4d42bdb4279d2a05c9619f6154f8c36a3ccfb115704a55dfb53b8427",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "9e66c55193b03a7b15550dbd9c78f1776c3c13891deccbee49965140e2f9a3d3",
-        "generated_changed": 9,
-        "residue_changed": 0,
-        "total_changed": 9
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "9eb9a4701515061c8dc763ca2a231fc0427747c795ccf9eb391db223cc8efda2",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "9ec85e1c49463293129cb706c291795ffaa9df3671cffa1717eb4967b94d9317",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "9f2147cc69a5b595a647d7f47c8f3122c422764f7ef91e3d48777b570934f23b",
-        "generated_changed": 18,
-        "residue_changed": 0,
-        "total_changed": 18
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "9f9a041af0609ff395184708cb48845eeafecc34ef3ec82bd87f48e9c3a16be3",
-        "generated_changed": 9,
-        "residue_changed": 0,
-        "total_changed": 9
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "9feb7cb0badc61b66a91cda89f98c190740c28122a3c0d1de81da529449391e0",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a00c7ef242f415fae4894862494de3b827441edf579c5ed6b89bbfc966aaf0dc",
-        "generated_changed": 12,
-        "residue_changed": 0,
-        "total_changed": 12
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a06beb588df4a0674ce8121be6f4878c44c9a89386f315dc3c89e78c706ab9c3",
-        "generated_changed": 9,
-        "residue_changed": 0,
-        "total_changed": 9
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a0746c5a30d83e335f1b1303e589823dec23d78eb7ff1fdcbd35f8f4d4ce7ab8",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a0fcdb35eb5356c10ba287f9f8be98ab9f7584fe1c255833a1b86c635c37e501",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a139d68911fcd32040b247fb80ef956d6cbec907cc4c5e9e60b0a0faeb33cd13",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a1548e8326a711552ca03458c3c9e032526f8c1ece215ab5b0c5647bfe4ec593",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a217ecdcb242e1a277c3f5197f63dcb84681ab2e3f8e21b76fbc4c599b7bdeb4",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a266d0a81eb7622b1d024dd93ce2a4f65a81b6e7e94a9fdc17b0039aa6f3e317",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a31d662883a8745345acc3e20b79af721eb9a5ed00387102dd004c2e0b79bf5f",
-        "generated_changed": 11,
-        "residue_changed": 0,
-        "total_changed": 11
       },
       {
         "coverage": 1.0,
@@ -3238,94 +951,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "a39b8aeadfc75ef6464ca894db3279c592b61a8b764e35e73fb6d610513bbec8",
-        "generated_changed": 42,
-        "residue_changed": 0,
-        "total_changed": 42
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a3a139a623941b3bb50237dbf0b895f1cb385805221845d6df3f5794167cb3d7",
-        "generated_changed": 38,
-        "residue_changed": 0,
-        "total_changed": 38
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a3b7766e02e9e69fa28c17ac8803f7ece6fd5ad3346b4f6da50c8dd811a16dff",
-        "generated_changed": 16,
-        "residue_changed": 0,
-        "total_changed": 16
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a4cbad2feda8b71f524a3b0b9a64fe3c52501766741b11196c559e64f2874330",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a4cc7a132c9a6b2323dee81c16f1934edc463d9f21108174cbdfbd67c1475ef9",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a4ccde67d1955f817b7ff73f62b4062373d60a93536e7da6d2dfd34bd0946468",
-        "generated_changed": 21,
-        "residue_changed": 0,
-        "total_changed": 21
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a4f9de85bd17133245d6d654df2b91b57c1ab0288997870fbf561ed79d57e319",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a5634ed0b586de3446d2a77648614906d956e7c7c9bfda8d5eaa5e7e6a207663",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a595d138c747c5d8fe52878b0559741488413b94b80c8491e6ec30428c6c712b",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "a59be2d3da37599bafc2fa1e92514189b09d44474d539792515cf725fe916dfc",
         "generated_changed": 4928,
         "residue_changed": 0,
         "total_changed": 4928
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a5f2805174560d8aa315bd1e2be106d512b2693dcd99bc09d5c8b734503dcb08",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a617952d0ee8cbf99b26a1f70055fb54fe6b7c3a1d5329259479710f83073ae5",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a8b5d160f5c46c82465ecad9338fb4d1d84bb30387732d4e9fc52898a5df8c9a",
-        "generated_changed": 7,
-        "residue_changed": 0,
-        "total_changed": 7
       },
       {
         "coverage": 1.0,
@@ -3336,87 +965,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "a9c996993671b0eb83809c0dc0ecf07464b473f079816f288c355a3fd5e1fbf0",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a9f443aed7ba62336172795e48cf45c5d5392f2f7d13ac845e5dec02e6bea862",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a9f63c2dfd1abef1b603e445e61c72370ae96b9d64e7543fbde7ee7ec014eb99",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "a9fa43f99666889069e6b0d02b657bb418384223c295d55cd68ca8cd311f4d46",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "aa34316f521720fb9d9f9c48bb920e296c05f23590c8ec36ef5d344b49bf994f",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "aab5b272d9f0b15c19071b2f2c879e2ffa445a27f26ff862f3dcc0e0a705f46f",
-        "generated_changed": 16,
-        "residue_changed": 0,
-        "total_changed": 16
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "ab4f6d6a89abeca4b39f4fdc03afacc15911c533b78b9d3a448d8bc7ce796f9d",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "abe2645cddef21bdc203c9c461b9b85b97b1d1f51071e9d47a7e1fac2cb75ff9",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "ac3ec424cd051454e7391295cbf60c8616518f9a813e431b7da9a0820f7d74af",
-        "generated_changed": 41,
-        "residue_changed": 0,
-        "total_changed": 41
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "ac78b1261f8e3f86a1960a7a89996122f6edea3eec416130b0f033a2f1c0eb72",
-        "generated_changed": 119,
-        "residue_changed": 0,
-        "total_changed": 119
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "ac80585fad2c75dac834616980ca6007d820a1dc59007f3eda6392c656d472eb",
         "generated_changed": 5,
         "residue_changed": 0,
         "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "ac99664d4d05a8b4f5df13fb3fd1e276bb7b42838036b7db69c8c19467a44323",
-        "generated_changed": 79,
-        "residue_changed": 0,
-        "total_changed": 79
       },
       {
         "coverage": 1.0,
@@ -3427,20 +979,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "adf01d2e01f1749b9f42808cca63b10214b78597da798849b576578f86594faa",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "aeb95ab7ba5858a74c8b9fd7577c0f11cc2934541745802c1c7c9177c5ff8b1c",
-        "generated_changed": 14,
-        "residue_changed": 0,
-        "total_changed": 14
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "af7f248e90f456f1f10e5b781be4eff3ca8d1d5ec0ed106d169a2b5dac90bacb",
         "generated_changed": 8,
         "residue_changed": 0,
@@ -3448,101 +986,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "afa4747c108d3cceaf90d20bd1ba9f30ca9cf5d987a4f81539a8d7c7bbc10c6c",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b00370a6b372ce3311fbe40b37fd1e60d28508154bf6481bfe3a128742b84a33",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b046ad0089f5c8c7a4855d308c4d96630f9df4b407c4b487e40629aca737b5db",
-        "generated_changed": 30,
-        "residue_changed": 0,
-        "total_changed": 30
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b054a8f857e97a47fc5756fdd568c218002e05dcc47a127623ba0c770a290a13",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b077ac894287ed29985e04177b4f4966282da43742106e11195a967796e58f10",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b07b3ff6956ec954acaae02e32219679d934eec353b65c77014b07674f7baa8b",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b083b08ec80b18d65693806575cb05586a8d424012d699d40d46c8c81d19c8ae",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b09ab16584f30ba720a39147f49cb66ae5e591f8ba3dcb83c3a609d67ea293da",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b09dd1f84244cab9a7514d43bdb690d2ff6a00ed083e917d7e1de92537047c3e",
-        "generated_changed": 44,
-        "residue_changed": 0,
-        "total_changed": 44
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b0cd384b0130698c9626bcff32cdfccb3132ff49df927d3284e627d50823fd09",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b0dcfdabc30f02817ee408c99c4a2eae8138008a14be14efe5c16a0b8b9b6b1b",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b0e123182ea5a9b60273c7eb654379418288ba6dd8fc6ef091af8c43058f5b4f",
-        "generated_changed": 7,
-        "residue_changed": 0,
-        "total_changed": 7
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "b12700b39e16114aca79c00454ea259762e0de3cd16a5b070e47618a8afbde8a",
         "generated_changed": 5,
         "residue_changed": 0,
         "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b1854bf2f08b48d22f99cb372cd60c4f67a7377804ed19dbd141a87dfe71b23d",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
       },
       {
         "coverage": 1.0,
@@ -3567,101 +1014,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "b32cdc09bf73e2c190a76af9dd7a78169ea2ae89f45dd9b3fa6195d81f51f217",
-        "generated_changed": 26,
-        "residue_changed": 0,
-        "total_changed": 26
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b36cc941ae19bae3856dc3ed87af3f80dad267040f2a157f79e2450397ccd913",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b42d806ea27834134dceef3c3e44c1dee19a92d76079f6efa044f337d242387a",
-        "generated_changed": 20,
-        "residue_changed": 0,
-        "total_changed": 20
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b54902c4dc9396c7a2f574e50273f6129675e600c678e115717722d304cb38a1",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b5765370b35735de88c6b144afc4e58e8e9cf6c53249702b575cf38e12e18044",
-        "generated_changed": 28,
-        "residue_changed": 0,
-        "total_changed": 28
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b5ba745b4074e64276ea30959ec37505b45fac50d3cd4470a5c0ce948cf50010",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b64126e7fa042fa88249632fc8b1640d5624ed7fbc43e727a59d92bf3a3128bf",
-        "generated_changed": 35,
-        "residue_changed": 0,
-        "total_changed": 35
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "b73d667db883183a37136d1fcbb8f166b8657ccd40807962dfbf377880afcb72",
         "generated_changed": 4,
         "residue_changed": 0,
         "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b78541a98267178294f68cebca2c8a5b5310d73b79f7167172e022f235332757",
-        "generated_changed": 202,
-        "residue_changed": 0,
-        "total_changed": 202
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b8210b861f77541d2137dffc462860e917ff7c0c51435e1d2e337be1b64cfe56",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b82e02b40a1679d81f6077c23c8434dc3aa78d87dbf944f74ccf2dd2b1bbc659",
-        "generated_changed": 7,
-        "residue_changed": 0,
-        "total_changed": 7
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b8444e83478daa859d07a617474a29a9764377df4ba0a444cc2f1f79f23963f3",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b89016beb6fc5744476f53c6527e0969287c281fa8d01912f63705b27511edce",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "b90ba3c7df069acf022f93d9069abd360faa781f91440b6385ff27c95095b33e",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
       },
       {
         "coverage": 1.0,
@@ -3672,38 +1028,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "b9ca09f471d5c14ec43ab99f021ab84eb8389a5cfab25409cec9c8bd9ee9c8c6",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "ba0d5e967ea8f4a36c1b93cdf21b9e2b473480deb2a85287e53a6a863f65230e",
-        "generated_changed": 12,
-        "residue_changed": 0,
-        "total_changed": 12
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "baad0ac83c20dd4fadc8a61ff40b800c5068f5206698b19b1bf9a6ba9abe3582",
-        "generated_changed": 18,
-        "residue_changed": 0,
-        "total_changed": 18
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "bb18688d88d138a487de980937570544099a9775e6286c54b6261436ab90c4f5",
         "generated_changed": 3048,
         "residue_changed": 0,
         "total_changed": 3048
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "bbaf46b0c5d8568b13d2c1455226c1a45502e476b963c8e6894374d068f9cc69",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
       },
       {
         "coverage": 1.0,
@@ -3728,34 +1056,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "bd5de19aad7ea395697bcd564af7cb47f8a836b32d661cc8cb0138e0c955f756",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "be318f5066ec3e8c819068e5db2ce7d2145969b0cf4a6fdd689795d16a8de835",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "be4c01176af1679d7b87b6d0c7c105346dd6e950059e0b291c77aa3f2cbd391a",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "be849f1efa56655c1d412ec59d5f6224fce942d6bad71bca9769da7d16844aaf",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "bea1ab04beeea49e64b92a1d759cac1478204309f38529b05564384cfe21d87c",
         "generated_changed": 2,
         "residue_changed": 0,
@@ -3770,59 +1070,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "bf36e737b01da61437ae0fe2d0d8e1e3a9b19928eb9de681a43a2fe1a8a4704c",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "c02a72c9766d0afcff6fc3192600e89e7dad0ff8a768eb36acbf090fd2ab92bb",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "c0f8615fc54246a677d878bbfe43ac8c9afb3d0590dceb2d729401b4383a9511",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "c121d5d651d217bf7ff414fca63792bf37b7480284e1247428019a3791756b47",
-        "generated_changed": 26,
-        "residue_changed": 0,
-        "total_changed": 26
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "c17f690dd9790190bd7e4cd535a4dcfaffab009c371d81bb5727a05d8b54fed8",
         "generated_changed": 16,
         "residue_changed": 0,
         "total_changed": 16
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "c1a44487c28122408fdfb662e7aac91d6f4f9cfb44f603c7cdfc3e33bf312f18",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "c21ed5207d9b2da9c1e7df5bf636de86453ba3fc54243d973511acf58aaa0c4c",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "c2a9b80cd113b9dfd6d46a35c7bff23ec6a96671b7991fbd5600d6b073291507",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
       },
       {
         "coverage": 1.0,
@@ -3833,13 +1084,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "c4f32c681c74ed4e85554fb286c011d560a1c9630d5a642cad2cadab4e568586",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "c5946ada8a3953b9cf74745990d8bc115214efa51083d6412889dd073e3d7971",
         "generated_changed": 11,
         "residue_changed": 0,
@@ -3847,35 +1091,7 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "c612c25098f6f86d84c4bf6fa623fb33560d7079211d43cc1555e2f6496a9dc6",
-        "generated_changed": 9,
-        "residue_changed": 0,
-        "total_changed": 9
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "c66d86e8a925a28547ef45814981bb961ce5e514fab310db5001c9f6430c27a0",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "c6f3db66fe92136ab45184c779b2ea15534d991754e2f82ee24949772056b904",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "c70c88c7ab9d348410534b75552fe146da6ce5cf5b374306041240f641dfca57",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "c7628bb265dea40d7d7f316ab1cb7ad1de2a94804061b0046ad086bff91e50d8",
         "generated_changed": 2,
         "residue_changed": 0,
         "total_changed": 2
@@ -3889,69 +1105,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "c806793905af31e148e0f58381553bd8bbead2ee47d3d60c5a541e94ffe99393",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "c8397a429b75373a3168f59252cfaf3c20ad9274823a90ec474b48bd521e9c3a",
-        "generated_changed": 26,
-        "residue_changed": 0,
-        "total_changed": 26
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "c899d61fe4b4a1640ac5cfc8715f9a658cd02e280771a27027d21469887147d0",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "c8f18760611f5dad70db403a1b496972fe0cf7e30dc6765219dd56253cb422c9",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "c91d13458a884cf29c2e377a32976f59c3357b266008fe1200461d156dbd26d5",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "c998eb285a26859031c9c80ee255e850d885ae34fb96f67744352d7b098fe8c6",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "c9c13a276167083ece7af7c5ec246f5db3d185dc47b076f883c614c3d9ed7039",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "ca485bac298c3156aaa508b85740b9abe5df97c885b2465d53209b32c314bdd9",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "ca6a12e317c6c925fa1d8c0d63eff69ba88575162b44376e2e229011d51268a8",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "cb136a8cd47d64b5f47091f3d9566f3f49b9db171fe49d7a7115b46e118a380d",
         "generated_changed": 8,
         "residue_changed": 0,
@@ -3959,105 +1112,7 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "cb500f46368201a3402869b4b5d449b41c2764553eb9d35192eeee3f10f02ae4",
-        "generated_changed": 30,
-        "residue_changed": 0,
-        "total_changed": 30
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "cc66c2f06e00fb0e0b1dc37c972f7f28bffae9139cba463766b509d74ab8c351",
-        "generated_changed": 9,
-        "residue_changed": 0,
-        "total_changed": 9
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "cccfbef2b9896db601ee9f52d7042122ea8b793c8ab5faba8cd25edca7477d72",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "cd31a162426086b423d4a92cd62a6c8df3158a5fa270d8a33ee46f76a98213cf",
-        "generated_changed": 17,
-        "residue_changed": 0,
-        "total_changed": 17
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "ce4bf7522cf44dedbf466241264809705216d720a5b5737fd676e9f278ac9dcc",
-        "generated_changed": 14,
-        "residue_changed": 0,
-        "total_changed": 14
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "cec5f60938aa2ee0004f0412bfc647bbc8a50b92a7f80f9267299510c16e5bc5",
-        "generated_changed": 9,
-        "residue_changed": 0,
-        "total_changed": 9
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "ceee2826aa0276431c906c753ac7bf1ffb37aaa81a38a4162f8249a3e4303d00",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "cf0ee8b05f34774b0ef044b60e1d4c562a6bd8734db62170796e9f1375388741",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d025a5d0f42b970d2d4d7a84add853131d44302dd40134d2364d273c7647b2a3",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d15ac1fde13f158e218aa24d7adbee3a5454b69ed9b262c2f2879a2ee5e18264",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d275da20ccb2d54d6de47aea2d404f6885c2537e5c8dd8d5b1dc09ed30f72240",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d35d2e81c9505a37d30b6afc456666d92d23e7851508eb8e65024f167cec80e7",
-        "generated_changed": 13,
-        "residue_changed": 0,
-        "total_changed": 13
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d37ca998ca0e38c0514a4227b293ab086d6a513486cb62984115dd03746c7108",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d3ca3e874a3102b8c346aa6146422a6d47ab03991afaf612c6f4d77b6093d4ee",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d3e513caf2ec5c4331b72164f5addd4080c219708ce60627eb75b1fc86f384f5",
         "generated_changed": 9,
         "residue_changed": 0,
         "total_changed": 9
@@ -4071,13 +1126,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "d420c0cf2d60d8cd78766827848c359d3b7703b638dec761cbfb128213042c39",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "d42eaeb4e4cad3b72cedceade936db772a9dd8b3d7086c19d3ac4d0b7e9bf18b",
         "generated_changed": 4,
         "residue_changed": 0,
@@ -4085,52 +1133,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "d468d93740839b153613660bc0964c430280ef0bd9c08dd42dba9529e41a6d17",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d4a3fcb144c8919d11f3ddf5cc84267a0153c38a6edbc8d09f916e35272d7179",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d546ce936b94d9f5544d7bd6d36c7d87bbcae54e4705da18a9c2c7c845251660",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d57d4acb3ad091d272007c0c79ece6a67d52a51dfd47c34848ae5b78a3a6c986",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d5a28377579255bfd5a88f1ac29296bd1696e97d4494a250684461a929d1d3a6",
-        "generated_changed": 24,
-        "residue_changed": 0,
-        "total_changed": 24
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "d5a4550f942370061abcff876737def1dcd92b3ce599ee2d80c8dfee44d73e7d",
         "generated_changed": 29,
         "residue_changed": 0,
         "total_changed": 29
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d5d9378d0f16937114f80437f1951928a04efcfd23ecc66e0adbe7a64783ce0a",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
       },
       {
         "coverage": 1.0,
@@ -4148,115 +1154,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "d626542bd9907e624b2b50bd889618b6f8f3bf39623682388af36a3239c5b2eb",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "d69e523d21ef94de590f7012c1943a8611fc74a68448fed85020242c14036559",
         "generated_changed": 5,
         "residue_changed": 0,
         "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d722ab31f58438844a736e83a6a3ffe7d1fbbd301e55a451e07e126d354f9cd8",
-        "generated_changed": 20,
-        "residue_changed": 0,
-        "total_changed": 20
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d767d81a7d0ac0789b272f4e82d128d6a2c24d94d3786b97f0282d8b59a78175",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d848c76c982a198d7d768df37c934fd0562946d00a5d4ce47935bfdeb2ee6fe7",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d88c5d0cd2f8980a3afdf4e634727b58e860b5d27dd8bf11c07a3a934efc3945",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d8c72b02b47e9c4f1bfc65fef0fa1a4f57604a86b3a56f7e011dc267f56032b3",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "d9cda23819d93a0b4168e21aa6d5b873ca020028bbeee5cc77603c15d377ed56",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "da1d0ed3fdc82924142696c72c67951a9b6c0009b4f243451677a51fd2af4928",
-        "generated_changed": 9,
-        "residue_changed": 0,
-        "total_changed": 9
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "da3078f263c8778c6cdef6de96e48a1e5513caa8a44de34e8a904fbece80879c",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "da49b86323abefd262d57512fda67baeb2790c067b34da029463e17d7534178e",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "da7b59f74b33e77cd4bb4611b8f908672bab3b964703e8b02408db3e4361ca9d",
-        "generated_changed": 40,
-        "residue_changed": 0,
-        "total_changed": 40
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "da94723554a9a030e517d5e6f56f36a6e11b4a109d97922ca32bbdfe9be8e1ee",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "dac91c1ba072306beeeac7b288d35a926934cdb73e37d9ee50f4b8e170fdea56",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "db745c1f3ab61d8f62b4775349a67233ba09c7753302e441b31ec0c8c11b41e3",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "dc16eefd68b883366a6a5f486aa18783c562ee1c5b207d18c79f1837e3d02115",
-        "generated_changed": 34,
-        "residue_changed": 0,
-        "total_changed": 34
       },
       {
         "coverage": 1.0,
@@ -4267,24 +1168,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "dcfcd97c0b2194698cb096354cdfd89cdb6e46ba69b7be4ee90d0b2ecf4c28c3",
-        "generated_changed": 23,
-        "residue_changed": 0,
-        "total_changed": 23
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "dd408869c0ce2ba1c4e34d387aa3a7ee330540339cd5466511df88642dd7dc50",
         "generated_changed": 3,
         "residue_changed": 0,
         "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "dd40f784d79077be5d6f5d43a707ccc20c78219e0ccf4bf52c4005cc741481f4",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
       },
       {
         "coverage": 1.0,
@@ -4309,150 +1196,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "de6b413f73f0c4b30711c33f4616665a5e9cde59e6d10049ae73fea976e5c378",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "df1a9a3b2b9d0924454e3f94b29ecd53e0ebca31c99bae71f467f6ac9f6fafbd",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "df77591d3476b50f046847e38384a03e24cc782a5e9422b457be75da34d5f712",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e01690101dfab053d347558f8d5437ce986315b1b48904a2e9ec74cb772c097e",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e0244aaf7bd86e56900a5a905f3918b8ca739ebb4430e3ade34abc6f30c5801a",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e03e2a752f139fbdddcdb93181a6535cca4ad93dd91e8d5aa90088ea3407fd72",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e0bcc90c6fd05f198713b3433c8ee10591f68ed035951eb3b8d624b14d0efb79",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e0d75f0f01d5bab3bfc045d367d22f710110e14d803a547956bf6ddad4da5d49",
-        "generated_changed": 29,
-        "residue_changed": 0,
-        "total_changed": 29
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e10c5fb9c3f19d5a0715ae063795d9e12d6d93a8d71381efc3503535ad80cc47",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e110a130302280abd0df00c04f11a27a2cd3357fd60ecd6ef1108382180978b7",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e17b975d5d4162b7ff96a2729f3673986c673adfbc9635ca79be77bda3b41a8b",
-        "generated_changed": 20,
-        "residue_changed": 0,
-        "total_changed": 20
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e2b8cdb0b8f0631d7a0925b5bd7a3f1ae95db81cd6b57e126106d801804a7a85",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e2f828cf3c43dbaa5e3c1beacbe66dc9ac88d98c3df3e61a1d514500559c8261",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e30b6e26f2b08b9056561c757c9e4588686e5cbbaa0054bc10bab2b098607401",
-        "generated_changed": 11,
-        "residue_changed": 0,
-        "total_changed": 11
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e3148dfcb5720e8b4a6a51cdfb0929ef4df9825316aa61e34c62e739915b5cd4",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e4711eabab6144fa74bdec9ebe8eccbd8d6abba2ff1d47c2b61a97d9e0b5c646",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "e53f489d1b5e1e8b393d0d443e58edbaba8f97a647113b764273d5ef95cf416a",
         "generated_changed": 6,
         "residue_changed": 0,
         "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e5e4784c749ef45bffe549a39ac8eb83d0a9069fe9ab77a546ac7821e8e2b45e",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e5f3d3a0528d45f02ddc1ac570e89a324e76501ade214c77a00d17b41abe26b9",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e5fa4192e0ebd0be7cfc33a5f0d6404edae7069f76207d9db7e8bb12d8cc257e",
-        "generated_changed": 25,
-        "residue_changed": 0,
-        "total_changed": 25
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e64ac3f550bad8e93b0775baf816eb5e02663e29c70d04812f737e99e064f463",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
       },
       {
         "coverage": 1.0,
@@ -4463,136 +1210,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "e6b2d9b9b684becb4f0be2612b95855e1ed1c2dbc73e9c6f3aefb1ffc037b0a4",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e6e5759770db2fe0355fbadb6022687a329ae7d26695260d7fecfee12a1f0206",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e72b239feac5a951649cc1de7de2818897c0cac69f4f231d48c5f02ab548f0a2",
-        "generated_changed": 14,
-        "residue_changed": 0,
-        "total_changed": 14
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e73d8a364ec7b9aa9c79d974afd02b436cfa9d608452092cda40771187f57d75",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e77ab77ad3a9c9db03a32a06cc922ca9c07be3efb60ba96d8db1a0b60d69dfc6",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e77cdd4fd91997565cd094376d9b921da8ebef6a49f66e4eafd714a1520d430a",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e7e7c2c40572ae902049a193273f7990f82e919a04d5befba6f27caec019461c",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "e86bc2a20b9c86a6d7f1c6c8708699c74a298bcb749b7dd7b1e64e1b4d095177",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "ea19deaaa2c8f3a1f02436dfb31c885fc5dec179e78fae02913f0429b9f3b0e7",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "ea54f4063eb5fcb5aadfface9b7a4589aa886cbeb1ab2a9cffaefdd7cfaca979",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "eaf97fed75f02d7aeecaeac0c4b59e35010da4333edd699be40e02248efd020e",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "eb6f04555a0d4665273367a1c500b43f6374cb7ea2391f4a008cd246594aa34a",
-        "generated_changed": 10,
-        "residue_changed": 0,
-        "total_changed": 10
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "eb84f1097cbc160e11c4d66b7f43aa51e21727595f13496e15760d17d5c5dff7",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "eb8713472eff05f8e57a67f177bf83311b60200fcbe7032a43755d7d279819fe",
-        "generated_changed": 13,
-        "residue_changed": 0,
-        "total_changed": 13
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "eb8f7f38f6aafcfffd1163d43103cfca1d8042da1a505976ed6908f4cbc72f1d",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "ebe87cec267562763e6402a2f5b2fa84271706725e502d13b833f47c96400acb",
         "generated_changed": 7336,
         "residue_changed": 0,
         "total_changed": 7336
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "ec511d20ff2a041f2d168a620cc605858f8a03e6900538a638c94f63773836f4",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "ec77bbec3245106e67c0d824846e71d28638df746b009fd8cb41a28be942494e",
-        "generated_changed": 24,
-        "residue_changed": 0,
-        "total_changed": 24
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "ecbe89a27acea7240603d252db77d066f521ca4145d481517161375544444df4",
-        "generated_changed": 1,
-        "residue_changed": 0,
-        "total_changed": 1
       },
       {
         "coverage": 1.0,
@@ -4610,87 +1231,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "ee5018c25abb888ecc34b0b78128df93413172506e01a99a34817eb2ef403a17",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "ef12ef3ed2ccc9d229beab92fa75ab6312faf52e2f60df58ecf0e32a55cf6a5d",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "efb3c9968d1de1454dc4798baac481d18ea6fa6e118f4d37351989c05c947705",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "efbe0d9f5b528bf1879f11e6b67b0d2f1d182c7ba7757f822e30695a694484db",
-        "generated_changed": 14,
-        "residue_changed": 0,
-        "total_changed": 14
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "efeace9f84c246e2104f65d5c8a2dc58fbfa3fe3fefb6e5de15246b7348827a5",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f004de194cb50ed618832573250a82d5e19812b9b4e3cc83ed448526b0506ef4",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f0066d85c780422090369332191b158134bc862a3c8ab897c6e2b99705782501",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f00c506c1dc73309309bfff055ca6e3ff826a6074867f8883b9dc0d48f238815",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f05caa6861ca5ffaae6346d45c61277c59bcd8eb800223f8b8cd0a7f2553e8dc",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f0692913b2e55f9df8b3df1d91b6bfd6ec96f5479663875a69d00f06a46968cf",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "f1e0e790aa1c85032dc72cb0832c0d571984595e247a4204d9a362878eba5146",
         "generated_changed": 8,
         "residue_changed": 0,
         "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f211cff662afa15f3ad3f25b5d21c2a002166c690ff83ad6bc8bea201c646307",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
       },
       {
         "coverage": 1.0,
@@ -4701,38 +1245,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "f3230806c96f0f9d322b7df8fe85c5acea0d8bf1a92833e85a382aaf25ee8956",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f3bd4c3831fa2f24779f396b1ad037489853bbcf1b213542f72a0de19809fe07",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f3d03ee6c442b87563d04fd620d5112d7f2bb4105ccd377238455d19331fe54d",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "f3d5196970de9b3dcaaee8590b81b8653432ba6b48a8799788584c52a7fa09f4",
         "generated_changed": 6,
         "residue_changed": 0,
         "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f42da0421c7abccd7aa7c825632eba2bd8ce4798670893187539405bdeacc35d",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
       },
       {
         "coverage": 1.0,
@@ -4750,31 +1266,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "f4798809c2a10c09b47d04c1c5d8926914278570f2912962cc0c452f089e1603",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f4e0a86a47b0ef3024db0f91d2fefa4269b66fd6005b023e56a45ad8f28bd7cb",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "f51945a721adbf79788afe54d38d1e156f00377581440ba1ba79677d4d3f7b19",
         "generated_changed": 4,
         "residue_changed": 0,
         "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f54f29e86da6b563fe98fc9415632016c9f4eeb635a5383705e4fef8c34952cf",
-        "generated_changed": 3,
-        "residue_changed": 0,
-        "total_changed": 3
       },
       {
         "coverage": 1.0,
@@ -4792,48 +1287,6 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "f66ecb96a12490eb51a2d5df534c0d4af6d04f138b401a5c2b38e2fc35fc2873",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f6cffd1be75f593dafe3b2065f94a548a86717350d76494adb0debc50acbb43a",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f70677e6d75797b2b09224e1b8368ed19cb6a444b874b6f5d7f0f7dd05541343",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f7461ea73f3302719db79ef7664dba3b2dc1d23cd037379e87a6d9da9aee84c5",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f759fd14c77ce921e9e0b6c8e120135458596cf1d19b63fe96d4a02f9e81c327",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f7bdd7d942142758f887078af05a8d70cf5c290a90fb4497ba6af17c1b7e8e22",
-        "generated_changed": 12,
-        "residue_changed": 0,
-        "total_changed": 12
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "f7cf491d82c9c50d1c72a4a73aeee52a3bbc5ed86287e7323605802d84d9e8e6",
         "generated_changed": 8888,
         "residue_changed": 0,
@@ -4841,31 +1294,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "f7de427e97774348b794dbd61aada0f670f51ac484c4787fa1e529ef601f4cd7",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "f8f4efd7616b978b870abe69ba3d334387384adb0d8fac830a6b9688c051b13f",
         "generated_changed": 19,
         "residue_changed": 0,
         "total_changed": 19
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f949cc502f63a8943d4e9368240dfc955ec72a87b19010905993da4d8164dd1c",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "f9918512669e118bb844bbed00d8193005249a56956ed0ef2e59a172bffa5c51",
-        "generated_changed": 15,
-        "residue_changed": 0,
-        "total_changed": 15
       },
       {
         "coverage": 1.0,
@@ -4883,66 +1315,10 @@
       },
       {
         "coverage": 1.0,
-        "fingerprint": "fa4f9eeb6d4a3f2bdfcbb8f8eace2512c5b8343f96a218b7468cbbfd0f26a39f",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "fa891bad59caa3c03494726fb95df745c2b92221bdf8cff3f2586849a121f59e",
-        "generated_changed": 8,
-        "residue_changed": 0,
-        "total_changed": 8
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "fba460c87665b93e562192b47ce100df6fd31e110090ddaef8cd8eacc9a9d89a",
-        "generated_changed": 4,
-        "residue_changed": 0,
-        "total_changed": 4
-      },
-      {
-        "coverage": 1.0,
         "fingerprint": "fccf140a55651ee1adebfeab8c687d415795d1a74b6367c62e69c4a8879d5037",
         "generated_changed": 10518,
         "residue_changed": 0,
         "total_changed": 10518
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "fdbd23c72dbcf016af9d783a0eac6e0ffa63808548e879920af18f9f73d67a03",
-        "generated_changed": 5,
-        "residue_changed": 0,
-        "total_changed": 5
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "fe1f8ee82caa5c4c8925300361f864cf82efabde89dd2a0b81cc15ba11177e0b",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "fe73c90ad62b6ca7d24419a5faffb804dc87bad80faf96f8cee426c7abebe0c9",
-        "generated_changed": 144,
-        "residue_changed": 0,
-        "total_changed": 144
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "feafa2e3974776d0ee9fe2f81fb5867e14ede5e3e7749f572c9eb5b6db0e8c52",
-        "generated_changed": 6,
-        "residue_changed": 0,
-        "total_changed": 6
-      },
-      {
-        "coverage": 1.0,
-        "fingerprint": "ff888d9462964f6cfbf131b755be58a6edd3e61332b41bb95fbcecd7ce1a050e",
-        "generated_changed": 2,
-        "residue_changed": 0,
-        "total_changed": 2
       },
       {
         "coverage": 0.99989898989899,
@@ -4973,6 +1349,13 @@
         "total_changed": 1460
       },
       {
+        "coverage": 0.997567716970702,
+        "fingerprint": "16ef2546eb39891b37de4fc273fa96c3c1771300c686e6b8322d59954ae24d52",
+        "generated_changed": 9023,
+        "residue_changed": 22,
+        "total_changed": 9045
+      },
+      {
         "coverage": 0.9963530269876003,
         "fingerprint": "7372d5565cd673c7c5b811e5c3ba2e57d2f0064fc9000b043c7a518dac4d39f4",
         "generated_changed": 2732,
@@ -4994,13 +1377,6 @@
         "total_changed": 425
       },
       {
-        "coverage": 0.9949238578680203,
-        "fingerprint": "554efa8fa36d8ec1d659ab3c4700b7fe0fff839d22c3ade0d92894371363d04f",
-        "generated_changed": 1176,
-        "residue_changed": 6,
-        "total_changed": 1182
-      },
-      {
         "coverage": 0.9940050280409979,
         "fingerprint": "2613dccd14e7ea51c57ebf25cfd84085f46ae057c9ded9129c826422f7724a39",
         "generated_changed": 10280,
@@ -5008,18 +1384,18 @@
         "total_changed": 10342
       },
       {
+        "coverage": 0.9915397631133672,
+        "fingerprint": "554efa8fa36d8ec1d659ab3c4700b7fe0fff839d22c3ade0d92894371363d04f",
+        "generated_changed": 1172,
+        "residue_changed": 10,
+        "total_changed": 1182
+      },
+      {
         "coverage": 0.9914372282966671,
         "fingerprint": "5dd0e1a3c99b8ef2062414847dcef7247c98542ada9e771abb51fe8fede4f852",
         "generated_changed": 15052,
         "residue_changed": 130,
         "total_changed": 15182
-      },
-      {
-        "coverage": 0.9912280701754386,
-        "fingerprint": "824fc6e1fba49525a5a2fe0eb4e8e4dc9c877cc3b15a148c4a70e710754f2eab",
-        "generated_changed": 226,
-        "residue_changed": 2,
-        "total_changed": 228
       },
       {
         "coverage": 0.989010989010989,
@@ -5034,6 +1410,20 @@
         "generated_changed": 85,
         "residue_changed": 1,
         "total_changed": 86
+      },
+      {
+        "coverage": 0.9870492472240716,
+        "fingerprint": "c1ed3922b3696eb254ac3c26887d095bfb58892926735b2c398f68e237b00326",
+        "generated_changed": 45958,
+        "residue_changed": 603,
+        "total_changed": 46561
+      },
+      {
+        "coverage": 0.9867264154950516,
+        "fingerprint": "89fbad7189e88fccdcd4e0d66463dc75956914f6948166ab4481c07d73573cfb",
+        "generated_changed": 46461,
+        "residue_changed": 625,
+        "total_changed": 47086
       },
       {
         "coverage": 0.9865771812080537,
@@ -5055,20 +1445,6 @@
         "generated_changed": 6747,
         "residue_changed": 99,
         "total_changed": 6846
-      },
-      {
-        "coverage": 0.9852941176470589,
-        "fingerprint": "b5817f10656381d79484bd6df2359cf521d89c1ed18ed107c432eb9f3b5c77a0",
-        "generated_changed": 67,
-        "residue_changed": 1,
-        "total_changed": 68
-      },
-      {
-        "coverage": 0.9836849716340984,
-        "fingerprint": "b842690b9932e35188f0179f6ec711193dab8b83bd268b6bec4c1a2972c502ee",
-        "generated_changed": 26529,
-        "residue_changed": 440,
-        "total_changed": 26969
       },
       {
         "coverage": 0.983159582999198,
@@ -5099,13 +1475,6 @@
         "total_changed": 205
       },
       {
-        "coverage": 0.98,
-        "fingerprint": "ab56a0ff2864377f4a91ec2cc184183cc5fd7ca052eea75a828d73c4af7204ea",
-        "generated_changed": 49,
-        "residue_changed": 1,
-        "total_changed": 50
-      },
-      {
         "coverage": 0.9795918367346939,
         "fingerprint": "b2e654e30a7c60adb517cf527630b39d22932a12591615ab1819aa31cf19985a",
         "generated_changed": 96,
@@ -5120,6 +1489,13 @@
         "total_changed": 501
       },
       {
+        "coverage": 0.9744892283733175,
+        "fingerprint": "b842690b9932e35188f0179f6ec711193dab8b83bd268b6bec4c1a2972c502ee",
+        "generated_changed": 26281,
+        "residue_changed": 688,
+        "total_changed": 26969
+      },
+      {
         "coverage": 0.9660377358490566,
         "fingerprint": "369f1eb1ce37904711d7099925b79faff0ea9f202178fc30a7b1b236193b4757",
         "generated_changed": 256,
@@ -5132,13 +1508,6 @@
         "generated_changed": 113,
         "residue_changed": 4,
         "total_changed": 117
-      },
-      {
-        "coverage": 0.9655172413793104,
-        "fingerprint": "2f0bd20cc6eed4bcd37b7304f0d34356c4ba53154cd0c7a636bc6b2c1e693acf",
-        "generated_changed": 28,
-        "residue_changed": 1,
-        "total_changed": 29
       },
       {
         "coverage": 0.9655172413793104,
@@ -5169,20 +1538,6 @@
         "total_changed": 2448
       },
       {
-        "coverage": 0.9629629629629629,
-        "fingerprint": "494f48f374ed321ee509487276845fac4560ea92d0fc6df2944f97ec8e215440",
-        "generated_changed": 182,
-        "residue_changed": 7,
-        "total_changed": 189
-      },
-      {
-        "coverage": 0.9615384615384616,
-        "fingerprint": "c6ab6e4543b52b4a3fc113c9bec32c6cd556e620ca83d3309908386b8f47e374",
-        "generated_changed": 50,
-        "residue_changed": 2,
-        "total_changed": 52
-      },
-      {
         "coverage": 0.9510204081632653,
         "fingerprint": "e58b94400299d7fd5528b53b41b30c42b7c3d5a666427064df93e070d79bcd51",
         "generated_changed": 233,
@@ -5190,11 +1545,11 @@
         "total_changed": 245
       },
       {
-        "coverage": 0.9505988023952096,
-        "fingerprint": "361a41e85534bac5a82e1aadf63b9a1aaae841f8df375770f526bff69991c20a",
-        "generated_changed": 635,
-        "residue_changed": 33,
-        "total_changed": 668
+        "coverage": 0.9417989417989417,
+        "fingerprint": "494f48f374ed321ee509487276845fac4560ea92d0fc6df2944f97ec8e215440",
+        "generated_changed": 178,
+        "residue_changed": 11,
+        "total_changed": 189
       },
       {
         "coverage": 0.9414556962025317,
@@ -5239,69 +1594,6 @@
         "total_changed": 38
       },
       {
-        "coverage": 0.9130434782608695,
-        "fingerprint": "0686bb569bc2cf5e43ac0e3cb070a5a0193ca84b1fdf1d4b3a97785e2773ab79",
-        "generated_changed": 21,
-        "residue_changed": 2,
-        "total_changed": 23
-      },
-      {
-        "coverage": 0.9090909090909091,
-        "fingerprint": "49ac32a6ed481a8d9e316d351ccc89d004343a1cac0ee12a13b16572dc007fa5",
-        "generated_changed": 10,
-        "residue_changed": 1,
-        "total_changed": 11
-      },
-      {
-        "coverage": 0.9090909090909091,
-        "fingerprint": "cfaea8b6d382383e711c9f8c1fd8ab8afbdd84d627fa6fa8fec2508e437f3430",
-        "generated_changed": 10,
-        "residue_changed": 1,
-        "total_changed": 11
-      },
-      {
-        "coverage": 0.9087218917119477,
-        "fingerprint": "c1ed3922b3696eb254ac3c26887d095bfb58892926735b2c398f68e237b00326",
-        "generated_changed": 42311,
-        "residue_changed": 4250,
-        "total_changed": 46561
-      },
-      {
-        "coverage": 0.9,
-        "fingerprint": "3fd5acad129a95b62258102f38bc5103aa87d7dd1689a181b4419d11472feef7",
-        "generated_changed": 9,
-        "residue_changed": 1,
-        "total_changed": 10
-      },
-      {
-        "coverage": 0.9,
-        "fingerprint": "42fd901d167302fe860d8836c19b2c0918b8e8596cbeabe9cb85d75003aae328",
-        "generated_changed": 36,
-        "residue_changed": 4,
-        "total_changed": 40
-      },
-      {
-        "coverage": 0.9,
-        "fingerprint": "55d0014c09e05b8cef704d37d353a76eea5a315bea5112b492a2ec5d2436693c",
-        "generated_changed": 18,
-        "residue_changed": 2,
-        "total_changed": 20
-      },
-      {
-        "coverage": 0.9,
-        "fingerprint": "8c1435f9d9706598803d3ff61d4d6115f1656770184775cb1631a680c7ea128e",
-        "generated_changed": 18,
-        "residue_changed": 2,
-        "total_changed": 20
-      },
-      {
-        "coverage": 0.898989898989899,
-        "fingerprint": "38397ee869c8cbf90854ff38f184e3ede9fc2957ed83d487525d497b4537607c",
-        "generated_changed": 89,
-        "residue_changed": 10,
-        "total_changed": 99
-      },
-      {
         "coverage": 0.8968253968253969,
         "fingerprint": "0d2bc0f5fe213a3c930abf7669702ba97bc92a79fe3691da47427c4a22e6f285",
         "generated_changed": 113,
@@ -5309,53 +1601,18 @@
         "total_changed": 126
       },
       {
-        "coverage": 0.8918918918918919,
-        "fingerprint": "7e7a80901243d9e75dc1e943408d338ec21c6cda1b7cf04b1fa055450266c8eb",
-        "generated_changed": 66,
-        "residue_changed": 8,
-        "total_changed": 74
-      },
-      {
-        "coverage": 0.8888888888888888,
-        "fingerprint": "5c13fd4b3e5a1d9530586bb0f66892a0cb93042ab6286f455f700861552650ae",
-        "generated_changed": 8,
-        "residue_changed": 1,
-        "total_changed": 9
-      },
-      {
-        "coverage": 0.8866249532060538,
+        "coverage": 0.8865714744103963,
         "fingerprint": "31a7a74bd23b69392874717d4ee1fe411214edb9f0fe766a95edced2503e0b51",
-        "generated_changed": 16579,
-        "residue_changed": 2120,
+        "generated_changed": 16578,
+        "residue_changed": 2121,
         "total_changed": 18699
       },
       {
-        "coverage": 0.8851038525251668,
-        "fingerprint": "89fbad7189e88fccdcd4e0d66463dc75956914f6948166ab4481c07d73573cfb",
-        "generated_changed": 41676,
-        "residue_changed": 5410,
-        "total_changed": 47086
-      },
-      {
-        "coverage": 0.8846153846153846,
-        "fingerprint": "d2858fb721ef0e27363b452fa4ce8b7dd38028acc36826ba3d813840251b7a0b",
-        "generated_changed": 46,
-        "residue_changed": 6,
-        "total_changed": 52
-      },
-      {
-        "coverage": 0.8823529411764706,
-        "fingerprint": "209f207907dae77afb579a4364aefb649ad703a6d4a44829a128c2961b49d499",
-        "generated_changed": 15,
-        "residue_changed": 2,
-        "total_changed": 17
-      },
-      {
-        "coverage": 0.8695652173913043,
-        "fingerprint": "33d74598547a025efa99a4e242f7ebe93f47e047c8ef375f8321b8fd7a2daeeb",
-        "generated_changed": 20,
-        "residue_changed": 3,
-        "total_changed": 23
+        "coverage": 0.8669724770642202,
+        "fingerprint": "3ea014330f432a500030f8a160f4d8fa72c7074afc1bd4273f2185bbf016f6ee",
+        "generated_changed": 189,
+        "residue_changed": 29,
+        "total_changed": 218
       },
       {
         "coverage": 0.8660714285714286,
@@ -5372,13 +1629,6 @@
         "total_changed": 9469
       },
       {
-        "coverage": 0.8546511627906976,
-        "fingerprint": "dcc67a76b02a03a3fdd37881567fb993df6e9af500ba8b971cb8a6589cf22836",
-        "generated_changed": 147,
-        "residue_changed": 25,
-        "total_changed": 172
-      },
-      {
         "coverage": 0.8490566037735849,
         "fingerprint": "d099225960be89f9bf252f0d53f4c02a90ee7c860251cc594842ffb796196bed",
         "generated_changed": 90,
@@ -5386,18 +1636,11 @@
         "total_changed": 106
       },
       {
-        "coverage": 0.8471400394477318,
+        "coverage": 0.8441814595660749,
         "fingerprint": "b33674bece989048a381d7f578a0f6edeffb9239ec26c7960336e0e5cb581fb0",
-        "generated_changed": 859,
-        "residue_changed": 155,
+        "generated_changed": 856,
+        "residue_changed": 158,
         "total_changed": 1014
-      },
-      {
-        "coverage": 0.8461538461538461,
-        "fingerprint": "e6fff20a9e5abe82dee1019880f3c583a14160d05abbbc19c946f8667cf3740e",
-        "generated_changed": 11,
-        "residue_changed": 2,
-        "total_changed": 13
       },
       {
         "coverage": 0.8333333333333334,
@@ -5408,38 +1651,10 @@
       },
       {
         "coverage": 0.8333333333333334,
-        "fingerprint": "6f3f2b783f1b4187fa997a02dfcf9d54e6942a807a668f7946d2b1d2f46d1458",
-        "generated_changed": 10,
-        "residue_changed": 2,
-        "total_changed": 12
-      },
-      {
-        "coverage": 0.8333333333333334,
         "fingerprint": "d0fdd9c2d7607a3502c82f0f91612f1df231a03455bc8682a89c0d0c6ecca448",
         "generated_changed": 10,
         "residue_changed": 2,
         "total_changed": 12
-      },
-      {
-        "coverage": 0.8235294117647058,
-        "fingerprint": "96f0c99af5591ad1152f7b2d54fe42f13d6e906590e82fbe62a55d4b12c7ccfb",
-        "generated_changed": 28,
-        "residue_changed": 6,
-        "total_changed": 34
-      },
-      {
-        "coverage": 0.819672131147541,
-        "fingerprint": "4940b5a0d3534ebefdba852858a0c4e7656720a71c6fba0455694acfa9937650",
-        "generated_changed": 50,
-        "residue_changed": 11,
-        "total_changed": 61
-      },
-      {
-        "coverage": 0.8020304568527918,
-        "fingerprint": "5b98b1ad10ce549fb60173cc7f5b67f17b16ebbe4f50883a9eb9452251d1e1d0",
-        "generated_changed": 158,
-        "residue_changed": 39,
-        "total_changed": 197
       },
       {
         "coverage": 0.800332778702163,
@@ -5450,35 +1665,7 @@
       },
       {
         "coverage": 0.8,
-        "fingerprint": "181bb5fb368c80cf71b7815fdcb89a80b060696d28641d33444be938d0ed8128",
-        "generated_changed": 8,
-        "residue_changed": 2,
-        "total_changed": 10
-      },
-      {
-        "coverage": 0.8,
-        "fingerprint": "660a4af6c100de38915678275f4d0564fdecfd2a95aade275218dfd9522ecc36",
-        "generated_changed": 8,
-        "residue_changed": 2,
-        "total_changed": 10
-      },
-      {
-        "coverage": 0.8,
-        "fingerprint": "78478ce50b8c219a685076d5d53a38b1cf897eda10927b0b80b681a45ab0433d",
-        "generated_changed": 4,
-        "residue_changed": 1,
-        "total_changed": 5
-      },
-      {
-        "coverage": 0.8,
         "fingerprint": "86dcb18e22fcc25a9c4f25cd2c204a434ad928a0c54ebea4419ea7af804ac9cc",
-        "generated_changed": 8,
-        "residue_changed": 2,
-        "total_changed": 10
-      },
-      {
-        "coverage": 0.8,
-        "fingerprint": "8a46025a2c29382e1e97b4000a1e40619a374f17fd496b8c302bfdc9843011bb",
         "generated_changed": 8,
         "residue_changed": 2,
         "total_changed": 10
@@ -5491,27 +1678,6 @@
         "total_changed": 10
       },
       {
-        "coverage": 0.7916666666666666,
-        "fingerprint": "577f8026a969a0eb122b543f7208eb1d5ce6159c1464ff399c60207028182965",
-        "generated_changed": 19,
-        "residue_changed": 5,
-        "total_changed": 24
-      },
-      {
-        "coverage": 0.7910447761194029,
-        "fingerprint": "714ac36c432cdd297622792ade640cf975a7db3fa5a95990bc38f4e3ccb49434",
-        "generated_changed": 53,
-        "residue_changed": 14,
-        "total_changed": 67
-      },
-      {
-        "coverage": 0.7868852459016393,
-        "fingerprint": "4a1461bdc7aa1447fb1b2a3eccc71e405730198761c9d580d98c70687ff8277c",
-        "generated_changed": 48,
-        "residue_changed": 13,
-        "total_changed": 61
-      },
-      {
         "coverage": 0.7867647058823529,
         "fingerprint": "b5c7d692852c71d6b9ce78ef162fa02b6a16bcd7b7b77ceb54a0aa023e617fa7",
         "generated_changed": 107,
@@ -5519,60 +1685,11 @@
         "total_changed": 136
       },
       {
-        "coverage": 0.7777777777777778,
-        "fingerprint": "1d10b0f1f8b8d06c1553026d51271d1532c5d45011db46bac31d49b3a3d4564d",
-        "generated_changed": 7,
-        "residue_changed": 2,
-        "total_changed": 9
-      },
-      {
-        "coverage": 0.7777777777777778,
-        "fingerprint": "4b66444d7b0ba20304362d69483c6a8a8e90c52033db43acfff055d97d6a39cb",
-        "generated_changed": 7,
-        "residue_changed": 2,
-        "total_changed": 9
-      },
-      {
-        "coverage": 0.7719298245614035,
-        "fingerprint": "f28969bf9074ea20d5f1617332a1d67d8c8fb825eb13f3e70638bfb0f1c194cb",
-        "generated_changed": 88,
-        "residue_changed": 26,
-        "total_changed": 114
-      },
-      {
         "coverage": 0.7719220055710306,
         "fingerprint": "e82b765eba3bc616e2ffb06dc2bb7a633e866ed726f5078df1328325639df8a4",
         "generated_changed": 6928,
         "residue_changed": 2047,
         "total_changed": 8975
-      },
-      {
-        "coverage": 0.7692307692307693,
-        "fingerprint": "f34e6ee161fbab5b1b79e00a3b2979eaf6965a8e88328ca78fe8c2f928e9e2be",
-        "generated_changed": 50,
-        "residue_changed": 15,
-        "total_changed": 65
-      },
-      {
-        "coverage": 0.75,
-        "fingerprint": "5e53e5fc0330783ff5f257579d4d1364f501229578864d88a3b26d53aa088d61",
-        "generated_changed": 6,
-        "residue_changed": 2,
-        "total_changed": 8
-      },
-      {
-        "coverage": 0.75,
-        "fingerprint": "8704f5c6a4bcb6793e19fb2eecfccbf5a753a6265790daeab33cbdddb74936e9",
-        "generated_changed": 6,
-        "residue_changed": 2,
-        "total_changed": 8
-      },
-      {
-        "coverage": 0.75,
-        "fingerprint": "9b21d78944dfb5c0a6381211e73fffcc64089d589da28195b1dfabaa87f129dd",
-        "generated_changed": 6,
-        "residue_changed": 2,
-        "total_changed": 8
       },
       {
         "coverage": 0.75,
@@ -5589,39 +1706,11 @@
         "total_changed": 413
       },
       {
-        "coverage": 0.7391304347826086,
-        "fingerprint": "436283fea3e095f863049201de3c40b8bb44a73c7eedd49bcbb4eb4d884890a5",
-        "generated_changed": 34,
-        "residue_changed": 12,
-        "total_changed": 46
-      },
-      {
-        "coverage": 0.7368421052631579,
-        "fingerprint": "d408c33040af59451fae730c08eaedf82e16bdef3fbcea7065cc970707cb9cc1",
-        "generated_changed": 28,
-        "residue_changed": 10,
-        "total_changed": 38
-      },
-      {
-        "coverage": 0.7333333333333333,
-        "fingerprint": "7347cf03b81f48a217d9c8e7812aa2fc666f9652219e014e842ddf76af41e996",
-        "generated_changed": 11,
-        "residue_changed": 4,
-        "total_changed": 15
-      },
-      {
-        "coverage": 0.7323943661971831,
-        "fingerprint": "cd7b7e5f2c579490762e1bed861e45c02857d94dd7566846b1e38f01889ea0a4",
-        "generated_changed": 52,
-        "residue_changed": 19,
-        "total_changed": 71
-      },
-      {
-        "coverage": 0.7142857142857143,
-        "fingerprint": "ee43f706ff1d46b8805dcde61cacf3f1dbd53cd8374c2edc62fd0a882d70eb59",
-        "generated_changed": 5,
-        "residue_changed": 2,
-        "total_changed": 7
+        "coverage": 0.7213114754098361,
+        "fingerprint": "4a1461bdc7aa1447fb1b2a3eccc71e405730198761c9d580d98c70687ff8277c",
+        "generated_changed": 44,
+        "residue_changed": 17,
+        "total_changed": 61
       },
       {
         "coverage": 0.7115384615384616,
@@ -5631,53 +1720,11 @@
         "total_changed": 156
       },
       {
-        "coverage": 0.7096774193548387,
-        "fingerprint": "c64657c2592b55af4c511eb5262555d8f4bb79aa826a2e9349f2dc623e6e4dda",
-        "generated_changed": 22,
-        "residue_changed": 9,
-        "total_changed": 31
-      },
-      {
-        "coverage": 0.7037037037037037,
-        "fingerprint": "cb3521ed5120ba5429cd5fcf384220185219387af269a00010dec6df0f688908",
-        "generated_changed": 19,
-        "residue_changed": 8,
-        "total_changed": 27
-      },
-      {
-        "coverage": 0.696969696969697,
-        "fingerprint": "87edae70979e7a19eb72cec8ad1a1150917c328cfb3791d2304091f00c88e214",
-        "generated_changed": 23,
-        "residue_changed": 10,
-        "total_changed": 33
-      },
-      {
         "coverage": 0.696969696969697,
         "fingerprint": "e7625cc5e86514dc093e9f02068dba38dcafce6d709ab2c6c5680fd53692b738",
         "generated_changed": 23,
         "residue_changed": 10,
         "total_changed": 33
-      },
-      {
-        "coverage": 0.6842105263157895,
-        "fingerprint": "71e2c0744ce93a80389ea9935e024d496b01343dfa5ca56470f38d12a35ec8aa",
-        "generated_changed": 13,
-        "residue_changed": 6,
-        "total_changed": 19
-      },
-      {
-        "coverage": 0.6821599453178401,
-        "fingerprint": "0185fb312f751215c7b3525ae73c710bb46a027db3c4d427f5a1e8114cf84d4c",
-        "generated_changed": 998,
-        "residue_changed": 465,
-        "total_changed": 1463
-      },
-      {
-        "coverage": 0.6774193548387096,
-        "fingerprint": "8fed03ec6eff5395b249ab3401a44427d5c99f930fa3fc5a59c4581528fa772c",
-        "generated_changed": 21,
-        "residue_changed": 10,
-        "total_changed": 31
       },
       {
         "coverage": 0.675,
@@ -5695,45 +1742,10 @@
       },
       {
         "coverage": 0.6666666666666666,
-        "fingerprint": "3a9b2028ca69d4fb81a2c36469c139754d6f830b3e81898bd914eeaf650bac8f",
-        "generated_changed": 4,
-        "residue_changed": 2,
-        "total_changed": 6
-      },
-      {
-        "coverage": 0.6666666666666666,
-        "fingerprint": "4d1f5038337aa775df28bfd1d0c63c7111386cefbd99a609cd7b47519ac71d56",
-        "generated_changed": 4,
-        "residue_changed": 2,
-        "total_changed": 6
-      },
-      {
-        "coverage": 0.6666666666666666,
-        "fingerprint": "51148fabbb78308a0d06f84909212b944d0552bca20317cc29d7ab07bd603e22",
-        "generated_changed": 4,
-        "residue_changed": 2,
-        "total_changed": 6
-      },
-      {
-        "coverage": 0.6666666666666666,
         "fingerprint": "5494c65a47c85230192432816783cb95d3e4b4344d6cda10a9bf17d71f646c5d",
         "generated_changed": 4,
         "residue_changed": 2,
         "total_changed": 6
-      },
-      {
-        "coverage": 0.6666666666666666,
-        "fingerprint": "5bb017d12bf0d5c7608a536bb04a31ca9675290c8a51de94c9cd8cb823d454bc",
-        "generated_changed": 4,
-        "residue_changed": 2,
-        "total_changed": 6
-      },
-      {
-        "coverage": 0.6666666666666666,
-        "fingerprint": "5ebc075011b83f589f3307370e32958fdf9a337af27c581cc2eca300c5211d90",
-        "generated_changed": 6,
-        "residue_changed": 3,
-        "total_changed": 9
       },
       {
         "coverage": 0.6666666666666666,
@@ -5744,63 +1756,7 @@
       },
       {
         "coverage": 0.6666666666666666,
-        "fingerprint": "7e75f83bc7db8ce05fe4773b4d03fd60671313ffabd0d4bd27d9f56c52cb068e",
-        "generated_changed": 8,
-        "residue_changed": 4,
-        "total_changed": 12
-      },
-      {
-        "coverage": 0.6666666666666666,
-        "fingerprint": "81f346bd356af11015ab2ebcf2dded9b59447c36d86edc63f0494a2407405c63",
-        "generated_changed": 2,
-        "residue_changed": 1,
-        "total_changed": 3
-      },
-      {
-        "coverage": 0.6666666666666666,
-        "fingerprint": "959e15e020ab3a74669b879c8df9fbb2c1e2b04dde1bfd6e6328d5628a054ae7",
-        "generated_changed": 2,
-        "residue_changed": 1,
-        "total_changed": 3
-      },
-      {
-        "coverage": 0.6666666666666666,
-        "fingerprint": "ca368af81fa8f66c4e815612d4b506e4421e4046fb75287e9cce7f8c4e4cab1e",
-        "generated_changed": 12,
-        "residue_changed": 6,
-        "total_changed": 18
-      },
-      {
-        "coverage": 0.6666666666666666,
-        "fingerprint": "cf8281a0208b88ef5193620f78aade774e953c37521489814e845615f37a70a0",
-        "generated_changed": 4,
-        "residue_changed": 2,
-        "total_changed": 6
-      },
-      {
-        "coverage": 0.6666666666666666,
-        "fingerprint": "d11fa0c1e49a4d06a264c6b541e3a1a21d41c86b5520dace6a86c01b1a97bd54",
-        "generated_changed": 4,
-        "residue_changed": 2,
-        "total_changed": 6
-      },
-      {
-        "coverage": 0.6666666666666666,
         "fingerprint": "d1f8a2b38776328e8561b78d8a1500f8a267b3f3070ca4244478869a421f5c99",
-        "generated_changed": 4,
-        "residue_changed": 2,
-        "total_changed": 6
-      },
-      {
-        "coverage": 0.6666666666666666,
-        "fingerprint": "f0613f85e8f09406a5ada2750506fb7659257b8d24930a8d203f3c3b9e8eab68",
-        "generated_changed": 4,
-        "residue_changed": 2,
-        "total_changed": 6
-      },
-      {
-        "coverage": 0.6666666666666666,
-        "fingerprint": "fa14f9df5769cb4c7ad9cbc20e096bb07de18c94173235d5197fb82dd0063577",
         "generated_changed": 4,
         "residue_changed": 2,
         "total_changed": 6
@@ -5813,18 +1769,11 @@
         "total_changed": 243
       },
       {
-        "coverage": 0.6216216216216216,
-        "fingerprint": "2d493c55cc891f18c20eebfaac1a1bc27cddee9d078ee89064a188bbdfa9f3e3",
-        "generated_changed": 23,
+        "coverage": 0.631578947368421,
+        "fingerprint": "d408c33040af59451fae730c08eaedf82e16bdef3fbcea7065cc970707cb9cc1",
+        "generated_changed": 24,
         "residue_changed": 14,
-        "total_changed": 37
-      },
-      {
-        "coverage": 0.6213592233009708,
-        "fingerprint": "1a52ba0a1f77cef644540d97c1fa954ae28db285cb068d68adb1280bee729479",
-        "generated_changed": 64,
-        "residue_changed": 39,
-        "total_changed": 103
+        "total_changed": 38
       },
       {
         "coverage": 0.60984393757503,
@@ -5841,99 +1790,15 @@
         "total_changed": 48
       },
       {
-        "coverage": 0.6,
-        "fingerprint": "1204b28c770cc62dfe16da89cca5dbf43554a327465dc96726f3376bfe2b24f2",
-        "generated_changed": 6,
-        "residue_changed": 4,
-        "total_changed": 10
-      },
-      {
-        "coverage": 0.6,
-        "fingerprint": "2ecb1e265b31e6cfda18c7e376a5a9e68037d4de59b19b7d310a5e51fca2d979",
-        "generated_changed": 27,
-        "residue_changed": 18,
-        "total_changed": 45
-      },
-      {
-        "coverage": 0.6,
-        "fingerprint": "31c6b0dfedbea010498ea8f6865016f6f9f9afafb5f2b1e20fe186e47e1f2585",
-        "generated_changed": 6,
-        "residue_changed": 4,
-        "total_changed": 10
-      },
-      {
-        "coverage": 0.6,
-        "fingerprint": "367c29685ade4bcfb88a1ea23ad1dcb87409aae3115113d224d06ecb936e68dd",
-        "generated_changed": 3,
-        "residue_changed": 2,
-        "total_changed": 5
-      },
-      {
-        "coverage": 0.6,
-        "fingerprint": "7ade445da1472973a77806f76009b9a7edbe9fb4d2e7a8bdd1ac758b6aa4e892",
-        "generated_changed": 6,
-        "residue_changed": 4,
-        "total_changed": 10
-      },
-      {
-        "coverage": 0.6,
-        "fingerprint": "97b6e9f93466052f53cd61b346c864c83c38911cfa71b82ea7a4d1122cf96632",
-        "generated_changed": 6,
-        "residue_changed": 4,
-        "total_changed": 10
-      },
-      {
-        "coverage": 0.6,
-        "fingerprint": "cd1c0fa5a7082d20a55b2c82f3415f823c42772022382c16fcc828abd178a992",
-        "generated_changed": 6,
-        "residue_changed": 4,
-        "total_changed": 10
-      },
-      {
-        "coverage": 0.6,
-        "fingerprint": "f9df3b52b0db91bb5f6d02550d0671d5367e1dd2798d02328d14155851526328",
-        "generated_changed": 3,
-        "residue_changed": 2,
-        "total_changed": 5
-      },
-      {
-        "coverage": 0.5882352941176471,
+        "coverage": 0.5852941176470589,
         "fingerprint": "5fe82c1875a7c833476d3833ed401988c020729b62bdd8eb537b0419b30d2307",
-        "generated_changed": 400,
-        "residue_changed": 280,
+        "generated_changed": 398,
+        "residue_changed": 282,
         "total_changed": 680
-      },
-      {
-        "coverage": 0.5882352941176471,
-        "fingerprint": "928dc371d23a8fe1f5ea0c8a493c0487bacc8ff140132fe02bd0e2aa1af364ea",
-        "generated_changed": 80,
-        "residue_changed": 56,
-        "total_changed": 136
-      },
-      {
-        "coverage": 0.587426326129666,
-        "fingerprint": "a0b87ed9cac13117a6877ae44d5023ecc4ae13a26df61963f1698303547a8f4e",
-        "generated_changed": 299,
-        "residue_changed": 210,
-        "total_changed": 509
-      },
-      {
-        "coverage": 0.5857142857142857,
-        "fingerprint": "d1ad4582e4a8383b3939b22c4f2244b4d12f8f9294f6414dad81fb39893b4fe9",
-        "generated_changed": 41,
-        "residue_changed": 29,
-        "total_changed": 70
       },
       {
         "coverage": 0.5833333333333334,
         "fingerprint": "baada9db3e5066456a85c9795111c0970924eb9092ec2c2a8ca6acf4d128f34d",
-        "generated_changed": 7,
-        "residue_changed": 5,
-        "total_changed": 12
-      },
-      {
-        "coverage": 0.5833333333333334,
-        "fingerprint": "c06d6733bc2d86fd4d8569ef56708dbee7b6aa8bb5c58db8573ff0984085e185",
         "generated_changed": 7,
         "residue_changed": 5,
         "total_changed": 12
@@ -5947,17 +1812,10 @@
       },
       {
         "coverage": 0.5714285714285714,
-        "fingerprint": "278ab2776ca2484c614a793cb681566dc8b5d1267fb38089582c7e282030da68",
-        "generated_changed": 8,
-        "residue_changed": 6,
-        "total_changed": 14
-      },
-      {
-        "coverage": 0.5714285714285714,
-        "fingerprint": "590e18c5544c4db67c2204c8201f73824f572450c875b915c8bbfb1aaedcf525",
-        "generated_changed": 8,
-        "residue_changed": 6,
-        "total_changed": 14
+        "fingerprint": "83564cb9ccd3841fa865d1f255b23a26fb143cfcbbc7514d3e41a4f145087a34",
+        "generated_changed": 4,
+        "residue_changed": 3,
+        "total_changed": 7
       },
       {
         "coverage": 0.5714285714285714,
@@ -5974,11 +1832,11 @@
         "total_changed": 28
       },
       {
-        "coverage": 0.563573883161512,
-        "fingerprint": "5258138c458ca36ee054fa23bda7d14bdd00b01067df99790a633cf26accbf79",
-        "generated_changed": 164,
-        "residue_changed": 127,
-        "total_changed": 291
+        "coverage": 0.5588235294117647,
+        "fingerprint": "928dc371d23a8fe1f5ea0c8a493c0487bacc8ff140132fe02bd0e2aa1af364ea",
+        "generated_changed": 76,
+        "residue_changed": 60,
+        "total_changed": 136
       },
       {
         "coverage": 0.5555555555555556,
@@ -5995,53 +1853,11 @@
         "total_changed": 297
       },
       {
-        "coverage": 0.5555555555555556,
-        "fingerprint": "bac72ee585e654290b4b85a33d35563eda7e9487da446be623d24a56b23827ff",
-        "generated_changed": 5,
-        "residue_changed": 4,
-        "total_changed": 9
-      },
-      {
-        "coverage": 0.5545454545454546,
-        "fingerprint": "cc86e60dd1a49b7e419fa069c2ffd41ffb81498d1a59523fcef8ed2246cf371a",
-        "generated_changed": 122,
-        "residue_changed": 98,
-        "total_changed": 220
-      },
-      {
-        "coverage": 0.5454545454545454,
-        "fingerprint": "e7856d5ad4abb61f340cb88ba476a66f189537955536a5b2142b9b369f02f02b",
-        "generated_changed": 6,
-        "residue_changed": 5,
-        "total_changed": 11
-      },
-      {
-        "coverage": 0.5384615384615384,
-        "fingerprint": "ad306c1f76a33c698d3817b03578878b21e49d26e782bc5ada0bdbe40a55f043",
-        "generated_changed": 7,
-        "residue_changed": 6,
-        "total_changed": 13
-      },
-      {
-        "coverage": 0.5319148936170213,
-        "fingerprint": "04c8afc7cb7ec47239cb0595823d1297d03396da87dd14987f48bd2fe0e8592b",
-        "generated_changed": 50,
-        "residue_changed": 44,
-        "total_changed": 94
-      },
-      {
         "coverage": 0.5263157894736842,
         "fingerprint": "08092ce814ede9241393a3a77a70a12b71f167f18745e1d10c36005dd8fa10ec",
         "generated_changed": 10,
         "residue_changed": 9,
         "total_changed": 19
-      },
-      {
-        "coverage": 0.5263157894736842,
-        "fingerprint": "3e85798542cfb90f0aa8fdbfdab8b2aa992a40bcbdd4ed1e608cbbdc45d90420",
-        "generated_changed": 20,
-        "residue_changed": 18,
-        "total_changed": 38
       },
       {
         "coverage": 0.5263157894736842,
@@ -6051,25 +1867,11 @@
         "total_changed": 38
       },
       {
-        "coverage": 0.5161290322580645,
-        "fingerprint": "8218919806d6d8ba69f43aef7bfabadbf218ebe5bc7d0065db90ff16c417e104",
-        "generated_changed": 16,
-        "residue_changed": 15,
-        "total_changed": 31
-      },
-      {
-        "coverage": 0.5140633533588204,
+        "coverage": 0.5118787547788094,
         "fingerprint": "8c585d0366843a599c8051c0da45a4f3725daec114ceb7aafb3a9ef8b981b01d",
-        "generated_changed": 3765,
-        "residue_changed": 3559,
+        "generated_changed": 3749,
+        "residue_changed": 3575,
         "total_changed": 7324
-      },
-      {
-        "coverage": 0.5121951219512195,
-        "fingerprint": "4ab86dba833f65f7a2530d6cfd4124526be7f11969a579c135b6cb037273670d",
-        "generated_changed": 21,
-        "residue_changed": 20,
-        "total_changed": 41
       },
       {
         "coverage": 0.5,
@@ -6077,55 +1879,6 @@
         "generated_changed": 4,
         "residue_changed": 4,
         "total_changed": 8
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "04e33eae145d70491c9227b0da975f97d5760ff1089cb3486b11c5da3469a311",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "051905cf18651241244b94725e390484f29712caa07122e346180db30bf7f7ff",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "05ac171fe3e65945ddb56802920542e202891480a2dcd4b87fdd28ced990857b",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "080ca796ea474d94878821c7606d0a7420f127b1845a422c8fe8dd7a4075a8e8",
-        "generated_changed": 11,
-        "residue_changed": 11,
-        "total_changed": 22
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "0d9937f1c22914d4cf589938f94428357f04dfe4a3d5994d6aeb9d187105707c",
-        "generated_changed": 1,
-        "residue_changed": 1,
-        "total_changed": 2
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "0f7dbddd5ae5104a8edf3ca6f80ba555d01e4d24a644b2d19a8e186c837c4535",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "124ccc460366ed3d9f9b277c9a23426fbc1be59a9a70f2948f17e299dfb94e52",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
       },
       {
         "coverage": 0.5,
@@ -6143,24 +1896,10 @@
       },
       {
         "coverage": 0.5,
-        "fingerprint": "1942b92c6cf5c1de3f5803bcb3a173c50cbef503f927acd4ad3735f01d365e4f",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
         "fingerprint": "1a29b61d5a015a8b8f68f40369c127dcaf7b113b3db88950392142d378dc57a5",
         "generated_changed": 6,
         "residue_changed": 6,
         "total_changed": 12
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "1ad249812165f4feea0c0d648feb23121f83e2c3504cb67837392357ccc1e3e3",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
       },
       {
         "coverage": 0.5,
@@ -6178,52 +1917,10 @@
       },
       {
         "coverage": 0.5,
-        "fingerprint": "1da285bb39e3eb91652a0b18cf377346c2c4dc083e31f94f927b7ed9198ad89a",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "213f2a9db4e191f846d2641d9116b94e6c53caedc8d90814209b58aca6cf0e41",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "2200f0e50f20b5c8f76b28467c173d5be429982ef8b2c97f52d9a0e3a03a862f",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "248d86443ed745b6a52e770873e3d6e83d58fb91bbf4b42e6e5823dcf08a87d7",
-        "generated_changed": 10,
-        "residue_changed": 10,
-        "total_changed": 20
-      },
-      {
-        "coverage": 0.5,
         "fingerprint": "24ebe4b69bca14be453d741744bd83c4df1ceabafdb6d7a002e7d020198f1047",
         "generated_changed": 4,
         "residue_changed": 4,
         "total_changed": 8
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "256787137150386113fa9f8d082df24d0c7d82b52ad5eba08f6703da06957be2",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "262242a60c57a1705cad7f02184f0f711571ae71ebec4e56896c7d7441dab439",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
       },
       {
         "coverage": 0.5,
@@ -6234,31 +1931,10 @@
       },
       {
         "coverage": 0.5,
-        "fingerprint": "325f94444e705bbe143940a0e37dab35d77de8a2efbd8da4c9839901ba0be5c5",
-        "generated_changed": 5,
-        "residue_changed": 5,
-        "total_changed": 10
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "32be0229cc2279bd4113846b5febd74f0a95ebcf5b873dd7849012cab6647d45",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
         "fingerprint": "34a14487d1330ad99a7ea30cf5cc4a297491f4e927d444edba4c2b6ae36987e6",
         "generated_changed": 3,
         "residue_changed": 3,
         "total_changed": 6
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "366c3c7154925977bc184606e5e51c9dd7a38a94a798658a61f9fe4629c66f58",
-        "generated_changed": 1,
-        "residue_changed": 1,
-        "total_changed": 2
       },
       {
         "coverage": 0.5,
@@ -6283,24 +1959,10 @@
       },
       {
         "coverage": 0.5,
-        "fingerprint": "3fbf1a52e58d8fd06b1399d8e0e07145c8593c2dad87f8ff005922aa46f1657e",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
         "fingerprint": "41257f108761062602518587eb5ef1bd9dd1ae12a28e40d0909c91fc45d3b6c1",
         "generated_changed": 22,
         "residue_changed": 22,
         "total_changed": 44
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "428ca9b7da19bf7442a6293268df4d94f42152dd589182eb658c9cec7fd86fc0",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
       },
       {
         "coverage": 0.5,
@@ -6312,34 +1974,6 @@
       {
         "coverage": 0.5,
         "fingerprint": "4825c3e61195a5230956035d95a5d42a61568fe0953c716e1f82af18c37fce76",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "4f6ea90588f4a5b6dab3b86b8a62f1b0b042e912f51099aa71c5888225a24c2b",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "545bd726bd8f7c817c10dde2076c8705a787d8b033ec6fdf42ffe8c5948b0607",
-        "generated_changed": 5,
-        "residue_changed": 5,
-        "total_changed": 10
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "5d23b9ba0a300cfd5f511d480f667752a48cdaa93803107243426aba7d5a0aa3",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "5dd9821b321200f11b9c9242bf9bfc9fd00eae8276c16265a4f89dc27d9e837e",
         "generated_changed": 2,
         "residue_changed": 2,
         "total_changed": 4
@@ -6360,31 +1994,10 @@
       },
       {
         "coverage": 0.5,
-        "fingerprint": "617b805797a08cf8be43915a9a4309f87a72937e4c16cc4ca3e70e2895669aff",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
         "fingerprint": "624579606344f24d6c0d46986f573deb75febe0d23036d14c8040598697359e2",
         "generated_changed": 3,
         "residue_changed": 3,
         "total_changed": 6
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "6334910e01c98fa052312a2e499cd3b1b97494fc4d6a77a0acfe3391d16dfae4",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "66674588ec6a8267c6fcd808e7d1d4ff87edeee13b3bd497b5a3ab78c65b7622",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
       },
       {
         "coverage": 0.5,
@@ -6402,45 +2015,10 @@
       },
       {
         "coverage": 0.5,
-        "fingerprint": "67e441013451699186118faa80e332252d2eec8f7aa96fe30320b55279308e54",
-        "generated_changed": 4,
-        "residue_changed": 4,
-        "total_changed": 8
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "690b33988d1e15296cc002483de22989b194fd4172bb3f00a8bf51ac11c65713",
-        "generated_changed": 6,
-        "residue_changed": 6,
-        "total_changed": 12
-      },
-      {
-        "coverage": 0.5,
         "fingerprint": "6a6fed4fd199b8daf721ae5451db52a959d766ba6a88ee4b39c168eb0adbff3c",
         "generated_changed": 3,
         "residue_changed": 3,
         "total_changed": 6
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "6f2db5b28d2af751638b3decddfc33400c3e58c1ccc14b50bf72d29d538da979",
-        "generated_changed": 1,
-        "residue_changed": 1,
-        "total_changed": 2
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "72a2c98d541f9f1a5325bb3eecec6458e5b9de332dc9fac5b3ba48bd3850d02c",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "7330d92ddc7598c402c847e6222df024930ae2f6880bfc64cef059cb044dc7ce",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
       },
       {
         "coverage": 0.5,
@@ -6451,31 +2029,10 @@
       },
       {
         "coverage": 0.5,
-        "fingerprint": "7678c438d97215473c4ec018217c58817c5aef4da0bc6cefd1bcab10e95f41fe",
-        "generated_changed": 6,
-        "residue_changed": 6,
-        "total_changed": 12
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "772788c069b18370f53b18a03c6fd0707e35360c26871ae1b04e0d6320bbe29e",
+        "fingerprint": "7ce259041a24443e6a9c492550f1493f697abdc02db2ccad9099d5aafe1b4b7a",
         "generated_changed": 4,
         "residue_changed": 4,
         "total_changed": 8
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "78b1d647d09e1d2c6f2e916d8e09c62f4f7ade5be869da652a79e920558f522f",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "7bb83238e92f1cc5465fb23e166e2b94528b1fd990d51e7438ec8b3b21cdb5e8",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
       },
       {
         "coverage": 0.5,
@@ -6493,27 +2050,6 @@
       },
       {
         "coverage": 0.5,
-        "fingerprint": "80d8bee9e905681b6096b99ac21f80951199541643dd6ef8826c6297264bd33b",
-        "generated_changed": 1,
-        "residue_changed": 1,
-        "total_changed": 2
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "848cdb7c0f2d0069478ade334d2dd5d8a6486495d95eabb58e8c48a2cf0bbe54",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "86181a5c1df277b97107fb83c6efa3029ab03bac324fd2efe80a518dbf484093",
-        "generated_changed": 3,
-        "residue_changed": 3,
-        "total_changed": 6
-      },
-      {
-        "coverage": 0.5,
         "fingerprint": "89e7e64a4c8da7b30a709d1b57033d2f856239a59281427b55e1670d340bd1a2",
         "generated_changed": 5,
         "residue_changed": 5,
@@ -6521,42 +2057,7 @@
       },
       {
         "coverage": 0.5,
-        "fingerprint": "8d0accb98fb2ccb65f0c6e645b23dd3c0b4437eeddb4991b9035c274b832349e",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "926fb91e1dbc3d249c63489b5a8855df93400961d6d567316860f66779b9130a",
-        "generated_changed": 30,
-        "residue_changed": 30,
-        "total_changed": 60
-      },
-      {
-        "coverage": 0.5,
         "fingerprint": "9277db4e7dbd615e49ff534056b8611f7146770c07057ae7b9f49f232e664340",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "94809c72c73bd982bd0da23f8263af504dcf35415ddc4bfc1397b3520c79c0d3",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "9487e4568f00076018bbc3749c0a6e25cf661b856cf52b45c4a2a12e061f17ec",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "950baf3ac26a3c4098727ed7d8c931f2608ac48f0f434700f3e0116dabe978c9",
         "generated_changed": 2,
         "residue_changed": 2,
         "total_changed": 4
@@ -6577,45 +2078,10 @@
       },
       {
         "coverage": 0.5,
-        "fingerprint": "a8c36f3aac57f8084a62854f60ba1c7ef0f8e7533feb2196b85e20c35fa1fc5c",
-        "generated_changed": 6,
-        "residue_changed": 6,
-        "total_changed": 12
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "ab20b0b856e9d079cfc425017f2ba7cd436162c420bef0dca50ef32d440eecca",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "af2f377eb35fe93c843af554b9e3655c9ae982335477c465604ca82d4a10cfd8",
-        "generated_changed": 4,
-        "residue_changed": 4,
-        "total_changed": 8
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "b2ca4362d2e5bfcaba1df1728f08ca9b61892ae05fd79bac0736e0ac6d29d0e0",
-        "generated_changed": 1,
-        "residue_changed": 1,
-        "total_changed": 2
-      },
-      {
-        "coverage": 0.5,
         "fingerprint": "b82dbb2a5e8c377015b9865e3237c8a97a321471cca4bf66d99ab9c4777fb48c",
         "generated_changed": 8,
         "residue_changed": 8,
         "total_changed": 16
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "bc97ead4caff3b79e7c91b3816519fdb3dcfb7e8d4c0f301ccddac1c610208cd",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
       },
       {
         "coverage": 0.5,
@@ -6633,20 +2099,6 @@
       },
       {
         "coverage": 0.5,
-        "fingerprint": "cc51d196929b3050da634ecaea46dc2fdddef847726415428ff633fb82ab8756",
-        "generated_changed": 8,
-        "residue_changed": 8,
-        "total_changed": 16
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "cdfd980690ceef1c868c3a254c4c87fa59246b00dbe5d04e3b1736266a9b061e",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
         "fingerprint": "ce25ed021a2777016410881022f795be8dd05dfbbee491a07204d2ade3122dd3",
         "generated_changed": 1,
         "residue_changed": 1,
@@ -6654,28 +2106,7 @@
       },
       {
         "coverage": 0.5,
-        "fingerprint": "d17b3bbdf3de42d702a816b8cffb0925729e149fdbff1466b06eb4d170d23fd5",
-        "generated_changed": 1,
-        "residue_changed": 1,
-        "total_changed": 2
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "d25fd71833bf833c197016b5f2cd3533a8532f0d5c1d0f66579e9e8db911c93c",
-        "generated_changed": 4,
-        "residue_changed": 4,
-        "total_changed": 8
-      },
-      {
-        "coverage": 0.5,
         "fingerprint": "d2dacd3d13ab6de77d7a73ef18f976cad13133ac09cf532bb061321878ceaa28",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "d556ce0cf24c6d9e28912357516886beb686199a03b1ac26ab187fce38f12e4f",
         "generated_changed": 2,
         "residue_changed": 2,
         "total_changed": 4
@@ -6689,48 +2120,6 @@
       },
       {
         "coverage": 0.5,
-        "fingerprint": "db45ad4d12c20d7a217a03a8b59e426f602346a7c8ac7e7ae4bdc1131a4f05ae",
-        "generated_changed": 8,
-        "residue_changed": 8,
-        "total_changed": 16
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "dbc763e77c1b6e63f71782467445a8f98f8bbd75dbf34bc3025574a32de60525",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "dbe879db90510c0581e2d413e9bc2ea7b04254740a9aad6b7fdc6d9a87177a2c",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "dc0cfbd8377606fc9773a4d1f26145e090200e2dff870d66a426395cdb326c46",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "dd8f20af00fee101ff57bdfd6810cca84329d35ad4617f29a6cc7448c5580fda",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "e1016a4b413aa0de52c09e663f0519ad8c498db23c6edbc99b39d8bf3b0a5210",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
         "fingerprint": "e13d4fbc1af64466d86f66e6bd719b4cce07b5c2435a7a99fd8ef88a0b40f98f",
         "generated_changed": 2,
         "residue_changed": 2,
@@ -6738,21 +2127,7 @@
       },
       {
         "coverage": 0.5,
-        "fingerprint": "e162b30276bbe4ba989ce6e23b46e5447fb19459e122e5a398efbb93d058ecc9",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
         "fingerprint": "e19fc7416741efb09c86e6f7b27e83c0c547d4b60c018cd1f00fa08d0db545ad",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "e54f70abf637ffe94602722e35f1960887127dc58bfb81565cd77c26301273fe",
         "generated_changed": 2,
         "residue_changed": 2,
         "total_changed": 4
@@ -6780,13 +2155,6 @@
       },
       {
         "coverage": 0.5,
-        "fingerprint": "ee5e57dc375d148ed84f6bb26c3a8b360e989277e81e830abf8e167d3e97d71c",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
-      },
-      {
-        "coverage": 0.5,
         "fingerprint": "f16abe78f6eb8c07cfe2ec35667696495ff4e1378bc2a1ec5c9ed38324665fde",
         "generated_changed": 2,
         "residue_changed": 2,
@@ -6798,13 +2166,6 @@
         "generated_changed": 44,
         "residue_changed": 44,
         "total_changed": 88
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "f73b039884ad72be77d29fcd8a0427b3d98cfdf7e5977277442fed2c7d765b5a",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
       },
       {
         "coverage": 0.5,
@@ -6822,24 +2183,10 @@
       },
       {
         "coverage": 0.5,
-        "fingerprint": "fcadfea72ef070d9a83c9160c95f0ef752034b9dc22eaa4a8500a1518f02897f",
-        "generated_changed": 12,
-        "residue_changed": 12,
-        "total_changed": 24
-      },
-      {
-        "coverage": 0.5,
         "fingerprint": "fcbd140a64453fb40bacb4d1ff48624474c7bb1c2953e6672256fa6ad83d6db5",
         "generated_changed": 5,
         "residue_changed": 5,
         "total_changed": 10
-      },
-      {
-        "coverage": 0.5,
-        "fingerprint": "fd9540763419228f7a2cba61c9d268141d3f754dc2a193e4cbb93a8c47472a4b",
-        "generated_changed": 2,
-        "residue_changed": 2,
-        "total_changed": 4
       }
     ]
   },
@@ -6856,6 +2203,17 @@
       ],
       "generators": [
         "@generated"
+      ]
+    },
+    {
+      "basename": "acinclude.m4",
+      "count": 3,
+      "examples": [
+        "acinclude.m4",
+        "smpeg-0.4.5+cvs20030824/acinclude.m4"
+      ],
+      "generators": [
+        "libtool"
       ]
     },
     {
@@ -6878,16 +2236,6 @@
       ],
       "generators": [
         "autoheader"
-      ]
-    },
-    {
-      "basename": "computers",
-      "count": 1,
-      "examples": [
-        "datfiles/computers"
-      ],
-      "generators": [
-        "libtool"
       ]
     },
     {
@@ -6918,16 +2266,6 @@
       ],
       "generators": [
         "autoheader"
-      ]
-    },
-    {
-      "basename": "libtool.texi",
-      "count": 1,
-      "examples": [
-        "libtool-2.5.4/doc/libtool.texi"
-      ],
-      "generators": [
-        "libtool"
       ]
     },
     {
@@ -6962,36 +2300,6 @@
     }
   ],
   "low_frequency_names": {
-    "GNUmakefile.in": [
-      {
-        "fingerprint": "9ac28022ae5ee744f40ca36c7171cd118a51d54d4b3a45c72e40f5f4f403ae02",
-        "path": "GNUmakefile.in"
-      },
-      {
-        "fingerprint": "24627d9aa83003c664b168365c7f9e4a91d16ef5d31d38c75a67388d4c87a256",
-        "path": "gnustep-corebase/Source/GNUmakefile.in"
-      },
-      {
-        "fingerprint": "ea54f4063eb5fcb5aadfface9b7a4589aa886cbeb1ab2a9cffaefdd7cfaca979",
-        "path": "gnustep-dl2/GNUmakefile.in"
-      },
-      {
-        "fingerprint": "f7461ea73f3302719db79ef7664dba3b2dc1d23cd037379e87a6d9da9aee84c5",
-        "path": "gnustep-netclasses/Source/GNUmakefile.in"
-      },
-      {
-        "fingerprint": "dd192b453c14db281090fb4b48a0fffbf88e12bcf3bf0c3bab31fe6097dc9d96",
-        "path": "gworkspace/Inspector/ContentViewers/GNUmakefile.in"
-      },
-      {
-        "fingerprint": "92f2e611db226853be5a0ea81c1067127f62763d20e248669eef0c00f9f59fca",
-        "path": "mkcue-1/GNUmakefile.in"
-      },
-      {
-        "fingerprint": "179a11c3d5748d42614f7f2743986b2171c92dac0992a30f9de43ddee6b5e0bd",
-        "path": "omniorb-dfsg/contrib/pkgconfig/GNUmakefile.in"
-      }
-    ],
     "ar-lib": [
       {
         "fingerprint": "5ace104aa257eb1eafd881c818874f1665672d927a0cd0b6d5ae090c05f5dc0f",
@@ -7062,7 +2370,6 @@
         "path": "sgrep-1.94a/config.guess"
       }
     ],
-    "config.status": [],
     "config.sub": [
       {
         "fingerprint": "b842690b9932e35188f0179f6ec711193dab8b83bd268b6bec4c1a2972c502ee",
@@ -7101,7 +2408,6 @@
         "path": "sgrep-1.94a/config.sub"
       }
     ],
-    "configure.lineno": [],
     "depcomp": [
       {
         "fingerprint": "b842690b9932e35188f0179f6ec711193dab8b83bd268b6bec4c1a2972c502ee",
@@ -7305,7 +2611,7 @@
     ]
   },
   "multi_banner": {
-    "count": 61,
+    "count": 116,
     "examples": [
       {
         "fingerprint": "082915fb2226d5fae618caee38200cc6b852c2ecc6840d32abe24c8a3ca3fa32",
@@ -7391,19 +2697,14 @@
     ]
   },
   "name_match_counts": {
-    "GNUmakefile.in": {
-      "banner_count": 0,
-      "banner_fraction": 0.0,
-      "total": 10
-    },
     "Makefile.in": {
-      "banner_count": 89,
-      "banner_fraction": 0.06953125,
-      "total": 1280
+      "banner_count": 112,
+      "banner_fraction": 1.0,
+      "total": 112
     },
     "aclocal.m4": {
-      "banner_count": 18,
-      "banner_fraction": 0.34615384615384615,
+      "banner_count": 19,
+      "banner_fraction": 0.36538461538461536,
       "total": 52
     },
     "ar-lib": {
@@ -7426,11 +2727,6 @@
       "banner_fraction": 0.1746031746031746,
       "total": 63
     },
-    "config.status": {
-      "banner_count": 0,
-      "banner_fraction": 0.0,
-      "total": 0
-    },
     "config.sub": {
       "banner_count": 0,
       "banner_fraction": 0.0,
@@ -7440,11 +2736,6 @@
       "banner_count": 58,
       "banner_fraction": 0.16022099447513813,
       "total": 362
-    },
-    "configure.lineno": {
-      "banner_count": 0,
-      "banner_fraction": 0.0,
-      "total": 0
     },
     "depcomp": {
       "banner_count": 0,
@@ -7457,8 +2748,8 @@
       "total": 12
     },
     "libtool.m4": {
-      "banner_count": 2,
-      "banner_fraction": 0.3333333333333333,
+      "banner_count": 3,
+      "banner_fraction": 0.5,
       "total": 6
     },
     "ltconfig": {
@@ -7530,6 +2821,6 @@
   "totals": {
     "bodies_missing": 0,
     "fingerprints_scanned": 60642,
-    "wall_clock_seconds": 81.44442354422063
+    "wall_clock_seconds": 75.82123209908605
   }
 }
