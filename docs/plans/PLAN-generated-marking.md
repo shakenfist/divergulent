@@ -169,7 +169,7 @@ supersedes and re-scans exactly like every other deterministic rule.
 | Phase | Plan | Status |
 |-------|------|--------|
 | 1. Scanner + full-corpus measurement | [PLAN-generated-marking-phase-01-scanner.md](PLAN-generated-marking-phase-01-scanner.md) · [findings](PLAN-generated-marking-phase-01-findings.md) | Implemented |
-| 2. Ledger observation + record pass + rule docs | PLAN-generated-marking-phase-02-observation.md | Not started |
+| 2. Ledger observation + record pass + rule docs | [PLAN-generated-marking-phase-02-observation.md](PLAN-generated-marking-phase-02-observation.md) | Planned |
 | 3. Residue-first triage + risk projection | PLAN-generated-marking-phase-03-residue-routing.md | Not started |
 | 4. Review UI badges + collapsed segments | PLAN-generated-marking-phase-04-review-ui.md | Not started |
 
