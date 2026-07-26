@@ -126,8 +126,9 @@ installed-package inventory never leaves the machine.
     rule changed), `report`, `supersede`.
   - `record.py` — drives the deterministic tiers into the ledger
     idempotently (category decisions, dangerous-construct observations,
-    reviewability, reach, and the opt-in phase-6 cross-reference), with
-    an opt-in `reconcile` mode for in-place re-records.
+    reviewability, the prompt-injection tripwire, the generated-content
+    mark, reach, and the opt-in phase-6 cross-reference), with an
+    opt-in `reconcile` mode for in-place re-records.
   - `verdict.py` — the **derived** current verdict: precedence
     `human > verified-llm > heuristic > unverified-llm`
     (`decision_rank`), then recency, confidence, and id; plus the
@@ -168,22 +169,31 @@ installed-package inventory never leaves the machine.
     `observed_by='size-rule'`), recorded during the deterministic
     record pass; an `oversized` diff skips the LLM passes entirely and
     gets its own review-UI bucket.
-  - `generated.py` — the deterministic generated-output mark (phase 1:
-    scanner + measurement only; the ledger observation is phase 2 of
-    [its plan](docs/plans/PLAN-generated-marking.md)). Marks diff
-    files that *claim* to be build-system generator output — exact
-    autotools basenames (backup suffixes classify as what they copy;
-    `Makefile.in` requires banner corroboration, measured ~⅔
+  - `generated.py` — the deterministic generated-output mark. Marks
+    diff files that *claim* to be build-system generator output —
+    exact autotools basenames (backup suffixes classify as what they
+    copy; `Makefile.in` requires banner corroboration, measured ~⅔
     hand-written otherwise) and generator banners with versions
     captured as the-file-as-the-patch-leaves-it evidence — plus the
-    residue arithmetic (changed lines outside marked files) the
-    routing phases will consume. A mark, never a verdict: a
-    generated-claiming file can still carry a backdoor (xz), so
-    nothing may map the mark to a category. Measured: 60,642
-    fingerprints in ~76 s; 41 generated-dominated patches (coverage
-    ≥0.5, ≥1,000 changed lines); the gatos motivating case reads
-    98.7% generated / 603-line residue. `tools/generated-marking/`
-    holds the measurement prototype and full-corpus results.
+    residue arithmetic (changed lines outside marked files) later
+    phases will consume. Phase 2 of
+    [its plan](docs/plans/PLAN-generated-marking.md) is done: the
+    observation helpers (`detail_for`, `evidence_for`,
+    `generated_marks`) and the record-pass integration, so a marked
+    scan now rides alongside the category as ONE supersedable
+    `generated-content` observation per fingerprint
+    (`observed_by='generated-scan'`) — desired-vs-live exactly like
+    the injection tripwire, so marking, un-marking, and version bumps
+    all converge; an unmarked scan records nothing. A mark, never a
+    verdict: a generated-claiming file can still carry a backdoor
+    (xz), so nothing may map the mark to a category. Measured: 60,642
+    fingerprints in ~76 s; 442 fingerprints carry the live
+    observation; 41 generated-dominated patches (coverage ≥0.5,
+    ≥1,000 changed lines); the gatos motivating case reads 98.7%
+    generated / 603-line residue. Routing on the residue and a
+    review-UI badge are phases 3-4, not yet built.
+    `tools/generated-marking/` holds the measurement prototype and
+    full-corpus results.
   - `injection.py` — the deterministic prompt-injection tripwire over
     LLM-bound patch text (`observed_by='injection-scan'`). A tuned
     regex/Unicode family set (instruction phrases, chat-template

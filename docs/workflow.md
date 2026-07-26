@@ -116,11 +116,15 @@ decided it (`rule id + version`, `llm-triage:<model> + prompt
 version`, or a human identity) — so retiring a bad rule re-queues
 exactly the fingerprints it had settled, and nothing else.
 
-The same recording pass also attaches three cheap deterministic
-**axes** that ride alongside the category: reviewability (size),
-reach (install base), and the phase-6 CVE/bug cross-reference. These
-are described with the rules in
-[deterministic-rules.md](deterministic-rules.md).
+The same recording pass also attaches cheap deterministic **axes**
+that ride alongside the category: reviewability (size), reach
+(install base), the phase-6 CVE/bug cross-reference, and — as of
+phase 2 of [its plan](plans/PLAN-generated-marking.md) — a
+generated-content mark for files that claim to be build-system
+generator output. That mark is recorded but not yet consumed:
+residue-first routing and a review-UI badge are phases 3 and 4 of
+the same plan, not yet built. These axes are described with the
+rules in [deterministic-rules.md](deterministic-rules.md).
 
 ### 6. The security-risk gate
 
