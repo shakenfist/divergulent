@@ -92,15 +92,24 @@ def _registered_rule(model: str, prompt_version: int) -> ledger_mod.RegisteredRu
         category_enum_version=CATEGORY_ENUM_VERSION)
 
 
-def _evidence(result: triage_mod.TriageResult) -> str:
+def _evidence(result: triage_mod.TriageResult, projection=None) -> str:
     """A compact, auditable record of BOTH the draft and the verification.
 
     An LLM verdict is non-deterministic, so the ledger keeps enough to audit it
     after the fact: the draft's raw response, the verification's agreement +
     raw response, and the routing reason.  JSON so it is machine-readable and
     stable.
+
+    ``projection`` is the :class:`generated.ProjectedDiff` the driver applied to
+    the model's input for a fingerprint carrying a live ``generated-content``
+    mark.  The model's input is never silently modified, so when it reordered
+    anything the evidence records ``projected`` plus what was left out -- a
+    reviewer reading the draft verdict can always reconstruct what the model was
+    shown.  An unprojected fingerprint (no mark, or a mark whose paths are not in
+    this body) gains no key at all: its evidence is byte-identical to what this
+    function wrote before phase 3.
     """
-    return json.dumps({
+    payload = {
         'routing': result.routing,
         'reason': result.reason,
         'draft': {
@@ -117,11 +126,16 @@ def _evidence(result: triage_mod.TriageResult) -> str:
             'prompt_version': result.verification.prompt_version,
             'raw_response': result.verification.raw_response,
         },
-    }, sort_keys=True)
+    }
+    if projection is not None and projection.projected:
+        payload['projected'] = True
+        payload['omitted_files'] = projection.omitted_files
+        payload['omitted_changed'] = projection.omitted_changed
+    return json.dumps(payload, sort_keys=True)
 
 
 def record_triage_result(conn, fingerprint, result, *, now, register=True,
-                         priority=0):
+                         priority=0, projection=None):
     """Record one :class:`triage.TriageResult` into ``conn``; idempotent.
 
     Appends an ``llm`` ``decision`` for ``fingerprint`` carrying the draft's
@@ -138,6 +152,11 @@ def record_triage_result(conn, fingerprint, result, *, now, register=True,
     ``(fingerprint, decided_by, rule_version)``; the review item is skipped when
     a PENDING one already exists for the fingerprint.  A second call therefore
     appends nothing.
+
+    ``projection`` is the residue-first :class:`generated.ProjectedDiff` the
+    driver applied to the model's input for a marked fingerprint (``None`` for
+    every unmarked one); when it reordered anything, its facts land in the
+    evidence so the recorded verdict says what the model was and was not shown.
 
     Returns a :class:`TriageRecordStats`.  ``now`` is a caller-supplied ISO-8601
     string; this module never reads a clock.
@@ -161,7 +180,7 @@ def record_triage_result(conn, fingerprint, result, *, now, register=True,
             conn, fingerprint=fingerprint, category=draft.category,
             confidence=draft.confidence, decided_by=decided_by,
             rule_version=rule_version, kind='llm', verified=verified,
-            evidence=_evidence(result), decided_at=now, commit=False)
+            evidence=_evidence(result, projection), decided_at=now, commit=False)
         stats.decision_appended = True
 
     if result.routing == 'needs_human':

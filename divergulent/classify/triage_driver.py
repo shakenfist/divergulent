@@ -41,6 +41,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
 from divergulent.classify import content as content_mod
+from divergulent.classify import generated as generated_mod
 from divergulent.classify import injection as injection_mod
 from divergulent.classify import measure
 from divergulent.classify import triage as triage_mod
@@ -360,6 +361,10 @@ class TriageRunStats:
     skipped_already_triaged: int = 0   # a live decision already existed (resume)
     skipped_injection: int = 0         # injection-suspect diff -> never sent to the LLM -> human
     skipped_oversized: int = 0         # not line-reviewable (reviewability axis) -> human
+    # Oversized fingerprints in this run's slice that the generated-content mark
+    # UNLOCKED (their hand-written residue is small enough to review after all),
+    # so they were triaged on that residue instead of being routed blind.
+    unlocked_by_residue: int = 0
     too_large: int = 0                 # diff too big for the model -> routed to a human
     errored: int = 0                   # the backend raised -> routed to a human
     # Token usage summed across every model call this run (draft + verify per
@@ -399,6 +404,14 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
     triaged-item list feeds :func:`candidate_rules`.  ``call`` is injected so the
     function is pure given a fake; ``now`` is caller-supplied so the path is
     deterministic.
+
+    Two phase-3 routing consumers of the ``generated-content`` mark live here, and
+    both are INPUT/ROUTING decisions -- the mark is never a verdict.  An
+    ``oversized`` fingerprint whose residue is small is unlocked (the shared
+    ``generated.residue_unlocked_fingerprints`` composition) instead of routed
+    blind to a human, and every marked fingerprint that reaches the LLM is shown a
+    residue-first projection of its diff, recorded in the decision evidence.  The
+    injection skip is unaffected by both and still outranks them.
     """
     work_list = build_work_list(conn, index_path)
 
@@ -409,12 +422,30 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
     done = triage_record.triaged_fingerprints(conn, model=model)
     pending_work = [item for item in work_list if item.fingerprint not in done]
     selected = pending_work[:limit]
-    oversized_fps = reviewability_mod.oversized_fingerprints(conn)
     injection_fps = _fingerprints_with_injection_suspect(conn)
+
+    # The residue unlock (phase 3). An ``oversized`` fingerprint whose live
+    # generated-content mark reports a SMALL hand-written residue is triageable
+    # after all: the projection below shows the model that residue instead of 19k
+    # lines of ``configure``. Routing only -- reviewability keeps measuring the
+    # WHOLE diff and its observation is unchanged, and the mark is never a verdict.
+    # The composition lives in the shared helper, so this driver and the risk gate
+    # can never disagree about who is unlocked; the still-locked keep today's
+    # behaviour, reason string and stat. The injection skip OUTRANKS this and is
+    # evaluated first in the loop below: an unlocked patch whose diff carries
+    # injection-shaped text still never reaches the model.
+    unlocked_fps = generated_mod.residue_unlocked_fingerprints(conn)
+    oversized_fps = reviewability_mod.oversized_fingerprints(conn) - unlocked_fps
+
+    # The marks, read ONCE per run (one ledger pass, not one per patch): the
+    # residue-first projection reads its per-file evidence out of this dict.
+    marks = generated_mod.generated_marks(conn)
 
     stats = TriageRunStats(queue_size=len(verdict_mod.queue(conn)), model=model)
     stats.skipped_already_triaged = len(work_list) - len(pending_work)
     stats.untriaged_remaining = max(len(pending_work) - len(selected), 0)
+    stats.unlocked_by_residue = sum(
+        1 for item in selected if item.fingerprint in unlocked_fps)
     triaged: list[TriagedItem] = []
 
     total = len(selected)
@@ -454,31 +485,59 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
                 progress('[%d/%d]   -> oversized (not line-reviewable) -> needs_human' % (position, total))
             continue
 
+        # Residue-first projection (phase 3). A fingerprint carrying a live
+        # generated-content mark is shown its hand-written residue first, with one
+        # loud note standing in for each generated file, instead of the generator
+        # output itself. Input shaping and routing only -- the mark is never a
+        # verdict -- and nothing is silent: the omission is announced in the text
+        # the model reads and recorded in the decision evidence below. It applies
+        # to EVERY marked fingerprint reaching the LLM, not just the unlocked ones,
+        # so the input format never depends on a threshold. An unmarked
+        # fingerprint (the overwhelming majority) does not even build one, so its
+        # prompt is byte-identical to what it was before this phase. This is the
+        # same pure function of the same input that ``triage_and_verify`` applies
+        # to both passes, so the facts recorded here describe exactly the text the
+        # model read.
+        mark = marks.get(item.fingerprint)
+        projection = None
+        if mark is not None:
+            projection = generated_mod.project_residue_first(
+                triage_mod.diff_body(body), mark['files'])
+
         # A giant diff overflows the model; route it to a human (full diff in
         # review) rather than truncate to a misleading partial classification.
-        if len(body) > MAX_DIFF_CHARS_FOR_LLM:
-            reason = 'diff too large for LLM triage (%d chars); routed to a human' % len(body)
+        # Measured on what the model would ACTUALLY be asked to read -- the
+        # projection for a marked fingerprint -- otherwise the unlock would hand
+        # an unlocked patch straight back to a human on the strength of the very
+        # generator output the projection just set aside.
+        llm_chars = len(body) if projection is None else len(projection.text)
+        if llm_chars > MAX_DIFF_CHARS_FOR_LLM:
+            reason = 'diff too large for LLM triage (%d chars); routed to a human' % llm_chars
             triage_record.record_triage_to_human(
                 conn, item.fingerprint, reason, now=now, model=model, priority=_stored_priority(item))
             stats.too_large += 1
             stats.needs_human += 1
             if progress is not None:
                 progress('[%d/%d]   -> too large (%d chars) -> needs_human' % (
-                    position, total, len(body)))
+                    position, total, llm_chars))
             continue
 
         # Each triage is two (slow) LLM calls; announce the item BEFORE the call
         # so the run is not silent while claude works, then the verdict after.
         if progress is not None:
             flag = ' [dangerous-construct]' if item.has_dangerous_construct else ''
-            progress('[%d/%d] triaging %s (%s, %d pkgs)%s ...' % (
+            shown = ('' if projection is None or not projection.projected
+                     else ' [residue-first: %d generated files, %d changed lines not shown]' % (
+                         projection.omitted_files, projection.omitted_changed))
+            progress('[%d/%d] triaging %s (%s, %d pkgs)%s%s ...' % (
                 position, total, item.representative_patch_name,
-                item.fingerprint[:12], item.n_packages, flag))
+                item.fingerprint[:12], item.n_packages, flag, shown))
 
         try:
             result = triage_and_verify(
                 body, call=call, claim_category=claim_category,
-                has_dangerous_construct=item.has_dangerous_construct, model=model)
+                has_dangerous_construct=item.has_dangerous_construct, model=model,
+                mark_files=None if mark is None else mark['files'])
         except Exception as exc:  # noqa: BLE001 -- one bad patch must not abort the run
             # Route the failing patch to a human and RECORD it, so it is neither
             # lost, re-tried-as-LLM forever, nor allowed to crash the whole batch.
@@ -492,7 +551,8 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
             continue
 
         triage_record.record_triage_result(
-            conn, item.fingerprint, result, now=now, priority=_stored_priority(item))
+            conn, item.fingerprint, result, now=now, priority=_stored_priority(item),
+            projection=projection)
 
         stats.triaged += 1
         stats.usage = stats.usage + result.usage
@@ -811,6 +871,7 @@ def render_run_report(stats: TriageRunStats, scan: RuleScan) -> str:
     lines.append('- Skipped (already triaged on a prior run): %d' % stats.skipped_already_triaged)
     lines.append('- Routed to human, injection-suspect (never sent to the LLM): %d' % stats.skipped_injection)
     lines.append('- Routed to human, oversized (not line-reviewable): %d' % stats.skipped_oversized)
+    lines.append('- Unlocked by residue (generated mark): %d' % stats.unlocked_by_residue)
     lines.append('- Routed to human, too large for the model: %d' % stats.too_large)
     lines.append('- Routed to human, triage error: %d' % stats.errored)
     lines.append('- **Untriaged remaining (budget did not cover): %d**'
@@ -858,6 +919,10 @@ def print_run_summary(stats: TriageRunStats, scan: RuleScan) -> None:
               'too-large=%d, errored=%d' % (
                   stats.skipped_already_triaged, stats.skipped_injection, stats.skipped_oversized,
                   stats.too_large, stats.errored))
+    if stats.unlocked_by_residue:
+        # The other side of the oversized line: these were oversized too, but their
+        # hand-written residue is small, so they were triaged rather than routed blind.
+        print('unlocked by residue (generated mark): %d' % stats.unlocked_by_residue)
     if stats.by_category:
         print('drafted categories:')
         for category in sorted(stats.by_category, key=lambda k: (-stats.by_category[k], k)):

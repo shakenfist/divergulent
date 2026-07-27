@@ -49,6 +49,7 @@ import sys
 from dataclasses import dataclass
 
 from divergulent.classify import fingerprint as fp
+from divergulent.classify import generated as generated_mod
 
 # ---------------------------------------------------------------------------
 # Versioned constants -- the ledger keys on (model, prompt_version) to detect
@@ -319,7 +320,8 @@ def _parse_response(text: str) -> tuple[str, str, str]:
 # ---------------------------------------------------------------------------
 
 def triage(patch_text: str, *, call, model: str = DEFAULT_MODEL,
-           prompt_version: int = PROMPT_VERSION) -> LlmVerdict:
+           prompt_version: int = PROMPT_VERSION,
+           mark_files: list[dict] | None = None) -> LlmVerdict:
     """Triage one patch with a claim-blind LLM read.
 
     Extracts the claim-blind ``diff_body``, builds the cacheable rubric system
@@ -335,8 +337,22 @@ def triage(patch_text: str, *, call, model: str = DEFAULT_MODEL,
     A category outside ``TRIAGE_CATEGORIES`` is coerced to ``unknown`` and noted
     in the reasoning; an LLM must not be able to invent a category the rest of
     the system does not understand.
+
+    ``mark_files`` is the per-file evidence of the fingerprint's live
+    ``generated-content`` mark (``generated_marks(conn)[fp]['files']``), passed by
+    the driver for a MARKED fingerprint and left ``None`` for every other one.
+    When given, the claim-blind body is projected residue-first
+    (:func:`generated.project_residue_first`) BETWEEN the claim strip and the
+    prompt, so the model reads the hand-written residue instead of generator
+    output and is told, in the text, what it is not being shown -- the omission is
+    loud, never silent, and the driver records it in the decision evidence. Order
+    matters and is the whole point: strip the claim, then project. An unmarked
+    call does not even build a projection, so its prompt is byte-identical to
+    what it was before the mark existed.
     """
     body = diff_body(patch_text)
+    if mark_files:
+        body = generated_mod.project_residue_first(body, mark_files).text
     system = triage_system_prompt(prompt_version=prompt_version)
     user = triage_user_message(body)
 
@@ -495,7 +511,8 @@ def _parse_verification(text: str) -> tuple[bool, str, str]:
 
 def verify(patch_text: str, proposed_category: str, *, call,
            model: str = DEFAULT_MODEL,
-           prompt_version: int = VERIFY_PROMPT_VERSION) -> Verification:
+           prompt_version: int = VERIFY_PROMPT_VERSION,
+           mark_files: list[dict] | None = None) -> Verification:
     """Independently, adversarially verify a proposed category for one patch.
 
     Extracts the claim-blind ``diff_body``, builds the cacheable adversarial
@@ -510,8 +527,16 @@ def verify(patch_text: str, proposed_category: str, *, call,
     fake -- the test suite never touches the network. A missing or garbled
     ``agrees`` degrades to ``agrees=False`` at low confidence: unverified is the
     safe default, never a silent confirmation.
+
+    ``mark_files`` carries the same residue-first projection :func:`triage`
+    applies (see its docstring). The verifier must read exactly what the drafter
+    read -- an independent second opinion on a DIFFERENT text is not a
+    verification -- so the driver passes the same mark to both passes, and the
+    projection is a pure function of the same input, so both see the same bytes.
     """
     body = diff_body(patch_text)
+    if mark_files:
+        body = generated_mod.project_residue_first(body, mark_files).text
     system = verify_system_prompt(prompt_version=prompt_version)
     user = verify_user_message(body, proposed_category)
 
@@ -566,7 +591,8 @@ class TriageResult:
 
 def triage_and_verify(patch_text: str, *, call, claim_category: str | None = None,
                       has_dangerous_construct: bool = False,
-                      model: str = DEFAULT_MODEL) -> TriageResult:
+                      model: str = DEFAULT_MODEL,
+                      mark_files: list[dict] | None = None) -> TriageResult:
     """Draft a category, independently verify it, and route the result.
 
     Runs ``triage`` (the claim-blind draft) then ``verify`` (the independent
@@ -589,9 +615,16 @@ def triage_and_verify(patch_text: str, *, call, claim_category: str | None = Non
     flag or a claim mismatch. The LLM never finalises a security or malice call
     on its own -- a human does (step 4e). ``security`` from the LLM is only ever
     a *candidate for human confirmation*.
+
+    ``mark_files`` (the fingerprint's live ``generated-content`` mark, threaded by
+    the driver from a marks dict read once per run) is passed to BOTH passes, so
+    the drafter and the verifier read the same residue-first projection. It shapes
+    the model's INPUT only: routing is decided here exactly as before, and the
+    mark is never a verdict.
     """
-    draft = triage(patch_text, call=call, model=model)
-    verification = verify(patch_text, draft.category, call=call, model=model)
+    draft = triage(patch_text, call=call, model=model, mark_files=mark_files)
+    verification = verify(patch_text, draft.category, call=call, model=model,
+                          mark_files=mark_files)
 
     reasons: list[str] = []
 
