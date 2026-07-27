@@ -39,6 +39,7 @@ from dataclasses import dataclass
 
 from divergulent.classify import bts as bts_mod
 from divergulent.classify import cross_reference as xref_mod
+from divergulent.classify import generated as generated_mod
 from divergulent.classify import injection as injection_mod
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import reach as reach_mod
@@ -88,6 +89,15 @@ class RecordStats:
     injection_appended: int = 0
     injection_skipped: int = 0
     injection_superseded: int = 0
+    # The deterministic generated-content mark, at most ONE row per fingerprint.
+    # ``generated_appended`` counts marks newly written; ``generated_skipped`` counts
+    # fingerprints whose live mark was already exactly right -- including the common case
+    # of a scan that marks nothing and so records nothing; ``generated_superseded``
+    # counts stale rows retired when the mark changed (a version bump, or a scan that no
+    # longer marks and whose prior row must be retracted).
+    generated_appended: int = 0
+    generated_skipped: int = 0
+    generated_superseded: int = 0
     # The phase-6 external CVE cross-reference (only when a Security Tracker
     # snapshot is supplied). ``external_decisions_*`` count the settled ``security``
     # category decision; ``external_obs_*`` count the provenance observation
@@ -379,6 +389,41 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
                     observed_by=_INJECTION_RULE_ID, rule_version=injection_mod.INJECTION_RULES_VERSION,
                     observed_at=now, commit=False)
                 stats.injection_appended += 1
+
+        # The deterministic generated-content mark -- its own rule identity. ONE
+        # observation per fingerprint that carries any file CLAIMING to be generator
+        # output, never one per file: gatos's 21 regenerated files are a single claim
+        # about a single patch. The detail is the compact ``<family>/<percent>`` badge and
+        # the evidence the canonical-JSON per-file breakdown plus the residue arithmetic
+        # later phases route on. A fingerprint whose scan marks nothing records NOTHING --
+        # absence means "nothing claimed generation", which keeps the ledger quiet for the
+        # overwhelming majority of the corpus. Desired-vs-live, exactly as the injection
+        # block above: the body is fingerprint-stable and the helpers are pure, so an
+        # unchanged mark skips, and every transition converges through the one mechanism --
+        # a new mark, a mark that changes under a version bump, and a mark that DISAPPEARS
+        # because a tightened rule un-marked its files (retraction supersedes the prior row
+        # and appends nothing). NEVER a verdict -- nothing downstream may map this mark to
+        # a category.
+        generated_scan = generated_mod.scan(record.body)
+        desired_generated = set() if not generated_scan.files else {
+            (generated_mod.detail_for(generated_scan), generated_mod.evidence_for(generated_scan),
+             generated_mod.GENERATED_RULES_VERSION)}
+        live_generated = {(obs['detail'], obs['evidence'], obs['rule_version'])
+                          for obs in ledger_mod.observations_for(conn, record.fingerprint)
+                          if obs['kind'] == generated_mod.GENERATED_KIND and obs['superseded_at'] is None}
+        if desired_generated == live_generated:
+            stats.generated_skipped += 1
+        else:
+            stats.generated_superseded += ledger_mod.supersede_observations_for_fingerprint(
+                conn, fingerprint=record.fingerprint, kind=generated_mod.GENERATED_KIND,
+                superseded_at=now, commit=False)
+            for detail, evidence, mark_version in desired_generated:
+                ledger_mod.append_observation(
+                    conn, fingerprint=record.fingerprint, kind=generated_mod.GENERATED_KIND,
+                    detail=detail, evidence=evidence,
+                    observed_by=generated_mod.GENERATED_OBSERVED_BY, rule_version=mark_version,
+                    observed_at=now, commit=False)
+                stats.generated_appended += 1
 
         # The deterministic reach (install-base) observation -- its own rule
         # identity, recorded only when a popcon snapshot was supplied. A
