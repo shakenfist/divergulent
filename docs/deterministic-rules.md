@@ -303,9 +303,9 @@ marked files are one claim about one patch, not 21 rows. `detail` is
 lines, coverage as a rounded percent — `autotools/99` for gatos).
 `evidence` is the per-file JSON breakdown (path, family, signals,
 generator, version, added, removed) plus the `generated_changed` /
-`residue_changed` / `total_changed` arithmetic later phases route
-and render from. A scan that marks nothing records nothing at all —
-absence means "nothing claimed generation".
+`residue_changed` / `total_changed` arithmetic routing reads and the
+review UI will render from. A scan that marks nothing records
+nothing at all — absence means "nothing claimed generation".
 
 Measured over the post-adjudication corpus of 60,642 fingerprints:
 698 name-signal file matches across 429 fingerprints plus
@@ -313,9 +313,32 @@ banner-only marks bringing the marked total to **442 fingerprints**
 (the count the record pass writes), 229 banner-marked file regions,
 a ≥0.5-coverage population of 291 fingerprints, and 41 patches at
 coverage ≥0.5 with ≥1,000 changed lines — the population
-residue-first routing will actually act on.
+residue-first routing acts on.
 The motivating case, gatos, reads 98.7% generated with a 603-line
 residue in the hand-written source that remains.
+
+**Consumed by**: phase 3 of
+[its plan](plans/PLAN-generated-marking.md) turns the recorded mark
+into two routing decisions, composed through one shared helper
+(`generated.residue_unlocked_fingerprints`) so the triage driver and
+the risk gate can never disagree about who is unlocked. An
+`oversized` fingerprint whose mark reports a `residue_changed` at or
+under the oversized cut is unlocked into scoring/triage rather than
+routed blind to a human; the still-locked (no mark, or a residue past
+the cut) keep the honest routed-to-human disposition. Independently,
+every marked fingerprint that reaches an LLM pass — unlocked or not —
+is shown a residue-first projection of its diff
+(`generated.project_residue_first`): the hand-written residue
+verbatim, then one loud note per omitted generated file, applied
+before either the triage character backstop or the risk gate's
+character cap so that budget is spent on residue. The risk gate also
+gains a targeted, flag-gated `--re-risk-marked` pass that re-scores
+exactly the marked fingerprints whose live score was read off a
+truncated generated head, superseding it. None of this promotes the
+mark: the unlock only changes which fingerprints reach a model, the
+projection only changes what text a model is shown, and re-risk only
+supersedes a score computed on the wrong input — routing, never a
+verdict.
 
 **Honest boundaries**: a mark, never a verdict — nothing downstream
 may map it to a category. The xz-utils backdoor shipped in exactly

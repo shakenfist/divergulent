@@ -167,16 +167,17 @@ installed-package inventory never leaves the machine.
   - `reviewability.py` — the deterministic size axis
     (`normal`/`large`/`oversized` at 500/5,000 changed lines,
     `observed_by='size-rule'`), recorded during the deterministic
-    record pass; an `oversized` diff skips the LLM passes entirely and
-    gets its own review-UI bucket.
+    record pass; an `oversized` diff skips the LLM passes entirely —
+    minus whatever `generated.py`'s residue unlock composes back in —
+    and the still-locked remainder gets its own review-UI bucket.
   - `generated.py` — the deterministic generated-output mark. Marks
     diff files that *claim* to be build-system generator output —
     exact autotools basenames (backup suffixes classify as what they
     copy; `Makefile.in` requires banner corroboration, measured ~⅔
     hand-written otherwise) and generator banners with versions
     captured as the-file-as-the-patch-leaves-it evidence — plus the
-    residue arithmetic (changed lines outside marked files) later
-    phases will consume. Phase 2 of
+    residue arithmetic (changed lines outside marked files) phase 3
+    routes on. Phase 2 of
     [its plan](docs/plans/PLAN-generated-marking.md) is done: the
     observation helpers (`detail_for`, `evidence_for`,
     `generated_marks`) and the record-pass integration, so a marked
@@ -190,8 +191,20 @@ installed-package inventory never leaves the machine.
     fingerprints in ~76 s; 442 fingerprints carry the live
     observation; 41 generated-dominated patches (coverage ≥0.5,
     ≥1,000 changed lines); the gatos motivating case reads 98.7%
-    generated / 603-line residue. Routing on the residue and a
-    review-UI badge are phases 3-4, not yet built.
+    generated / 603-line residue. Phase 3 (S1-S4 implemented; real
+    runs pending) adds the two ROUTING helpers consumed by both
+    `triage_driver.py` and `risk.py`, kept here beside the mark so
+    neither consumer reimplements the composition:
+    `residue_unlocked_fingerprints(conn)` composes `reviewability`'s
+    `oversized` set with the mark's `residue_changed` to say which
+    oversized fingerprints are triageable/scorable after all, and
+    `project_residue_first(body, files)` reorders any marked
+    fingerprint's diff residue-first (hand-written segments verbatim,
+    then one loud note per omitted generated file) before either
+    consumer's character cap, recording the omission in evidence.
+    Neither is a verdict: the first only changes which fingerprints
+    reach a model, the second only changes what text one is shown. A
+    review-UI badge is still phase 4, not yet built.
     `tools/generated-marking/` holds the measurement prototype and
     full-corpus results.
   - `injection.py` — the deterministic prompt-injection tripwire over
