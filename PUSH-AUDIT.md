@@ -229,9 +229,27 @@ Report findings as a bullet list grouped by file.
 Check that documentation matches the current code state.
 Read the diff (`git diff main...HEAD`) and verify:
 
-- `README.md` reflects any new features, changed CLI usage,
-  new data sources, or updated project structure (and still
-  mentions any `.claude/skills/` if present).
+<!-- shared-block: readme-discipline v1 -->
+README discipline (shared block; do not edit -- the canonical
+copy lives in shakenfist/development at
+`templates/shared-blocks/readme-discipline.md`):
+
+- New user-visible features are documented in `docs/` (and
+  `ARCHITECTURE.md` / `AGENTS.md` where appropriate), not by
+  adding bullets to `README.md`.
+- `README.md` is a pitch: what the project is, who it is for,
+  minimal installation instructions, a small number of usage
+  examples, and curated absolute links into `docs/`. It only
+  changes when the pitch, the install story, or the
+  documentation links change.
+- README growth is itself a finding: if the diff adds README
+  content that belongs in `docs/`, flag it as blocking and
+  move it.
+<!-- shared-block-end -->
+
+- CLI usage changes are reflected in `docs/usage.md`, and the
+  README still briefly mentions any `.claude/skills/` if
+  present.
 - `ARCHITECTURE.md` reflects any new or modified modules,
   data-source adapters, the cache, the scoring model, or the
   client/server split.

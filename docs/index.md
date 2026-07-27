@@ -17,6 +17,13 @@ and worked examples over API reference.
 - [What is divergulent?](what-is-divergulent.md) — the motivation, the
   two axes of drift (staleness and divergence), and the design
   principles the whole project follows.
+- [Usage](usage.md) — the complete command reference, including cache
+  bundles, bundle verification, and the optional patch-classification
+  bundle.
+- [Status](status.md) — what works today, the published precomputed
+  cache, and the patch-classification pipeline in flight.
+- [Development](development.md) — tests, the CI workflows, and how
+  releases are published.
 - [The processing workflow](workflow.md) — how a carried patch travels
   from discovery through fingerprinting, deterministic rules, LLM
   triage, and human review to a published, signed verdict; and which
@@ -34,5 +41,4 @@ For contributor-facing material (build, test, and style conventions)
 see [AGENTS.md](https://github.com/shakenfist/divergulent/blob/main/AGENTS.md)
 at the repository root; for a module-by-module tour of the code see
 [ARCHITECTURE.md](https://github.com/shakenfist/divergulent/blob/main/ARCHITECTURE.md);
-for CLI usage see
-[README.md](https://github.com/shakenfist/divergulent/blob/main/README.md).
+for CLI usage see [usage.md](usage.md).
