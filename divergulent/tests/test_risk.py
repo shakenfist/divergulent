@@ -6,17 +6,29 @@ DEP-3 description never reaches the prompt), parses the coarse level, degrades
 unparseable/out-of-scale responses to ``elevated`` (recall-safe, never buried),
 carries (model, prompt_version) + usage, and records a supersedable
 ``security-risk`` observation that re-scoring replaces (exactly one live).
+
+The phase-3 residue routing sits alongside: a marked fingerprint is scored on a
+residue-first PROJECTION of its diff (project, THEN cap, so the budget is spent on
+hand-written residue) whose facts land in the observation's payload; an unmarked one
+is byte-identical to before the mark existed; an ``oversized`` patch with a small
+residue is unlocked through the shared helper while its big-residue and unmarked
+siblings stay locked; and the flag-gated re-risk pass supersedes exactly the marked
+scores that were read off a truncated generated head -- once, and never again.
 """
 import json
 import os
+import sqlite3
 import tempfile
 
 import testtools
 
+from divergulent.classify import generated
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import reviewability
 from divergulent.classify import risk
 from divergulent.classify import triage as triage_mod
+from divergulent.classify.corpus import body_sha256
+from divergulent.classify.fingerprint import fingerprint as fingerprint_of
 
 WHEN = '2026-06-26T00:00:00Z'
 LATER = '2026-06-27T00:00:00Z'
@@ -141,6 +153,61 @@ class RecordRiskObservationTestCase(testtools.TestCase):
         # The superseded original is still in the audit trail.
         self.assertEqual(2, len([o for o in ledger_mod.observations_for(conn, 'fp1')
                                  if o['kind'] == risk.RISK_KIND]))
+
+    def _projected(self, *, projected=True, omitted_files=2, omitted_changed=19258,
+                   truncated=False):
+        projection = generated.ProjectedDiff(
+            text='projected', omitted_files=omitted_files if projected else 0,
+            omitted_changed=omitted_changed if projected else 0, projected=projected)
+        return risk.RiskScore(
+            level='low', rank=risk.RISK_RANK['low'], reason='r', model='claude-opus-4-8',
+            prompt_version=risk.RISK_PROMPT_VERSION, raw_response=_risk_json('low'),
+            truncated=truncated, original_chars=1234 if truncated else 0, projection=projection)
+
+    def test_projection_facts_are_recorded(self):
+        # The model's input is never silently modified: a reviewer can reconstruct
+        # what the gate was shown from the payload alone.
+        conn = self._ledger()
+        risk.record_risk_observation(conn, 'fp1', self._projected(), now=WHEN)
+        payload = json.loads(next(o for o in ledger_mod.live_observations(conn)
+                                  if o['kind'] == risk.RISK_KIND)['evidence'])
+        self.assertIs(True, payload['projected'])
+        self.assertEqual(2, payload['omitted_files'])
+        self.assertEqual(19258, payload['omitted_changed'])
+
+    def test_truncated_keeps_its_post_projection_meaning(self):
+        # Both flags together: the diff was projected, and what survived was still
+        # long enough for the cap to bite.
+        conn = self._ledger()
+        risk.record_risk_observation(conn, 'fp1', self._projected(truncated=True), now=WHEN)
+        payload = json.loads(next(o for o in ledger_mod.live_observations(conn)
+                                  if o['kind'] == risk.RISK_KIND)['evidence'])
+        self.assertIs(True, payload['projected'])
+        self.assertIs(True, payload['truncated'])
+        self.assertEqual(1234, payload['original_chars'])
+
+    def test_a_no_op_projection_still_records_the_key(self):
+        # A mark whose paths are not in this body projects to identity.  The key is
+        # recorded anyway (``false``), because its PRESENCE is what stops the
+        # re-risk pass selecting this fingerprint again for ever.
+        conn = self._ledger()
+        risk.record_risk_observation(conn, 'fp1', self._projected(projected=False), now=WHEN)
+        payload = json.loads(next(o for o in ledger_mod.live_observations(conn)
+                                  if o['kind'] == risk.RISK_KIND)['evidence'])
+        self.assertIs(False, payload['projected'])
+        self.assertNotIn('omitted_files', payload)
+        self.assertNotIn('omitted_changed', payload)
+
+    def test_an_unmarked_payload_gains_no_keys(self):
+        # The phase-3 promise: an unmarked fingerprint's record is byte-identical.
+        conn = self._ledger()
+        risk.record_risk_observation(conn, 'fp1', self._score('low'), now=WHEN)
+        evidence = next(o for o in ledger_mod.live_observations(conn)
+                        if o['kind'] == risk.RISK_KIND)['evidence']
+        self.assertEqual(
+            json.dumps({'level': 'low', 'reason': 'r', 'raw_response': _risk_json('low')},
+                       sort_keys=True),
+            evidence)
 
     def test_risk_rank_by_fingerprint(self):
         conn = self._ledger()
@@ -323,3 +390,432 @@ class PrioritisationTestCase(testtools.TestCase):
         conn, index_path, fps = self._setup()
         work = triage_driver.build_work_list(conn, index_path)
         self.assertEqual(fps['danger.patch'], work[0].fingerprint)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: the gate reads the hand-written residue first
+# ---------------------------------------------------------------------------
+
+def _hunk(path, lines):
+    """A one-hunk unified diff on ``path``; each entry carries its own diff prefix."""
+    added = sum(1 for line in lines if line.startswith('+'))
+    removed = sum(1 for line in lines if line.startswith('-'))
+    context = len(lines) - added - removed
+    return ('--- a/%s\n+++ b/%s\n@@ -1,%d +1,%d @@\n%s'
+            % (path, path, context + removed, context + added,
+               ''.join('%s\n' % line for line in lines)))
+
+
+# A gatos in miniature: a regenerated ``configure`` carrying its autoconf banner (so the
+# mark captures a generator AND a version) ahead of the one hand-written hunk the gate
+# actually needs to read.  Generator output FIRST, as it is in the real patches -- which is
+# exactly why an unprojected cap read nothing else.
+GENERATED_HUNK = _hunk('configure', [' # Generated by GNU Autoconf 2.59.']
+                       + ['+ac_cv_generated_%03d=yes' % index for index in range(80)])
+RESIDUE_HUNK = _hunk('src/parser.c', [' int parse(const char *s) {',
+                                      '-    char buf[8];',
+                                      '+    char buf[64];'])
+MARKED_PATCH = 'Description: %s\nForwarded: no\n\n%s%s' % (_DESCRIPTION, GENERATED_HUNK, RESIDUE_HUNK)
+
+# The same shape with a different residue: a second marked fingerprint.
+MARKED_PATCH_B = MARKED_PATCH.replace('char buf[64]', 'char buf[128]')
+
+
+def _mark_files(patch_text):
+    """The mark's per-file evidence for ``patch_text`` -- what ``generated_marks`` hands on.
+
+    Round-tripped through ``evidence_for``'s JSON rather than read off the scan objects, so
+    the gate is exercised against the dict shape the ledger really stores.
+    """
+    return json.loads(generated.evidence_for(generated.scan(patch_text)))['files']
+
+
+class ProjectedScoreRiskTestCase(testtools.TestCase):
+    """``score_risk`` with a mark: project residue-first, THEN cap."""
+
+    def _score(self, patch, recorder=None, **kwargs):
+        return risk.score_risk(patch, call=_fake_call(_risk_json(), recorder=recorder), **kwargs)
+
+    def _body_sent(self, recorder):
+        _system, user, _model = recorder[0]
+        return user.split('\n\n', 1)[1]     # past the 'Diff body:' framing
+
+    def test_the_model_reads_the_residue_not_the_generated_head(self):
+        recorder = []
+        self._score(MARKED_PATCH, recorder=recorder, mark_files=_mark_files(MARKED_PATCH))
+        body = self._body_sent(recorder)
+        self.assertTrue(body.startswith('1 generated-claiming files not shown'), body[:120])
+        self.assertIn('char buf[64]', body)              # the residue is there ...
+        self.assertNotIn('ac_cv_generated', body)        # ... and the generator output is not
+        self.assertIn('[generated: configure', body)     # replaced by a loud, specific note
+        self.assertIn('autoconf 2.59', body)
+
+    def test_the_claim_still_never_leaks(self):
+        # Projection reorders the diff body; it does not reintroduce the header.
+        recorder = []
+        self._score(MARKED_PATCH, recorder=recorder, mark_files=_mark_files(MARKED_PATCH))
+        system, user, _model = recorder[0]
+        self.assertNotIn(_DESCRIPTION, system + user)
+
+    def test_the_projection_facts_ride_on_the_score(self):
+        files = _mark_files(MARKED_PATCH)
+        score = self._score(MARKED_PATCH, mark_files=files)
+        self.assertTrue(score.projection.projected)
+        self.assertEqual(1, score.projection.omitted_files)
+        self.assertEqual(files[0]['added'] + files[0]['removed'], score.projection.omitted_changed)
+
+    def test_a_short_projection_is_not_truncated(self):
+        score = self._score(MARKED_PATCH, mark_files=_mark_files(MARKED_PATCH))
+        self.assertFalse(score.truncated)
+
+    def test_the_cap_bites_the_projection_not_the_generated_head(self):
+        # A residue longer than the cap: ``truncated`` keeps its meaning (the cut AFTER
+        # projection) and every character the cap did spend went on residue.
+        recorder = []
+        residue = ''.join(_hunk('src/big_%02d.c' % index, ['+    int fixed_%02d = 1;' % index])
+                          for index in range(40))
+        patch = 'Description: x\nForwarded: no\n\n%s%s' % (GENERATED_HUNK, residue)
+        score = self._score(patch, recorder=recorder, mark_files=_mark_files(patch),
+                            max_diff_chars=600)
+        self.assertTrue(score.truncated)
+        self.assertTrue(score.projection.projected)
+        body = self._body_sent(recorder)
+        self.assertIn('diff truncated for scoring', body)   # the cut is visible to the model
+        self.assertIn('int fixed_00', body)                 # ... and it cut residue ...
+        self.assertNotIn('ac_cv_generated', body)           # ... never generator output
+        self.assertLess(len(body), 600 + 300)
+
+    def test_an_unmarked_call_is_byte_identical(self):
+        recorder = []
+        score = risk.score_risk(_patch(), call=_fake_call(_risk_json(), recorder=recorder))
+        _system, user, _model = recorder[0]
+        self.assertEqual(risk.risk_user_message(triage_mod.diff_body(_patch())), user)
+        self.assertIsNone(score.projection)
+
+    def test_an_empty_mark_list_does_not_project(self):
+        # Nothing claimed generation -> nothing to project, and nothing recorded.
+        self.assertIsNone(self._score(_patch(), mark_files=[]).projection)
+
+    def test_a_mark_that_matches_nothing_projects_to_identity(self):
+        # The defensive case: the mark names a file this body does not contain.
+        recorder = []
+        score = self._score(_patch(), recorder=recorder,
+                            mark_files=[{'path': 'configure', 'signals': ['name'],
+                                         'generator': None, 'version': None,
+                                         'added': 100, 'removed': 0}])
+        self.assertFalse(score.projection.projected)
+        self.assertEqual(risk.risk_user_message(triage_mod.diff_body(_patch())), recorder[0][1])
+
+
+def _build_marked_corpus(corpus_dir, bodies):
+    """Content-addressed bodies + a phase-1 fingerprint index; returns ``(index, {name: fp})``.
+
+    The sibling of ``test_triage_driver._build_corpus``, taking its own ``{name: text}`` so
+    the projection cases can carry generator output.  One occurrence per patch: these tests
+    are about what the gate is SHOWN, not about ordering.
+    """
+    for text in bodies.values():
+        sha = body_sha256(text)
+        directory = os.path.join(corpus_dir, 'bodies', sha[:2])
+        os.makedirs(directory, exist_ok=True)
+        with open(os.path.join(directory, sha), 'w', encoding='utf-8') as handle:
+            handle.write(text)
+
+    index_path = os.path.join(corpus_dir, 'fingerprints.sqlite')
+    connection = sqlite3.connect(index_path)
+    try:
+        connection.execute(
+            'CREATE TABLE patch ('
+            'source_package TEXT NOT NULL, version TEXT NOT NULL, '
+            'patch_name TEXT NOT NULL, raw_sha256 TEXT NOT NULL, '
+            'normalisation_version INTEGER NOT NULL, fingerprint TEXT NOT NULL)')
+        connection.executemany(
+            'INSERT INTO patch (source_package, version, patch_name, raw_sha256, '
+            'normalisation_version, fingerprint) VALUES (?, ?, ?, ?, ?, ?)',
+            [('pkg-%s' % name, '1-1', name, body_sha256(text), 1, fingerprint_of(text)[1])
+             for name, text in bodies.items()])
+        connection.commit()
+    finally:
+        connection.close()
+
+    return index_path, {name: fingerprint_of(text)[1] for name, text in bodies.items()}
+
+
+class MarkedCorpusFixture:
+    """Mixin: a synthetic corpus of marked / unmarked patches and an empty ledger."""
+
+    def _setup(self, bodies):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        index_path, fingerprints = _build_marked_corpus(tmp.name, bodies)
+        conn = ledger_mod.create_ledger(os.path.join(tmp.name, 'ledger.sqlite'))
+        self.addCleanup(conn.close)
+        return conn, tmp.name, index_path, fingerprints
+
+    def _mark(self, conn, fingerprint, patch_text, evidence=None):
+        """Record the live ``generated-content`` observation the routing reads."""
+        scan = generated.scan(patch_text)
+        ledger_mod.append_observation(
+            conn, fingerprint=fingerprint, kind=generated.GENERATED_KIND,
+            detail=generated.detail_for(scan), evidence=evidence or generated.evidence_for(scan),
+            observed_by=generated.GENERATED_OBSERVED_BY,
+            rule_version=generated.GENERATED_RULES_VERSION, observed_at=WHEN)
+        conn.commit()
+
+    def _oversized(self, conn, fingerprint, changed_lines=47000):
+        ledger_mod.append_observation(
+            conn, fingerprint=fingerprint, kind=reviewability.REVIEWABILITY_KIND,
+            detail='oversized', evidence=json.dumps({'changed_lines': changed_lines}, sort_keys=True),
+            observed_by=reviewability.REVIEWABILITY_OBSERVED_BY,
+            rule_version=reviewability.REVIEWABILITY_VERSION, observed_at=WHEN)
+        conn.commit()
+
+    def _live_risk(self, conn, fingerprint):
+        return next(o for o in ledger_mod.live_observations(conn)
+                    if o['kind'] == risk.RISK_KIND and o['fingerprint'] == fingerprint)
+
+    def _risk_rows(self, conn, fingerprint):
+        return [o for o in ledger_mod.observations_for(conn, fingerprint)
+                if o['kind'] == risk.RISK_KIND]
+
+
+BODIES = {'generated.patch': MARKED_PATCH, 'plain.patch': _patch()}
+
+
+class ProjectedRunRiskGateTestCase(MarkedCorpusFixture, testtools.TestCase):
+    """The gate's own path: marks read once per run, projection before the cap."""
+
+    def _run(self, conn, corpus_dir, index_path, recorder=None, **kwargs):
+        return risk.run_risk_gate(
+            conn, corpus_dir, index_path, call=_fake_call(_risk_json(), recorder=recorder),
+            now=WHEN, limit=10, **kwargs)
+
+    def test_a_marked_fingerprint_is_scored_residue_first(self):
+        recorder = []
+        conn, corpus_dir, index_path, fps = self._setup(BODIES)
+        self._mark(conn, fps['generated.patch'], MARKED_PATCH)
+        stats = self._run(conn, corpus_dir, index_path, recorder=recorder)
+        self.assertEqual(1, stats.projected)
+        sent = next(user for _system, user, _model in recorder
+                    if 'generated-claiming files not shown' in user)
+        self.assertIn('char buf[64]', sent)
+        self.assertNotIn('ac_cv_generated', sent)
+
+    def test_the_projection_is_recorded_in_the_payload(self):
+        conn, corpus_dir, index_path, fps = self._setup(BODIES)
+        self._mark(conn, fps['generated.patch'], MARKED_PATCH)
+        self._run(conn, corpus_dir, index_path)
+        payload = json.loads(self._live_risk(conn, fps['generated.patch'])['evidence'])
+        self.assertIs(True, payload['projected'])
+        self.assertEqual(1, payload['omitted_files'])
+        self.assertEqual(80, payload['omitted_changed'])
+
+    def test_an_unmarked_fingerprint_is_byte_identical(self):
+        recorder = []
+        conn, corpus_dir, index_path, fps = self._setup(BODIES)
+        self._mark(conn, fps['generated.patch'], MARKED_PATCH)
+        self._run(conn, corpus_dir, index_path, recorder=recorder)
+        # Its input is the diff body, untouched ...
+        self.assertIn(risk.risk_user_message(triage_mod.diff_body(_patch())),
+                      [user for _system, user, _model in recorder])
+        # ... and its payload carries no phase-3 key at all.
+        payload = json.loads(self._live_risk(conn, fps['plain.patch'])['evidence'])
+        self.assertEqual(['level', 'raw_response', 'reason'], sorted(payload))
+
+    def test_an_unmarked_run_projects_nothing(self):
+        conn, corpus_dir, index_path, _fps = self._setup(BODIES)
+        stats = self._run(conn, corpus_dir, index_path)
+        self.assertEqual(0, stats.projected)
+
+    def test_an_oversized_patch_with_a_small_residue_is_unlocked_and_scored(self):
+        # The gatos case: structurally oversized, 3 lines of hand-written residue.
+        conn, corpus_dir, index_path, fps = self._setup(BODIES)
+        self._mark(conn, fps['generated.patch'], MARKED_PATCH)
+        self._oversized(conn, fps['generated.patch'])
+        stats = self._run(conn, corpus_dir, index_path)
+        self.assertEqual(1, stats.unlocked_by_residue)
+        self.assertEqual(0, stats.skipped_oversized)
+        self.assertIn(fps['generated.patch'], risk.risk_rank_by_fingerprint(conn))
+        self.assertEqual(1, stats.projected)
+
+    def test_an_oversized_patch_with_no_mark_is_still_skipped(self):
+        conn, corpus_dir, index_path, fps = self._setup(BODIES)
+        self._oversized(conn, fps['plain.patch'])
+        stats = self._run(conn, corpus_dir, index_path)
+        self.assertEqual(1, stats.skipped_oversized)
+        self.assertEqual(0, stats.unlocked_by_residue)
+        self.assertNotIn(fps['plain.patch'], risk.risk_rank_by_fingerprint(conn))
+
+    def test_the_unlock_is_the_shared_helper_not_a_reimplementation(self):
+        # The composition lives in ``generated.py`` so the triage driver and the gate can
+        # never disagree about who is unlocked: the gate calls it and never rebuilds it
+        # from reviewability's threshold.
+        import inspect
+        self.assertIn('residue_unlocked_fingerprints', inspect.getsource(risk.run_risk_gate))
+        self.assertNotIn('REVIEWABILITY_OVERSIZED_LINES', inspect.getsource(risk))
+
+    def test_an_oversized_patch_with_a_big_residue_stays_locked(self):
+        # 5,410 lines of residue is not line-reviewable either; the unlock never
+        # pretends otherwise (gatos's sibling).
+        conn, corpus_dir, index_path, fps = self._setup(BODIES)
+        evidence = json.dumps(
+            {'files': [{'path': 'configure', 'family': 'autotools', 'signals': ['name'],
+                        'generator': None, 'version': None, 'added': 24590, 'removed': 0}],
+             'generated_changed': 24590, 'residue_changed': 5410, 'total_changed': 30000},
+            sort_keys=True)
+        self._mark(conn, fps['generated.patch'], MARKED_PATCH, evidence=evidence)
+        self._oversized(conn, fps['generated.patch'], changed_lines=30000)
+        stats = self._run(conn, corpus_dir, index_path)
+        self.assertEqual(1, stats.skipped_oversized)
+        self.assertEqual(0, stats.unlocked_by_residue)
+        self.assertNotIn(fps['generated.patch'], risk.risk_rank_by_fingerprint(conn))
+
+
+# ---------------------------------------------------------------------------
+# The targeted re-risk: the scores that were read off a generated head
+# ---------------------------------------------------------------------------
+
+def _truncated_score(level='elevated'):
+    """A live score computed from a truncated head -- the population the pass exists for."""
+    return risk.RiskScore(level=level, rank=risk.RISK_RANK[level], reason='r',
+                          model='claude-opus-4-8', prompt_version=risk.RISK_PROMPT_VERSION,
+                          raw_response=_risk_json(level), truncated=True, original_chars=99999)
+
+
+RERISK_BODIES = {'marked-truncated.patch': MARKED_PATCH,
+                 'marked-whole.patch': MARKED_PATCH_B,
+                 'plain-truncated.patch': _patch()}
+
+
+class ReRiskMarkedTestCase(MarkedCorpusFixture, testtools.TestCase):
+    """Exactly the marked fingerprints whose score read a truncated generated head."""
+
+    def _setup_population(self):
+        conn, corpus_dir, index_path, fps = self._setup(RERISK_BODIES)
+        # Marked AND truncated: the one and only candidate.
+        self._mark(conn, fps['marked-truncated.patch'], MARKED_PATCH)
+        risk.record_risk_observation(conn, fps['marked-truncated.patch'], _truncated_score(),
+                                     now=WHEN)
+        # Marked, but its score read the whole diff: nothing to re-do.
+        self._mark(conn, fps['marked-whole.patch'], MARKED_PATCH_B)
+        risk.record_risk_observation(conn, fps['marked-whole.patch'], _make_score('low'), now=WHEN)
+        # Truncated, but nothing claimed generation: honestly truncated code.
+        risk.record_risk_observation(conn, fps['plain-truncated.patch'], _truncated_score(),
+                                     now=WHEN)
+        conn.commit()
+        return conn, corpus_dir, index_path, fps
+
+    def _rerun(self, conn, corpus_dir, index_path, level='low', **kwargs):
+        return risk.run_risk_gate(
+            conn, corpus_dir, index_path, call=_fake_call(_risk_json(level)), now=LATER,
+            limit=50, re_risk_marked=True, **kwargs)
+
+    def test_the_candidate_population_is_exact(self):
+        conn, _corpus_dir, _index_path, fps = self._setup_population()
+        self.assertEqual({fps['marked-truncated.patch']}, risk.rerisk_candidates(conn))
+
+    def test_only_the_marked_and_truncated_fingerprint_is_rescored(self):
+        conn, corpus_dir, index_path, fps = self._setup_population()
+        stats = self._rerun(conn, corpus_dir, index_path)
+        self.assertEqual(1, stats.re_risked)
+        self.assertEqual(1, stats.scored)
+        self.assertEqual(2, len(self._risk_rows(conn, fps['marked-truncated.patch'])))
+        self.assertEqual(1, len(self._risk_rows(conn, fps['marked-whole.patch'])))
+        self.assertEqual(1, len(self._risk_rows(conn, fps['plain-truncated.patch'])))
+
+    def test_the_old_score_is_superseded_never_deleted(self):
+        conn, corpus_dir, index_path, fps = self._setup_population()
+        self._rerun(conn, corpus_dir, index_path, level='none')
+        rows = self._risk_rows(conn, fps['marked-truncated.patch'])
+        self.assertEqual('elevated', rows[0]['detail'])            # the old read, still there
+        self.assertIsNotNone(rows[0]['superseded_at'])             # ... but no longer live
+        self.assertEqual('none', rows[1]['detail'])                # the residue-first read
+        self.assertIsNone(rows[1]['superseded_at'])
+
+    def test_the_new_score_is_projected(self):
+        conn, corpus_dir, index_path, fps = self._setup_population()
+        self._rerun(conn, corpus_dir, index_path)
+        payload = json.loads(self._live_risk(conn, fps['marked-truncated.patch'])['evidence'])
+        self.assertIs(True, payload['projected'])
+        self.assertEqual(1, payload['omitted_files'])
+        self.assertNotIn('truncated', payload)   # 3 lines of residue fit easily
+
+    def test_the_review_queue_is_reprioritised(self):
+        from divergulent.classify import triage_driver
+        conn, corpus_dir, index_path, fps = self._setup_population()
+        ledger_mod.append_review_item(
+            conn, fingerprint=fps['marked-truncated.patch'], reason='r', draft_category='unknown',
+            draft_confidence='low', enqueued_at=WHEN, priority=1)
+        conn.commit()
+        stats = self._rerun(conn, corpus_dir, index_path, level='high')
+        self.assertGreaterEqual(stats.reprioritised, 1)
+        item = next(i for i in ledger_mod.pending_review_items(conn)
+                    if i['fingerprint'] == fps['marked-truncated.patch'])
+        self.assertGreaterEqual(item['priority'], triage_driver.RISK_PRIORITY_WEIGHT)
+
+    def test_a_second_run_finds_nothing_even_when_still_truncated(self):
+        # The termination guard.  Cap the re-score hard so the NEW score is truncated
+        # too: were the selection keyed on ``truncated`` alone, or on ``projected`` being
+        # true, this fingerprint would be re-scored on every run for ever.
+        conn, corpus_dir, index_path, fps = self._setup_population()
+        first = self._rerun(conn, corpus_dir, index_path, max_diff_chars=100)
+        self.assertEqual(1, first.re_risked)
+        payload = json.loads(self._live_risk(conn, fps['marked-truncated.patch'])['evidence'])
+        self.assertIs(True, payload['truncated'])
+        self.assertIs(True, payload['projected'])
+
+        second = self._rerun(conn, corpus_dir, index_path, max_diff_chars=100)
+        self.assertEqual(0, second.re_risked)
+        self.assertEqual(0, second.scored + second.culled)
+        self.assertEqual(set(), risk.rerisk_candidates(conn))
+        self.assertEqual(2, len(self._risk_rows(conn, fps['marked-truncated.patch'])))
+
+    def test_an_identity_projection_also_terminates(self):
+        # A mark whose paths are not in this body: the score stays truncated and the
+        # projection did nothing, and the recorded ``projected: false`` is what retires it.
+        conn, _corpus_dir, _index_path, fps = self._setup_population()
+        score = risk.RiskScore(
+            level='elevated', rank=risk.RISK_RANK['elevated'], reason='r',
+            model='claude-opus-4-8', prompt_version=risk.RISK_PROMPT_VERSION,
+            raw_response=_risk_json(), truncated=True, original_chars=99999,
+            projection=generated.ProjectedDiff(text='x', omitted_files=0, omitted_changed=0,
+                                               projected=False))
+        risk.record_risk_observation(conn, fps['marked-whole.patch'], score, now=LATER)
+        self.assertNotIn(fps['marked-whole.patch'], risk.rerisk_candidates(conn))
+
+    def test_a_malformed_payload_never_spends_a_call(self):
+        conn, _corpus_dir, _index_path, fps = self._setup_population()
+        ledger_mod.supersede_observations_for_fingerprint(
+            conn, fingerprint=fps['marked-whole.patch'], kind=risk.RISK_KIND, superseded_at=LATER)
+        ledger_mod.append_observation(
+            conn, fingerprint=fps['marked-whole.patch'], kind=risk.RISK_KIND, detail='elevated',
+            evidence='not json at all {', observed_by='risk-gate:claude-opus-4-8',
+            rule_version=risk.RISK_PROMPT_VERSION, observed_at=LATER)
+        conn.commit()
+        self.assertNotIn(fps['marked-whole.patch'], risk.rerisk_candidates(conn))
+
+    def test_the_default_run_rescores_nothing(self):
+        # Without the flag the gate's behaviour is unchanged: everything here already
+        # carries a live score, so there is nothing to do.
+        conn, corpus_dir, index_path, fps = self._setup_population()
+        stats = risk.run_risk_gate(conn, corpus_dir, index_path, call=_fake_call(_risk_json()),
+                                   now=LATER, limit=50)
+        self.assertEqual(0, stats.scored + stats.culled)
+        self.assertEqual(0, stats.re_risked)
+        self.assertEqual(1, len(self._risk_rows(conn, fps['marked-truncated.patch'])))
+
+    def test_the_cli_flag_reaches_the_run(self):
+        # The operator-facing end of the pass: ``--re-risk-marked`` is off unless typed,
+        # and when typed it arrives at the gate (the real backend is never built here).
+        import io
+        from contextlib import redirect_stdout
+        from unittest import mock
+        _conn, corpus_dir, _index_path, _fps = self._setup_population()
+        ledger_path = os.path.join(corpus_dir, 'ledger.sqlite')
+        for argv, expected in (([], False), (['--re-risk-marked'], True)):
+            with mock.patch.object(risk, 'run_risk_gate') as run, \
+                    mock.patch.object(ledger_mod, 'open_ledger'), \
+                    redirect_stdout(io.StringIO()):
+                run.return_value = risk.RiskRunStats()
+                risk.main([ledger_path, corpus_dir, *argv])
+            self.assertIs(expected, run.call_args.kwargs['re_risk_marked'])

@@ -24,6 +24,7 @@ import json
 from dataclasses import dataclass, field
 
 from divergulent.classify import content as content_mod
+from divergulent.classify import generated as generated_mod
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import measure
 from divergulent.classify import reviewability as reviewability_mod
@@ -67,8 +68,9 @@ _PARSE_FAILURE_LEVEL = 'elevated'
 # Cap the diff sent to the gate. A coarse security read needs only the head, and
 # uncapped giant diffs were the run's cost spikes AND its context-overflow error
 # (one 5.4 MB diff). ~10k tokens; truncation is recorded, never silent. The
-# `oversized` reviewability tier skips the LLM entirely (S3), so this bites only
-# the `large` middle.
+# `oversized` reviewability tier skips the LLM entirely (S3) unless a small
+# hand-written residue unlocks it, so this bites the `large` middle and whatever
+# residue survives a projection.
 RISK_MAX_DIFF_CHARS = 40_000
 
 
@@ -80,7 +82,14 @@ class RiskScore:
     ``usage`` is the call's token usage (telemetry); ``raw_response`` is kept as
     auditable evidence, since an LLM score is non-deterministic. ``truncated`` is
     True when the diff was capped before the call (``original_chars`` is then the
-    pre-cap length), so the audit trail records that the score read only the head.
+    pre-cap length), so the audit trail records that the score read only the head
+    -- of whatever was handed to the cap, which for a marked fingerprint is the
+    projection, not the raw diff.
+
+    ``projection`` is the residue-first reordering applied BEFORE the cap when the
+    fingerprint carried a live ``generated-content`` mark, and ``None`` when it
+    carried none -- the unmarked majority, whose input and recorded evidence stay
+    byte-identical to before the mark existed.
     """
 
     level: str
@@ -92,6 +101,7 @@ class RiskScore:
     usage: Usage = Usage()
     truncated: bool = False
     original_chars: int = 0
+    projection: generated_mod.ProjectedDiff | None = None
 
 
 def risk_system_prompt(*, prompt_version: int = RISK_PROMPT_VERSION) -> str:
@@ -175,7 +185,8 @@ def _parse_risk(text: str) -> tuple[str, str]:
 
 def score_risk(patch_text: str, *, call, model: str = DEFAULT_RISK_MODEL,
                prompt_version: int = RISK_PROMPT_VERSION,
-               max_diff_chars: int = RISK_MAX_DIFF_CHARS) -> RiskScore:
+               max_diff_chars: int = RISK_MAX_DIFF_CHARS,
+               mark_files: list[dict] | None = None) -> RiskScore:
     """Score one patch's security risk with a claim-blind LLM read.
 
     Extracts the claim-blind ``diff_body`` (so the author's framing never reaches
@@ -187,8 +198,23 @@ def score_risk(patch_text: str, *, call, model: str = DEFAULT_RISK_MODEL,
     (evidence), the call's token ``usage`` and whether the diff was truncated.
     ``call`` is required so the function is pure given a fake; the test suite
     never touches the network.
+
+    ``mark_files`` is the per-file evidence of the fingerprint's live
+    ``generated-content`` mark (``generated_marks(conn)[fp]['files']``), passed by
+    the driver for a MARKED fingerprint and left ``None`` for every other one.
+    When given, the body is projected residue-first
+    (:func:`generated.project_residue_first`) BETWEEN the claim strip and the cap,
+    so the cap spends its budget on the hand-written residue instead of on
+    generator output, and the model is told in the text what it is not being
+    shown. Order matters and is the whole point: project, then cap. An unmarked
+    call is byte-identical to before the mark existed -- ``mark_files=None`` does
+    not even build a projection.
     """
     body = triage_mod.diff_body(patch_text)
+    projection = None
+    if mark_files:
+        projection = generated_mod.project_residue_first(body, mark_files)
+        body = projection.text
     capped, truncated, original_chars = triage_mod.cap_diff(body, max_diff_chars)
     system = risk_system_prompt(prompt_version=prompt_version)
     user = risk_user_message(capped)
@@ -199,7 +225,7 @@ def score_risk(patch_text: str, *, call, model: str = DEFAULT_RISK_MODEL,
     return RiskScore(
         level=level, rank=RISK_RANK[level], reason=reason, model=model,
         prompt_version=prompt_version, raw_response=result.text, usage=result.usage,
-        truncated=truncated, original_chars=original_chars)
+        truncated=truncated, original_chars=original_chars, projection=projection)
 
 
 def record_risk_observation(conn, fingerprint: str, score: RiskScore, *, now: str,
@@ -211,6 +237,14 @@ def record_risk_observation(conn, fingerprint: str, score: RiskScore, *, now: st
     appends the new one keyed ``observed_by='risk-gate:<model>'`` /
     ``rule_version=<prompt_version>``.  Append-only: superseded rows stay as the
     audit trail.  ``now`` is caller-supplied (this module reads no clock).
+
+    The model's input is never silently modified, so a score built from a
+    residue-first projection records ``projected`` and what the projection left
+    out.  The key is written for EVERY marked fingerprint, including the one whose
+    projection was a no-op (``projected: false``) -- its presence is what tells the
+    re-risk selection this score has already been through the projecting gate (see
+    :func:`rerisk_candidates`).  An unmarked fingerprint's payload gains no key at
+    all: it is byte-identical to what this function wrote before phase 3.
     """
     observed_by = RISK_OBSERVED_BY_PREFIX + score.model
     ledger_mod.supersede_observations_for_fingerprint(
@@ -219,6 +253,11 @@ def record_risk_observation(conn, fingerprint: str, score: RiskScore, *, now: st
     if score.truncated:
         payload['truncated'] = True
         payload['original_chars'] = score.original_chars
+    if score.projection is not None:
+        payload['projected'] = score.projection.projected
+        if score.projection.projected:
+            payload['omitted_files'] = score.projection.omitted_files
+            payload['omitted_changed'] = score.projection.omitted_changed
     evidence = json.dumps(payload, sort_keys=True)
     return ledger_mod.append_observation(
         conn, fingerprint=fingerprint, kind=RISK_KIND, detail=score.level,
@@ -252,6 +291,45 @@ def risk_level_by_fingerprint(conn) -> dict[str, str]:
         if obs['kind'] == RISK_KIND and obs['detail'] in RISK_RANK:
             levels[obs['fingerprint']] = obs['detail']
     return levels
+
+
+def rerisk_candidates(conn) -> set[str]:
+    """Fingerprints whose live risk score was read off a truncated GENERATED head.
+
+    The bounded re-risk population: a fingerprint carrying a live
+    ``generated-content`` mark AND a live ``security-risk`` observation whose
+    evidence records ``truncated: true`` -- exactly the scores the cap computed
+    from generator output because nothing projected the residue first (gatos
+    scored ``elevated`` off 40k characters of ``configure``).  A truncated score
+    with no mark is honestly truncated code and is left alone; a marked
+    fingerprint whose score was never truncated already read its whole diff.
+
+    The TERMINATION GUARD is the presence of the ``projected`` key, not its value.
+    A score that has been through the projecting gate records ``projected``
+    whether the projection reordered anything or not, so a mark whose paths do not
+    appear in this body (projection is an identity, and the diff may still be long
+    enough to cap) drops out of the population after one pass instead of being
+    re-selected on every run for ever.  Excluding only ``projected: true`` would
+    not terminate.
+
+    A row whose evidence is missing or unparseable is skipped, the same defensive
+    posture ``generated_marks`` takes: the ledger is append-only operator data and
+    one bad row must not decide to spend LLM calls.
+    """
+    marks = generated_mod.generated_marks(conn)
+    candidates: set[str] = set()
+    for obs in ledger_mod.live_observations(conn):
+        if obs['kind'] != RISK_KIND or obs['fingerprint'] not in marks:
+            continue
+        try:
+            payload = json.loads(obs['evidence'])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if payload.get('truncated') is True and 'projected' not in payload:
+            candidates.add(obs['fingerprint'])
+    return candidates
 
 
 # ---------------------------------------------------------------------------
@@ -332,6 +410,9 @@ class RiskRunStats:
     errored: int = 0      # the backend raised -> recorded 'elevated' (recall-safe)
     truncated: int = 0    # diff capped before the call (head-only read)
     skipped_oversized: int = 0  # not line-reviewable -> never sent to the LLM
+    unlocked_by_residue: int = 0  # oversized, but a small residue -> scored after all
+    projected: int = 0    # marked -> scored residue-first, generated files as notes
+    re_risked: int = 0    # re-scored by the targeted --re-risk-marked pass
     reprioritised: int = 0      # pending review items re-stamped from current risk
     by_level: dict[str, int] = field(default_factory=dict)
     unscored_remaining: int = 0
@@ -341,7 +422,7 @@ class RiskRunStats:
 
 def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, limit: int,
                   model: str = DEFAULT_RISK_MODEL, max_diff_chars: int = RISK_MAX_DIFF_CHARS,
-                  progress=None) -> RiskRunStats:
+                  progress=None, re_risk_marked: bool = False) -> RiskRunStats:
     """Score a BOUNDED slice of the WHOLE corpus's security risk; record each.
 
     Scores EVERY fingerprint (``scope='all'``), not just the residue: a patch the
@@ -354,21 +435,54 @@ def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, lim
     benign bulk, ~7% of the corpus) or scores it via the injected ``call``. A
     backend failure records ``elevated`` (recall-safe) and is counted.
     ``call``/``now`` are injected so the path is offline and deterministic.
+
+    A fingerprint with a live ``generated-content`` mark is scored on a
+    residue-first PROJECTION of its diff (the marks are read once per run, never
+    once per call), so the cap reads hand-written residue and the model is told
+    what it is not being shown; the projection facts land in the observation's
+    evidence. Unmarked fingerprints -- the overwhelming majority -- are unchanged
+    down to the byte.
+
+    ``re_risk_marked`` switches the run to the TARGETED re-risk population instead
+    of the un-scored one: the marked fingerprints whose live score was read off a
+    truncated generated head (:func:`rerisk_candidates`), re-scored through this
+    same now-projecting flow. It is off by default, and the default run's
+    behaviour is unchanged apart from the projection. Nothing is deleted -- a
+    re-score supersedes, exactly as any other re-score does.
     """
     from divergulent.classify import triage_driver  # lazy: avoids an import cycle
     work = triage_driver.build_work_list(conn, index_path, scope='all')
-    scored = set(risk_rank_by_fingerprint(conn))
+    marks = generated_mod.generated_marks(conn)
     # Oversized diffs are not line-reviewable and overflow the model: skip them
     # entirely (the reviewability=oversized observation IS their disposition), so
-    # no LLM call is spent and the work list does not re-select them every run.
+    # no LLM call is spent and the work list does not re-select them every run --
+    # EXCEPT those the shared unlock helper says have a small hand-written residue,
+    # which the projection now makes perfectly scorable. Same helper as the triage
+    # driver's, so the two consumers can never disagree about who is unlocked.
     oversized = reviewability_mod.oversized_fingerprints(conn)
-    pending = [item for item in work
-               if item.fingerprint not in scored and item.fingerprint not in oversized]
-    selected = pending[:limit]
+    unlocked = generated_mod.residue_unlocked_fingerprints(conn)
+    locked = oversized - unlocked
 
     stats = RiskRunStats(queue_size=len(work), model=model)
-    stats.skipped_oversized = len(oversized.intersection(item.fingerprint for item in work))
+    corpus = {item.fingerprint for item in work}
+    stats.skipped_oversized = len(locked & corpus)
+    stats.unlocked_by_residue = len(unlocked & corpus)
+
+    if re_risk_marked:
+        targets = rerisk_candidates(conn)
+        pending = [item for item in work
+                   if item.fingerprint in targets and item.fingerprint not in locked]
+    else:
+        scored = set(risk_rank_by_fingerprint(conn))
+        pending = [item for item in work
+                   if item.fingerprint not in scored and item.fingerprint not in locked]
+    selected = pending[:limit]
     stats.unscored_remaining = max(len(pending) - len(selected), 0)
+    if re_risk_marked:
+        stats.re_risked = len(selected)
+        if progress is not None:
+            progress('re-risking %d marked fingerprints whose scores read a truncated '
+                     'generated head' % len(selected))
 
     for position, item in enumerate(selected, start=1):
         body = measure.read_body(corpus_dir, item.representative_sha)
@@ -378,8 +492,10 @@ def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, lim
             stats.culled += 1
             level = 'none'
         else:
+            mark = marks.get(item.fingerprint)
             try:
-                score = score_risk(body, call=call, model=model, max_diff_chars=max_diff_chars)
+                score = score_risk(body, call=call, model=model, max_diff_chars=max_diff_chars,
+                                   mark_files=None if mark is None else mark['files'])
             except Exception as exc:  # noqa: BLE001 -- one bad patch must not abort the run
                 score = RiskScore(
                     level='elevated', rank=RISK_RANK['elevated'],
@@ -391,6 +507,8 @@ def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, lim
             stats.scored += 1
             if score.truncated:
                 stats.truncated += 1
+            if score.projection is not None and score.projection.projected:
+                stats.projected += 1
             level = score.level
         stats.by_level[level] = stats.by_level.get(level, 0) + 1
         if progress is not None:
@@ -407,11 +525,20 @@ def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, lim
 
 def print_risk_summary(stats: RiskRunStats) -> None:
     """Print a lean, honest summary of one risk-gate run (the cap is loud)."""
+    if stats.re_risked:
+        print('re-risking %d marked fingerprints whose scores read a truncated generated head'
+              % stats.re_risked)
     print('risk gate: scored %d, culled %d (provably benign), errored %d; %d corpus, %d un-scored remain' % (
         stats.scored, stats.culled, stats.errored, stats.queue_size, stats.unscored_remaining))
     if stats.skipped_oversized:
         print('  (%d oversized skipped -- not line-reviewable, no LLM; see the review UI)'
               % stats.skipped_oversized)
+    if stats.unlocked_by_residue:
+        print('  (%d oversized unlocked by a small hand-written residue -- scored residue-first)'
+              % stats.unlocked_by_residue)
+    if stats.projected:
+        print('  (%d scored residue-first -- generated files replaced by a note, recorded in evidence)'
+              % stats.projected)
     if stats.truncated:
         print('  (%d scored on a truncated diff -- head only, capped for cost)' % stats.truncated)
     if stats.reprioritised:
@@ -443,6 +570,11 @@ def main(argv=None) -> int:
     per fingerprint. Reads the clock ONCE (this is the only place that does) and
     threads it down. Records no decision and rebuilds no verdict -- the score is
     advisory and only reorders the review/triage queue (highest risk first).
+
+    ``--re-risk-marked`` runs the targeted re-risk pass instead of the ordinary
+    un-scored one: the marked fingerprints whose score was read off a truncated
+    generated head, re-scored residue-first. Bounded by ``--limit`` like every
+    other run, and supersede-only.
     """
     import argparse
     import os
@@ -463,6 +595,10 @@ def main(argv=None) -> int:
     parser.add_argument('--max-diff-chars', type=int, default=RISK_MAX_DIFF_CHARS,
                         help='cap the diff sent to the gate, head only (default: %d; 0 disables)'
                              % RISK_MAX_DIFF_CHARS)
+    parser.add_argument('--re-risk-marked', action='store_true',
+                        help='instead of scoring un-scored patches, RE-score the marked ones whose '
+                             'current score was read off a truncated generated head (supersedes, '
+                             'never deletes)')
     args = parser.parse_args(argv)
 
     index_path = args.index or os.path.join(args.corpus_dir, 'fingerprints.sqlite')
@@ -471,7 +607,7 @@ def main(argv=None) -> int:
         stats = run_risk_gate(
             conn, args.corpus_dir, index_path, call=triage_mod.claude_cli_call,
             now=triage_mod._cli_now(), limit=args.limit, model=args.model,
-            max_diff_chars=args.max_diff_chars,
+            max_diff_chars=args.max_diff_chars, re_risk_marked=args.re_risk_marked,
             progress=lambda message: print(message, file=sys.stderr, flush=True))
     finally:
         conn.close()
