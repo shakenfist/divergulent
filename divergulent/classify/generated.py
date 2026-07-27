@@ -39,6 +39,15 @@ deterministic record pass -- ``detail_for(scan)`` builds its compact ``'<family>
 nothing records nothing: absence means "nothing claimed generation".  Recording the mark
 does not promote it -- it is still a mark and never a verdict, and nothing downstream may
 map it to a category.
+
+Phase 3 adds the two ROUTING helpers that consume the recorded mark, kept here beside it
+so both consumers (the triage driver and the risk gate) share one definition:
+``project_residue_first(body, files)`` reorders a diff body residue-first, replacing each
+marked file with a loud note about what is not being shown, and
+``residue_unlocked_fingerprints(conn)`` composes ``reviewability``'s ``oversized`` set with
+the mark's residue arithmetic to say which oversized patches are reviewable after all.
+Neither is a verdict either: the first only changes what a model is shown (and says so in
+evidence), the second only changes which fingerprints reach one.
 """
 from __future__ import annotations
 
@@ -235,6 +244,26 @@ class GeneratedFile:
 
 
 @dataclass(frozen=True)
+class ProjectedDiff:
+    """A diff body reordered residue-first, plus the omission facts evidence records."""
+
+    text: str
+    """The text to hand the model: preamble, residue segments verbatim, then the notes.
+
+    Byte-identical to the input when ``projected`` is False.
+    """
+
+    omitted_files: int
+    """Marked files replaced by a note.  0 when nothing was projected."""
+
+    omitted_changed: int
+    """Changed lines in those files -- what the model is being told it cannot see."""
+
+    projected: bool
+    """False means the input was returned untouched; the caller records nothing."""
+
+
+@dataclass(frozen=True)
 class GeneratedScan:
     """The whole-patch result: marked files plus the arithmetic routing consumes."""
 
@@ -333,6 +362,61 @@ def _region_lines(text: str) -> list[list[str]]:
         current.append(raw)
 
     return regions
+
+
+def _is_segment_preamble(line: str) -> bool:
+    """True for a line that belongs to the FOLLOWING file's segment, not the previous one.
+
+    The ``--- `` source header and the git/quilt decoration lines (``diff --git``,
+    ``index`` ...) all arrive before the ``+++`` header that opens a section, so a
+    verbatim segment must start at the first of them, not at the ``+++``.
+    """
+    raw = line.rstrip()
+    return raw.startswith('--- ') or any(raw.startswith(prefix) for prefix in fp._DECORATION_PREFIXES)
+
+
+def _file_segments(text: str) -> list[str]:
+    """The VERBATIM source text of each file's segment, in ``content._parse_sections`` order.
+
+    The projection's segmentation must never disagree with ``scan``'s, so this walk is
+    driven by exactly the unit the section parser is driven by -- one segment opened per
+    ``+++`` header, from the same ``fp._diff_start`` -- and segment N therefore belongs to
+    section N, the same correspondence ``_region_lines`` maintains.  What differs is
+    fidelity: ``_region_lines`` yields ``rstrip``-ed content lines for pattern matching,
+    whereas the projection hands its output to a model and must reproduce the residue byte
+    for byte.  So the decisions are taken on the ``rstrip``-ed lines (identical decisions)
+    while the text returned comes from ``splitlines(keepends=True)``, which is
+    index-aligned with ``fp._split_lines`` and preserves the original line endings and any
+    missing final newline.
+
+    A segment runs from its own leading decoration/``--- `` preamble (see
+    ``_is_segment_preamble``) to the start of the next segment's, so joining every segment
+    reproduces the diff from its start.  Anything BEFORE the first segment -- a DEP-3 /
+    free-text header, or a headerless ``@@`` fragment -- belongs to no file and is not
+    returned; see ``project_residue_first`` for what that means for its callers.
+    """
+    lines = fp._split_lines(text)
+    raw_lines = text.splitlines(keepends=True)
+    start = fp._diff_start(lines)
+
+    heads = [index for index in range(start, len(lines)) if lines[index].rstrip().startswith('+++ ')]
+
+    begins: list[int] = []
+    for position, head in enumerate(heads):
+        # Never walk back past the previous segment's own ``+++`` header: whatever sits
+        # between two headers that does not look like a preamble stays with the earlier
+        # file, which is where the section parser counted it.
+        floor = start if position == 0 else heads[position - 1] + 1
+        begin = head
+        while begin > floor and _is_segment_preamble(lines[begin - 1]):
+            begin -= 1
+        begins.append(begin)
+
+    segments: list[str] = []
+    for position, begin in enumerate(begins):
+        end = begins[position + 1] if position + 1 < len(begins) else len(lines)
+        segments.append(''.join(raw_lines[begin:end]))
+    return segments
 
 
 # ---------------------------------------------------------------------------
@@ -495,6 +579,114 @@ def candidate_banner_hits(text: str) -> list[tuple[str, str]]:
 
 
 # ---------------------------------------------------------------------------
+# Residue-first projection
+# ---------------------------------------------------------------------------
+
+def _entry_changed(entry: dict) -> int:
+    """``added + removed`` for one evidence file entry, tolerating a malformed row.
+
+    Same posture as ``generated_marks``: the ledger is append-only operator data, so a
+    count that is missing or not a number reads as 0 rather than raising in the middle of
+    building a model's input.
+    """
+    total = 0
+    for key in ('added', 'removed'):
+        try:
+            total += int(entry.get(key) or 0)
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
+def _note_for(entry: dict, changed: int) -> str:
+    """The one-line note standing in for a marked file: what the model is NOT being shown.
+
+    Loud and specific -- path, size, which signals fired, and the generator/version where
+    the banner captured one -- because the whole posture of the mark is that an omission
+    is announced, never silent.  The generator clause is dropped when the file carries no
+    version evidence (a name-only match), and the version when the banner format carries
+    none.
+    """
+    note = '[generated: %s — %d changed lines, signals %s' % (
+        entry.get('path'), changed, '+'.join(entry.get('signals') or ()))
+    generator = entry.get('generator')
+    if generator:
+        note += ', %s' % generator
+        if entry.get('version'):
+            note += ' %s' % entry['version']
+    return note + ']'
+
+
+def project_residue_first(body: str, files: list[dict]) -> ProjectedDiff:
+    """Reorder ``body`` so the hand-written residue comes first and the marked files become notes.
+
+    ``body`` is the DIFF BODY -- the callers (triage, the risk gate) already strip any
+    DEP-3 / free-text header via ``triage.diff_body``.  Projection starts at the first
+    file header regardless, so a body that still carries a header simply loses it; nothing
+    before the first ``+++`` unit is projected, because it belongs to no file.
+
+    ``files`` is the mark's per-file evidence list -- the ``files`` value ``generated_marks``
+    returns, i.e. what ``evidence_for`` wrote.  Marked and residue files are told apart by
+    matching those ``path`` values against the section paths ``content._parse_sections``
+    derives, and the segments come from ``_file_segments``, which walks the same ``+++``
+    units, so a file can never be counted as generated by the mark and shown as residue
+    here (or vice versa).
+
+    The result is: a one-line preamble naming what is missing; every UNMARKED file's
+    segment verbatim and in diff order (decoration lines included -- byte-identical text,
+    so an unmarked file reads exactly as it did before this phase); then one note per
+    marked file, in diff order.  The existing character cap applies AFTER this, so the cap
+    now spends its budget on residue rather than on generator output.
+
+    IDENTITY when there is nothing to project -- an empty ``files``, or a mark whose paths
+    do not appear in this body at all: the input string is returned unchanged with
+    ``projected=False`` and zero counts, so callers can project unconditionally without
+    special-casing the unmarked fingerprints (which are the overwhelming majority).
+
+    Pure: no I/O, no network.
+    """
+    sections = content._parse_sections(body)
+    marked_paths = {entry.get('path') for entry in files}
+    marked_indexes = {index for index, section in enumerate(sections) if section.path in marked_paths}
+    if not files or not marked_indexes:
+        return ProjectedDiff(text=body, omitted_files=0, omitted_changed=0, projected=False)
+
+    # First evidence entry per path: the notes are keyed by the path the section carries.
+    entry_by_path: dict[str, dict] = {}
+    for entry in files:
+        entry_by_path.setdefault(entry.get('path'), entry)
+
+    segments = _file_segments(body)
+    total_changed = sum(len(section.added) + len(section.removed) for section in sections)
+
+    residue: list[str] = []
+    notes: list[str] = []
+    omitted_changed = 0
+    for index, section in enumerate(sections):
+        segment = segments[index] if index < len(segments) else ''
+        if index not in marked_indexes:
+            residue.append(segment)
+            continue
+        entry = entry_by_path[section.path]
+        changed = _entry_changed(entry)
+        omitted_changed += changed
+        notes.append(_note_for(entry, changed))
+
+    parts = ['%d generated-claiming files not shown (%d of %d changed lines); '
+             'hand-written residue follows.\n' % (len(notes), omitted_changed, total_changed)]
+    residue_text = ''.join(residue)
+    if residue_text:
+        parts.append(residue_text)
+        # A diff whose last line has no terminator must not run into the first note.
+        if not residue_text.endswith('\n'):
+            parts.append('\n')
+    parts.extend('%s\n' % note for note in notes)
+
+    return ProjectedDiff(text=''.join(parts), omitted_files=len(notes),
+                         omitted_changed=omitted_changed, projected=True)
+
+
+# ---------------------------------------------------------------------------
 # The ledger observation
 # ---------------------------------------------------------------------------
 
@@ -596,3 +788,28 @@ def generated_marks(conn) -> dict[str, dict]:
         except (KeyError, TypeError, ValueError):
             continue
     return marks
+
+
+def residue_unlocked_fingerprints(conn) -> set[str]:
+    """Oversized fingerprints whose hand-written residue is small enough to review after all.
+
+    The routing composition the triage driver and the risk gate BOTH subtract from their
+    ``oversized`` skip set, defined once here so the two consumers can never disagree
+    about who is unlocked.  It composes two live observations without changing either:
+    reviewability keeps measuring the WHOLE diff (a 47k-line patch is structurally
+    oversized and its observation says so), while the mark's ``residue_changed`` says how
+    much of that a human or a model would actually be asked to read.  A fingerprint is
+    unlocked when it is observed ``oversized`` AND carries a live mark whose
+    ``residue_changed`` is at or under ``reviewability.REVIEWABILITY_OVERSIZED_LINES`` --
+    the same cut, applied to the residue instead of the total.
+
+    An oversized fingerprint with no mark stays locked, as does one whose evidence is
+    malformed (``generated_marks`` already drops those, so they simply never appear).  A
+    ``large`` or ``normal`` fingerprint is never in this set: it was never locked, and
+    nothing here unlocks what was already open.
+    """
+    from divergulent.classify import reviewability as reviewability_mod  # lazy: import-light
+    marks = generated_marks(conn)
+    return {digest for digest in reviewability_mod.oversized_fingerprints(conn)
+            if digest in marks
+            and marks[digest]['residue_changed'] <= reviewability_mod.REVIEWABILITY_OVERSIZED_LINES}
