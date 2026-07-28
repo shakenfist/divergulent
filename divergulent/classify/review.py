@@ -54,6 +54,7 @@ import urllib.parse
 from dataclasses import dataclass
 
 from divergulent.classify import fingerprint as fp
+from divergulent.classify import generated as generated_mod
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import measure
 from divergulent.classify.claim import extract_claim
@@ -695,6 +696,16 @@ class ReviewContext:
     author alleges the patch fixes, to be read against the diff, never trusted.
     ``reason`` is the queue routing reason when this context was built from a queue
     item, and ``None`` when built straight from a fingerprint (the audit path).
+
+    The three ``generated_*`` fields carry the fingerprint's live ``generated-content``
+    mark: ``generated_detail`` is the compact ``'<family>/<percent>'`` badge
+    (``'autotools/99'``), ``generated_paths`` the touched paths that CLAIM to be generator
+    output, and ``generated_residue`` the ``(residue_changed, generated_changed)``
+    arithmetic saying how much of the patch is hand-written -- what the reviewer is really
+    being asked to read.  They are ``None``/empty for an unmarked fingerprint, which is the
+    common case: nothing claimed generation.  A mark is a CLAIM, never a verdict; the view
+    built from these tags marked files so a huge patch's story is legible, and never hides
+    one or presumes it benign.
     """
 
     fingerprint: str
@@ -715,6 +726,9 @@ class ReviewContext:
     patch_name: str
     packages: tuple[str, ...]
     package_date: str | None
+    generated_detail: str | None = None
+    generated_paths: frozenset[str] = frozenset()
+    generated_residue: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -747,6 +761,28 @@ def _llm_draft(conn: sqlite3.Connection, fingerprint: str) -> sqlite3.Row | None
     return llm_rows[-1] if llm_rows else None
 
 
+def _generated_mark_fields(conn: sqlite3.Connection, fingerprint: str
+                           ) -> tuple[str | None, frozenset[str], tuple[int, int] | None]:
+    """The live generated-content mark for ``fingerprint``, as the context's three fields.
+
+    Returns ``(detail, marked_paths, (residue_changed, generated_changed))``, or
+    ``(None, frozenset(), None)`` when the fingerprint carries no live mark -- the common
+    case, since nothing claimed generation.  Reads ALL live marks in one pass and picks one
+    out, exactly as the routing consumers (the triage driver, the risk gate) do per run:
+    the axis has one reader, and a bespoke single-fingerprint query beside it would be a
+    second definition of what a live mark is.  An evidence entry carrying no usable
+    ``path`` is skipped rather than raised on -- the same defensive posture
+    ``generated_marks`` itself takes towards append-only operator data.
+    """
+    mark = generated_mod.generated_marks(conn).get(fingerprint)
+    if mark is None:
+        return None, frozenset(), None
+    paths = frozenset(
+        entry['path'] for entry in mark['files']
+        if isinstance(entry, dict) and isinstance(entry.get('path'), str))
+    return mark['detail'], paths, (mark['residue_changed'], mark['generated_changed'])
+
+
 def build_review_context(conn: sqlite3.Connection, corpus_dir: str, index_path: str,
                          *, fingerprint: str, fetch, item: sqlite3.Row | None = None
                          ) -> ReviewContext | None:
@@ -758,7 +794,10 @@ def build_review_context(conn: sqlite3.Connection, corpus_dir: str, index_path: 
     claim (``extract_claim``), and the live LLM draft (``decisions_for``); fetches
     the original upstream file and renders the diff in context.  ``item`` is the
     optional queue row -- supplied when reviewing from the queue (its ``reason``
-    rides along), and ``None`` when auditing a settled fingerprint.
+    rides along), and ``None`` when auditing a settled fingerprint.  The fingerprint's
+    live ``generated-content`` mark rides along too (:func:`_generated_mark_fields`), so
+    the view can tag which touched files claim to be generator output; an unmarked
+    fingerprint simply carries no mark fields.
 
     Returns ``None`` when the fingerprint has no representative index row (nothing
     to show); the caller treats that as a defer/skip.  ``fetch`` is injected so
@@ -783,6 +822,7 @@ def build_review_context(conn: sqlite3.Connection, corpus_dir: str, index_path: 
     context_view = build_context_view(source_package, version, body_diff, fetch=fetch)
 
     draft = _llm_draft(conn, fingerprint)
+    generated_detail, generated_paths, generated_residue = _generated_mark_fields(conn, fingerprint)
     return ReviewContext(
         fingerprint=fingerprint,
         diff_body=body_diff,
@@ -801,7 +841,10 @@ def build_review_context(conn: sqlite3.Connection, corpus_dir: str, index_path: 
         version=version,
         patch_name=patch_name,
         packages=_carrying_packages(index_path, fingerprint),
-        package_date=_package_date(index_path, source_package))
+        package_date=_package_date(index_path, source_package),
+        generated_detail=generated_detail,
+        generated_paths=generated_paths,
+        generated_residue=generated_residue)
 
 
 def record_review_verdict(conn: sqlite3.Connection, item: sqlite3.Row,
@@ -1148,7 +1191,7 @@ def _format_package_lines(context: ReviewContext, *, limit: int = MAX_PACKAGES_S
     return lines
 
 
-def _format_file_list(stats: list[FileStat]) -> list[str]:
+def _format_file_list(stats: list[FileStat], marked_paths: frozenset[str] = frozenset()) -> list[str]:
     """The files-changed summary lines shown before the diff.
 
     A totals line then one aligned row per file, largest change first -- so on a
@@ -1156,13 +1199,59 @@ def _format_file_list(stats: list[FileStat]) -> list[str]:
     where the bulk lands and which small hand-edits are buried in it.  The paths
     match the diff's ``### <path>`` block headers, so the list doubles as a table
     of contents for the render that follows.
+
+    A row whose path is in ``marked_paths`` -- the fingerprint's generated-content mark --
+    is tagged ``[gen]``, which makes the sort's story legible rather than changing it: the
+    bulk at the top is named as claiming to be generator output, and the hand-written
+    residue underneath stands out.  Nothing is dropped or reordered, and the default empty
+    set renders exactly what an unmarked fingerprint rendered before the mark existed.
     """
     lines = ['files changed: %d (+%d / -%d)' % (
         len(stats),
         sum(stat.added for stat in stats),
         sum(stat.removed for stat in stats))]
     for stat in sorted(stats, key=lambda s: (-(s.added + s.removed), s.path)):
-        lines.append('  %7d+ %7d-  %s' % (stat.added, stat.removed, stat.path))
+        tag = ' [gen]' if stat.path in marked_paths else ''
+        lines.append('  %7d+ %7d-  %s%s' % (stat.added, stat.removed, stat.path, tag))
+    return lines
+
+
+def _format_generated_summary(context: ReviewContext, stats: list[FileStat]) -> list[str]:
+    """The mark's summary lines, shown directly under the files-changed totals.
+
+    EMPTY for an unmarked fingerprint, so an unmarked review view is byte-identical to the
+    one this tool rendered before the mark existed.  For a marked one the first line states
+    how many of the touched files claim to be generator output, the mark's
+    ``'<family>/<percent>'`` detail, and the residue -- the hand-written changed lines that
+    are what the reviewer is actually being asked to read, and the number that decides how
+    big this patch really is.  The count is taken over the files this diff touches, so it
+    describes the list it heads rather than the mark in the abstract.  "claiming", never
+    "safe": the mark says only what a file says about itself, and every marked file is
+    still listed and still shown.
+
+    A marked patch that also carries dangerous-construct hits gains a second line splitting
+    them into marked files versus the residue (:func:`generated.construct_tally`), because
+    that split is what makes the hits readable: hundreds of ``shell-out`` matches inside a
+    regenerated ``ltmain.sh`` are the shape of autotools output, while ONE in the residue is
+    the thing to read the diff for -- so a non-zero residue count is called out with ``!!``.
+    The line is recomputed from this body and says so; it is not the ledger's observation
+    count (those rows are recorded evidence and are neither read nor changed here), and the
+    two can differ.
+    """
+    if context.generated_detail is None:
+        return []
+    marked = sum(1 for stat in stats if stat.path in context.generated_paths)
+    residue = context.generated_residue[0] if context.generated_residue is not None else 0
+    lines = ['generated-claiming: %d of %d files marked (%s); residue %d lines changed' % (
+        marked, len(stats), context.generated_detail, residue)]
+
+    tally = generated_mod.construct_tally(context.diff_body, context.generated_paths)
+    if tally.total:
+        residue_part = ('!! %d in the residue' % tally.in_residue if tally.in_residue
+                        else '%d in the residue' % tally.in_residue)
+        lines.append('dangerous constructs in this body: %d total — %d in '
+                     'generated-claiming files, %s' % (
+                         tally.total, tally.in_marked, residue_part))
     return lines
 
 
@@ -1184,7 +1273,8 @@ def _interactive_ask(context: ReviewContext) -> str:
     """The real interactive ``ask``: page the context + draft + claim, read stdin.
 
     Pages the files-changed summary (largest first, so a huge patch's bulk is
-    visible before scrolling begins), the diff IN CONTEXT, the LLM draft
+    visible before scrolling begins, with any generated-claiming file tagged and
+    the mark's residue named under the totals), the diff IN CONTEXT, the LLM draft
     (category + confidence + reasoning), the author's claim, and the routing
     reason through ``$PAGER`` so a large diff is navigable, then reads the
     human's choice from stdin: accept the LLM draft,
@@ -1218,7 +1308,11 @@ def _interactive_ask(context: ReviewContext) -> str:
     view.append('-' * 78)
     stats = diff_file_stats(context.diff_body)
     if stats:
-        view.extend(_format_file_list(stats))
+        file_lines = _format_file_list(stats, context.generated_paths)
+        # The mark summary rides directly under the totals line, ahead of the rows it
+        # explains; it is empty (and so invisible) for an unmarked fingerprint.
+        file_lines[1:1] = _format_generated_summary(context, stats)
+        view.extend(file_lines)
         view.append('-' * 78)
     view.append(context.context_view)
     view.append('-' * 78)

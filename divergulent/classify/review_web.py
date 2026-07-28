@@ -24,6 +24,7 @@ import sqlite3
 from urllib.parse import urlencode
 
 from divergulent.classify import cross_reference as xref_mod
+from divergulent.classify import generated as generated_mod
 from divergulent.classify import injection as injection_mod
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import review as review_mod
@@ -102,7 +103,7 @@ def diff_lines(text: str) -> list[dict]:
     return rows
 
 
-def file_rows(diff_body: str) -> list[dict]:
+def file_rows(diff_body: str, marked_paths: frozenset[str] = frozenset()) -> list[dict]:
     """The files-changed rows for the review page, largest change first.
 
     Sorted by total churn so a huge patch's bulk (e.g. a full autotools
@@ -110,13 +111,134 @@ def file_rows(diff_body: str) -> list[dict]:
     stand out at the bottom.  Each row keeps its 1-based position in DIFF order
     (``index``) so its link still targets the matching ``### <path>`` block
     anchor (``diff_lines``'s ``file_index``) after sorting.
+
+    ``marked_paths`` is the fingerprint's generated-content mark (the context's
+    ``generated_paths``); a row whose path is in it carries ``generated`` and the
+    template tags it ``[gen]`` -- the same story the CLI's file list tells, and the
+    reason the matching diff block below is collapsed.  The row keeps its anchor
+    link either way: a marked file is tagged, never dropped.  The default empty set
+    renders exactly what an unmarked fingerprint rendered before the mark existed.
     """
     stats = review_mod.diff_file_stats(diff_body)
     indexed = sorted(enumerate(stats, start=1),
                      key=lambda pair: (-(pair[1].added + pair[1].removed), pair[1].path))
     return [{'index': index, 'path': stat.path,
-             'added': stat.added, 'removed': stat.removed}
+             'added': stat.added, 'removed': stat.removed,
+             'generated': stat.path in marked_paths}
             for index, stat in indexed]
+
+
+def generated_entries(mark: dict | None) -> dict[str, dict]:
+    """``{path: evidence entry}`` from a ``generated-content`` mark's per-file list.
+
+    The collapsed summary states what the mark says about THAT file -- which signals
+    fired, and the generator/version where a banner carried one -- and only the mark's
+    evidence list has it (the review context carries the badge and the path set, not the
+    per-file entries).  ``{}`` for ``None``, the unmarked common case.
+
+    An entry with no usable ``path`` is skipped rather than raised on, the same defensive
+    posture ``generated_marks`` takes towards append-only operator data: one malformed
+    entry costs one collapsed block, never the page.  First entry wins per path, matching
+    ``generated.project_residue_first``.
+    """
+    entries: dict[str, dict] = {}
+    for entry in (mark or {}).get('files') or ():
+        if isinstance(entry, dict) and isinstance(entry.get('path'), str):
+            entries.setdefault(entry['path'], entry)
+    return entries
+
+
+def _collapsed_segment(stat: dict, entry: dict, header: dict) -> dict:
+    """One collapsed diff segment: the marked file's lines plus the facts its summary states.
+
+    The summary is data, never markup -- path, the block's own +/- counts, the mark's
+    signals and its generator/version -- rendered (and escaped) by the template.  The
+    counts come from the diff being displayed rather than from the evidence, so the
+    summary always describes the block it is hiding.
+
+    The anchor for a marked file lives on the ``<details>`` element, so the ``### <path>``
+    header line inside it drops its ``file_index`` (an id may not appear twice); see
+    :func:`diff_segments`.
+    """
+    signals = entry.get('signals')
+    return {
+        'generated': True,
+        'lines': [dict(header, file_index=None)],
+        'file_index': stat['index'],
+        'path': stat['path'],
+        'added': stat['added'],
+        'removed': stat['removed'],
+        'signals': '+'.join(str(signal) for signal in signals) if isinstance(signals, (list, tuple)) else '',
+        'generator': entry.get('generator') or '',
+        'version': entry.get('version') or '',
+    }
+
+
+def diff_segments(rows: list[dict], files: list[dict], entries: dict[str, dict]) -> list[dict]:
+    """Group ``diff_lines`` rows into render chunks, isolating the marked files' blocks.
+
+    Returns ``{generated, lines, ...}`` chunks in RENDER order: every run of consecutive
+    unmarked files (and any preamble) is one chunk, which the template renders as today's
+    single ``<pre class="diff">``, and each file whose path carries a generated-content
+    mark is a chunk of its own, which the template wraps in a collapsed ``<details>``.
+
+    With nothing marked the whole diff is one unmarked chunk, so an unmarked fingerprint's
+    page is byte-identical to the one this UI rendered before collapse existed -- the
+    do-no-harm bar every phase of this work has held.
+
+    ``files`` is :func:`file_rows`'s output (its 1-based diff-order ``index`` is
+    ``diff_lines``'s ``file_index``, and it carries the path and counts the summary
+    states); ``entries`` is :func:`generated_entries`.  A marked path this diff does not
+    touch simply never matches, and collapses nothing.
+    """
+    by_index = {row['index']: row for row in files}
+    segments: list[dict] = []
+    collapsing = False
+    for line in rows:
+        index = line.get('file_index')
+        if index is not None:
+            stat = by_index.get(index)
+            entry = entries.get(stat['path']) if stat is not None else None
+            collapsing = entry is not None
+            if collapsing:
+                segments.append(_collapsed_segment(stat, entry, line))
+                continue
+        if collapsing:
+            # Still inside a marked file's block: its hunks ride into the <details>.
+            segments[-1]['lines'].append(line)
+            continue
+        if not segments or segments[-1]['generated']:
+            segments.append({'generated': False, 'lines': []})
+        segments[-1]['lines'].append(line)
+    return segments
+
+
+def construct_tally_row(context) -> dict | None:
+    """The dangerous-construct split for the detail page, or ``None`` to render nothing.
+
+    ``{total, in_marked, in_residue, residue_hits}`` from
+    ``generated.construct_tally`` over the context's own diff body, so the page can say
+    whether a marked patch's construct hits are all inside the generated-claiming files or
+    whether one landed in the hand-written residue -- the single fact that decides how much
+    of a 47k-line regeneration a reviewer has to worry about.
+
+    ``None`` when the fingerprint carries no mark (there is no marked/residue split to
+    make, and an unmarked page must render exactly as it did before) or when the body has
+    no construct hits at all (a zero row is noise).  ``residue_hits`` is a compact
+    ``'<detail> in <path>'`` list naming the loud case, for the summary's title text.
+
+    ADVISORY: recomputed from this body at render time.  No ``dangerous-construct``
+    observation is read or rewritten, and the page never presents this as the ledger's
+    count.
+    """
+    if context.generated_detail is None:
+        return None
+    tally = generated_mod.construct_tally(context.diff_body, context.generated_paths)
+    if not tally.total:
+        return None
+    return {'total': tally.total, 'in_marked': tally.in_marked, 'in_residue': tally.in_residue,
+            'residue_hits': ', '.join('%s in %s' % (detail, path)
+                                      for path, detail in tally.residue_hits)}
 
 
 def category_chips(counts: dict) -> list[dict]:
@@ -162,7 +284,8 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
                 return item
         return None
 
-    def _worklist_row(item, level, risk_level, reach_level, note_count, injection_families) -> dict:
+    def _worklist_row(item, level, risk_level, reach_level, note_count, injection_families,
+                      generated_detail) -> dict:
         fingerprint = item['fingerprint']
         packages = review_mod._carrying_packages(index_path, fingerprint)
         return {
@@ -181,6 +304,12 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             # The injection-tripwire families that fired (none if clean); a badge.
             # Its presence means the patch was NOT sent to the LLM -- routed to a human.
             'injection': injection_families,
+            # The generated-content mark's detail ('autotools/99'), or None when nothing
+            # claimed generation -- which renders no badge at all.  It rides in the SIZE
+            # cell: the mark is that axis's explanation (a huge patch that is almost all
+            # generator output), and a column of its own would be empty for nearly every
+            # row.  A CLAIM, never a verdict: the badge says what the files say.
+            'generated': generated_detail,
             # How many reviewer notes this fingerprint carries (0 -> no indicator).
             'notes': note_count,
         }
@@ -271,11 +400,16 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             reverse=True)
         note_counts = ledger_mod.note_counts_by_fingerprint(conn)
         injection_families = injection_mod.injection_by_fingerprint(conn)
+        # One mark read for the whole worklist, then a lookup per row -- the injection
+        # dict pattern above; only the badge's detail string is needed here.
+        generated_details = {digest: mark['detail']
+                             for digest, mark in generated_mod.generated_marks(conn).items()}
         rows = [_worklist_row(item, levels.get(item['fingerprint'], 'normal'),
                               risk_levels.get(item['fingerprint']),
                               reach_levels.get(item['fingerprint']),
                               note_counts.get(item['fingerprint'], 0),
-                              injection_families.get(item['fingerprint'])) for item in items]
+                              injection_families.get(item['fingerprint']),
+                              generated_details.get(item['fingerprint'])) for item in items]
         top = items[0]['fingerprint'] if items else None
         # Two query strings so each filter row preserves the OTHER axes: the size
         # chips keep category/package/reach, the reach chips keep category/package/
@@ -293,6 +427,28 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             reviewability=reviewability, reviewabilities=_worklist_reviewability_chips(levels),
             reach=reach, reaches=_worklist_reach_chips(reach_levels),
             base_qs=urlencode(size_params), reach_qs=urlencode(reach_params))
+
+    def _diff_render_args(context) -> dict:
+        """The files-changed / diff template args, shared by the review page and its
+        error re-render so both tag and collapse identically.
+
+        The context already carries the mark's badge and path set (they come from the same
+        row); the per-file evidence the collapsed summaries state does not ride on the
+        context, so the mark is read here for it.
+
+        ``tally`` is the construct-vs-residue split (:func:`construct_tally_row`) --
+        ``None`` for an unmarked page, so nothing new renders there.
+        """
+        entries = generated_entries(generated_mod.generated_marks(conn).get(context.fingerprint))
+        files = file_rows(context.diff_body, context.generated_paths)
+        segments = diff_segments(diff_lines(context.context_view), files, entries)
+        return {
+            'files': files,
+            'segments': segments,
+            'collapsed': sum(1 for segment in segments if segment['generated']),
+            'generated': context.generated_detail,
+            'tally': construct_tally_row(context),
+        }
 
     @app.route('/review/<fingerprint>')
     def review(fingerprint):
@@ -322,8 +478,7 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             oversized_lines=reviewability_mod.REVIEWABILITY_OVERSIZED_LINES,
             notes=ledger_mod.notes_for(conn, resolved), can_note=signer is not None,
             package_lines=review_mod._format_package_lines(context),
-            files=file_rows(context.diff_body),
-            diff=diff_lines(context.context_view))
+            **_diff_render_args(context))
 
     @app.route('/review/<fingerprint>', methods=['POST'])
     def submit_review(fingerprint):
@@ -350,9 +505,8 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
                 categories=categories,
                 notes=ledger_mod.notes_for(conn, resolved), can_note=True,
                 package_lines=review_mod._format_package_lines(context),
-                files=file_rows(context.diff_body),
-                diff=diff_lines(context.context_view),
-                error='pick a verdict: accept the draft, a category, or defer'), 400
+                error='pick a verdict: accept the draft, a category, or defer',
+                **_diff_render_args(context)), 400
 
         # Capture the clock ONCE, server-side, so the signed record and the
         # decision share the timestamp -- exactly as the CLI threads _cli_now().
@@ -549,6 +703,18 @@ _HEAD = '''<!doctype html>
  .prov.claim-unconfirmed { background: #4a1c1c; color: #ff9a92; }
  .inj { display: inline-block; padding: 0 0.4rem; border-radius: 0.2rem;
         font-size: 0.8rem; font-weight: bold; background: #3a1147; color: #e29aff; }
+ .gen { display: inline-block; padding: 0 0.4rem; border-radius: 0.2rem;
+        font-size: 0.8rem; font-weight: bold; background: #1b2b3a; color: #7fb0d8; }
+ /* A generated-claiming file's diff block: collapsed by default, expandable, and
+    summarised loudly -- presentation only, nothing is dropped from the page. */
+ details.gen-seg { border: 1px solid #2a2f38; border-radius: 0.3rem; margin: 0.4rem 0;
+                   background: #14171b; }
+ details.gen-seg > summary { cursor: pointer; padding: 0.35rem 0.6rem; color: #b0b6c0;
+                             font: 12px/1.4 ui-monospace, monospace; }
+ details.gen-seg > pre.diff { border: 0; border-top: 1px solid #2a2f38; margin: 0; }
+ /* A dangerous-construct hit in the hand-written residue: the attention-worthy case,
+    so it is loud where an all-generated tally is merely muted reassurance. */
+ .residue-hit { color: #ff7b72; font-weight: bold; }
  .inj-block { background: #1e1428; border-left: 3px solid #a855f7;
               padding: 0.5rem 0.8rem; border-radius: 0.3rem; margin: 0.6rem 0; }
  .next { display: inline-block; margin: 0.5rem 0; padding: 0.4rem 0.8rem;
@@ -671,7 +837,10 @@ document.addEventListener('keydown', function(e) {
         <span class="muted">-</span>{% endif %}</td>
     <td>{{ row.draft_category or '-' }}</td>
     <td>{% if row.reviewability %}<span class="rev {{ row.reviewability }}"
-        >{{ row.reviewability }}</span>{% endif %}</td>
+        >{{ row.reviewability }}</span>{% endif %}{% if row.generated %}
+        <span class="gen"
+              title="files claiming to be generator output; collapsed on the review page"
+              >{{ row.generated }}</span>{% endif %}</td>
     <td>{{ row.n_packages }}</td>
     <td class="mono"><a href="/review/{{ row.fingerprint }}">{{ row.short }}</a>{% if row.injection %}
         <span class="inj"
@@ -684,14 +853,23 @@ document.addEventListener('keydown', function(e) {
 </table>
 ''' + _FOOT
 
-REVIEW_TEMPLATE = _HEAD.replace('{{ title }}', 'review') + '''
+REVIEW_TEMPLATE = _HEAD.replace('{{ title }}', 'review') + '''{#
+  One diff line -> one span, shared by the plain blocks and the collapsed ones so both
+  render the SAME markup; a line inside a collapsed block carries no file_index, because
+  its anchor moved to the <details> wrapping it.
+#}{% macro spans(lines) %}{% for line in lines %}<span{% if line.file_index
+  %} id="file-{{ line.file_index }}"{% endif
+  %} class="{{ line.css }}">{{ line.text }}</span>{% endfor %}{% endmacro %}
 <p id="top"><a href="/">&larr; worklist</a></p>
 <h1 class="mono">{{ ctx.fingerprint[:16] }}<span class="muted">{{ ctx.fingerprint[16:] }}</span>
 {% if risk %} <span class="risk {{ risk }}">risk: {{ risk }}</span>{% endif %}
 {% if reach %} <span class="reach {{ reach }}">reach: {{ reach }}</span>{% endif %}
 {% if provenance %} <span class="prov {{ provenance }}">{{ provenance }}</span>{% endif %}
 {% if injection %} <span class="inj" title="not sent to the LLM">&#9888; injection-suspect</span>{% endif %}
-{% if reviewability %} <span class="rev {{ reviewability }}">{{ reviewability }}</span>{% endif %}</h1>
+{% if reviewability %} <span class="rev {{ reviewability }}">{{ reviewability }}</span>{% endif %}{%
+  if generated %} <span class="gen"
+  title="files claiming to be generator output; collapsed in the diff below, never hidden"
+  >claims generated: {{ generated }}</span>{% endif %}</h1>
 {% if injection %}
 <p class="inj-block">This patch tripped the prompt-injection tripwire
 (<b>{{ injection }}</b>): its text carries injection-shaped content aimed at the classifier, so it was
@@ -815,15 +993,30 @@ document.addEventListener('keydown', function(e) {
   <tr>
     <td class="n add">+{{ f.added }}</td>
     <td class="n del">-{{ f.removed }}</td>
-    <td><a href="#file-{{ f.index }}">{{ f.path }}</a></td>
+    <td><a href="#file-{{ f.index }}">{{ f.path }}</a>{% if f.generated %} <span class="gen"
+        title="claims to be generator output; its block below is collapsed">[gen]</span>{% endif %}</td>
   </tr>
   {% endfor %}
 </table>
 {% endif %}
 <h2>Diff in upstream context</h2>
-<pre class="diff">{% for line in diff %}<span{% if line.file_index
-  %} id="file-{{ line.file_index }}"{% endif
-  %} class="{{ line.css }}">{{ line.text }}</span>{% endfor %}</pre>
+{% if collapsed %}<p class="muted">{{ collapsed }} generated-claiming file(s) below are
+collapsed &mdash; click a summary to expand one. Nothing is hidden: every collapsed block is
+on this page in full, and a mark says only what a file claims about itself.</p>
+{% endif %}{% if tally %}<p class="muted">dangerous constructs in this body:
+{{ tally.total }} total &mdash; {{ tally.in_marked }} in generated-claiming files,
+{% if tally.in_residue %}<span class="residue-hit"
+  title="{{ tally.residue_hits }}">{{ tally.in_residue }} in the residue</span>{%
+  else %}0 in the residue{% endif %}. Recomputed from this diff at display time (not the
+ledger's recorded observation count, which may differ); a construct claiming to be
+generated is still a construct.</p>
+{% endif %}{% for seg in segments %}{% if seg.generated %}<details class="gen-seg"
+  id="file-{{ seg.file_index }}"><summary>{{ seg.path }}
+  <span class="add">+{{ seg.added }}</span> <span class="del">-{{ seg.removed }}</span>
+  &middot; claims generated{% if seg.signals %} ({{ seg.signals }}){% endif %}{%
+  if seg.generator %} &middot; {{ seg.generator }}{% if seg.version %} {{ seg.version }}{%
+  endif %}{% endif %}</summary><pre class="diff">{{ spans(seg.lines) }}</pre></details>{%
+  else %}<pre class="diff">{{ spans(seg.lines) }}</pre>{% endif %}{% endfor %}
 <p class="muted">diff: <span class="key">[</span> previous change &middot;
   <span class="key">]</span> next change
   {% if queued and can_verdict %}&middot; <span class="key">v</span> jump to verdict

@@ -311,37 +311,70 @@ _SHELL_DANGEROUS_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 
+def _line_flags(ext: str, line: str) -> list[Flag]:
+    """The ``Flag``s one added ``line`` from an ``ext``-suffixed code file earns.
+
+    The single place the pattern tables are applied, so every caller — the whole-patch
+    scan and its per-file variant — matches the same regexes with the same
+    language scoping and the same at-most-one-flag-per-``detail`` rule.  A blank
+    line earns nothing.
+    """
+    trimmed = line.strip()
+    if not trimmed:
+        return []
+    patterns = _DANGEROUS_PATTERNS
+    if ext in _SHELL_EXTENSIONS:
+        patterns = _DANGEROUS_PATTERNS + _SHELL_DANGEROUS_PATTERNS
+    flags: list[Flag] = []
+    seen: set[str] = set()
+    for detail, pattern in patterns:
+        if detail in seen:
+            continue
+        if pattern.search(line):
+            flags.append(Flag(kind='dangerous-construct', detail=detail, evidence=trimmed))
+            seen.add(detail)
+    return flags
+
+
+def scan_dangerous_constructs_by_file(text: str) -> list[tuple[str, Flag]]:
+    """``(path, Flag)`` for every dangerous-construct hit, attributed to its file.
+
+    Exactly :func:`scan_dangerous_constructs` — same lines, same tables, same
+    order — with each flag paired to the file whose added line produced it.  The
+    attribution is what the review UI needs: the ledger's recorded
+    ``dangerous-construct`` observations carry no path, so telling a reviewer
+    whether 128 shell-out hits sit in the generated-claiming ``ltmain.sh`` or in
+    the hand-written residue can only be recomputed from the body, per file, at
+    display time (see ``generated.construct_tally``).
+
+    Runs over ``content.code_added_lines_by_file(text)``, so the code-vs-prose
+    gate is the same one the whole-patch scan applies — a construct in a manpage
+    or a build file is not seen here either.  Pure: no I/O, no network.
+    """
+    return [(path, flag)
+            for path, ext, line in content_mod.code_added_lines_by_file(text)
+            for flag in _line_flags(ext, line)]
+
+
 def scan_dangerous_constructs(text: str) -> list[Flag]:
     """Scan a patch's *code* added lines for dangerous constructs.
 
-    Runs only over ``content.code_added_lines_by_ext(text)`` — added lines in
-    code-typed files, tagged with their extension.  This is the no-cry-wolf
-    guarantee at two levels: a construct in a manpage or other prose file is
-    never seen (only code files are scanned), and shell-only patterns (backtick
-    command substitution) run only on shell files, so a JavaScript template
-    literal or Lisp quasiquote using the same character does not flag.
+    Runs only over added lines in code-typed files, tagged with their extension.
+    This is the no-cry-wolf guarantee at two levels: a construct in a manpage or
+    other prose file is never seen (only code files are scanned), and shell-only
+    patterns (backtick command substitution) run only on shell files, so a
+    JavaScript template literal or Lisp quasiquote using the same character does
+    not flag.
 
     Each matched line yields at most one ``Flag`` per distinct ``detail`` (so a
     line matching several shell-out variants flags ``shell-out`` once).  Returns
     candidate flags for review — never a verdict.
+
+    The flags of :func:`scan_dangerous_constructs_by_file` with the attribution
+    dropped: one scan, so the recorded observations and any per-file recount of
+    the same body can never disagree about what fired.
     """
-    flags: list[Flag] = []
-    for ext, line in content_mod.code_added_lines_by_ext(text):
-        trimmed = line.strip()
-        if not trimmed:
-            continue
-        patterns = _DANGEROUS_PATTERNS
-        if ext in _SHELL_EXTENSIONS:
-            patterns = _DANGEROUS_PATTERNS + _SHELL_DANGEROUS_PATTERNS
-        seen: set[str] = set()
-        for detail, pattern in patterns:
-            if detail in seen:
-                continue
-            if pattern.search(line):
-                flags.append(Flag(kind='dangerous-construct', detail=detail,
-                                  evidence=trimmed))
-                seen.add(detail)
-    return flags
+    return [flag for _path, flag in scan_dangerous_constructs_by_file(text)]
 
 
 # ---------------------------------------------------------------------------

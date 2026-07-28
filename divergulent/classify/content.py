@@ -501,6 +501,27 @@ def _ignore_file_only(sections: list[_FileSection]) -> bool:
 # Public API
 # ---------------------------------------------------------------------------
 
+def code_added_lines_by_file(text: str) -> list[tuple[str, str, str]]:
+    """Return ``(path, extension, line)`` for each ``+`` line in *code*-typed files.
+
+    The widest of the three added-line views, and the one the other two are built
+    from, so the code-vs-prose gate ("only ``code``-typed sections") is defined
+    exactly once.  ``path`` is the section path (as ``profile`` reports it), which
+    is what lets a scan ATTRIBUTE a hit to the file it came from -- the review UI
+    splits dangerous-construct hits into generated-claiming files versus the
+    hand-written residue, and that split is only possible per file.
+
+    Pure: no I/O, no network.  Reuses ``_parse_sections`` so header-skipping and
+    file typing match ``profile`` exactly.
+    """
+    lines: list[tuple[str, str, str]] = []
+    for section in _parse_sections(text):
+        if section.file_type == 'code':
+            ext = _extension(_basename(section.path))
+            lines.extend((section.path, ext, line) for line in section.added)
+    return lines
+
+
 def code_added_lines_by_ext(text: str) -> list[tuple[str, str]]:
     """Return ``(extension, line)`` for each ``+`` line in *code*-typed files.
 
@@ -511,15 +532,10 @@ def code_added_lines_by_ext(text: str) -> list[tuple[str, str]]:
     literal or Emacs Lisp quasiquote, so the backtick rule must fire only on
     shell files or it cries wolf.
 
-    Pure: no I/O, no network.  Reuses ``_parse_sections`` so header-skipping and
-    file typing match ``profile`` exactly.
+    Pure: no I/O, no network.  A projection of ``code_added_lines_by_file`` --
+    same lines, same order, path dropped.
     """
-    lines: list[tuple[str, str]] = []
-    for section in _parse_sections(text):
-        if section.file_type == 'code':
-            ext = _extension(_basename(section.path))
-            lines.extend((ext, line) for line in section.added)
-    return lines
+    return [(ext, line) for _path, ext, line in code_added_lines_by_file(text)]
 
 
 def code_added_lines(text: str) -> list[str]:
