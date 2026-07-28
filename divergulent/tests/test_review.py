@@ -622,8 +622,8 @@ class RenderInContextTestCase(testtools.TestCase):
 
 
 def _context(*, packages, source_package='reader', version='1.2-3', package_date=None,
-             generated_detail=None, generated_paths=frozenset(), generated_residue=None,
-             diff_body=''):
+             package_description=None, generated_detail=None, generated_paths=frozenset(),
+             generated_residue=None, diff_body=''):
     """A minimal ReviewContext for exercising the package-line and mark formatters."""
     return review.ReviewContext(
         fingerprint='f' * 64, diff_body=diff_body, context_view='',
@@ -632,6 +632,7 @@ def _context(*, packages, source_package='reader', version='1.2-3', package_date
         claim_bugs=(), claim_cves=(), claim_date=None, reason=None,
         source_package=source_package, version=version, patch_name='fix.patch',
         packages=tuple(packages), package_date=package_date,
+        package_description=package_description,
         generated_detail=generated_detail, generated_paths=frozenset(generated_paths),
         generated_residue=generated_residue)
 
@@ -718,6 +719,17 @@ class FormatPackageLinesTestCase(testtools.TestCase):
 
     def test_package_age_omitted_when_absent(self):
         lines = review._format_package_lines(_context(packages=['reader'], package_date=None))
+        self.assertEqual(['package: reader (1.2-3)'], lines)
+
+    def test_description_is_shown_when_known(self):
+        lines = review._format_package_lines(
+            _context(packages=['reader'], package_description='reformat man pages'))
+        self.assertEqual(
+            ['package: reader (1.2-3)', 'description: reformat man pages'], lines)
+
+    def test_description_omitted_when_absent(self):
+        lines = review._format_package_lines(
+            _context(packages=['reader'], package_description=None))
         self.assertEqual(['package: reader (1.2-3)'], lines)
 
     def test_multiple_packages_listed(self):
@@ -1334,3 +1346,50 @@ class PackageDateTestCase(testtools.TestCase):
     def test_missing_package_table_is_none(self):
         path = self._index([], with_table=False)
         self.assertIsNone(review._package_date(path, 'rman'))
+
+
+class PackageDescriptionTestCase(testtools.TestCase):
+    """`_package_description` reads the index `package` table; absent -> None, not an error."""
+
+    def _index(self, rows, *, with_column=True, with_table=True):
+        import sqlite3
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = os.path.join(tmp.name, 'fingerprints.sqlite')
+        conn = sqlite3.connect(path)
+        if with_table and with_column:
+            conn.execute('CREATE TABLE package ('
+                         'source_package TEXT, version TEXT, changelog_date TEXT, description TEXT)')
+            conn.executemany('INSERT INTO package VALUES (?, ?, ?, ?)', rows)
+        elif with_table:
+            # An index measured before the description column existed.
+            conn.execute('CREATE TABLE package (source_package TEXT, version TEXT, changelog_date TEXT)')
+            conn.executemany('INSERT INTO package VALUES (?, ?, ?)', rows)
+        else:
+            conn.execute('CREATE TABLE patch (fingerprint TEXT)')   # an index predating the table
+        conn.commit()
+        conn.close()
+        return path
+
+    def test_returns_the_recorded_synopsis(self):
+        path = self._index([('rman', '3.2-10', '2020-05-20', 'reformat man pages')])
+        self.assertEqual('reformat man pages', review._package_description(path, 'rman'))
+
+    def test_newest_capture_wins_and_nulls_are_skipped(self):
+        path = self._index([
+            ('rman', '3.2-9', '2018-01-01', 'old synopsis'),
+            ('rman', '3.2-10', '2020-05-20', None),
+            ('rman', '3.2-10', '2019-06-01', 'newer synopsis')])
+        self.assertEqual('newer synopsis', review._package_description(path, 'rman'))
+
+    def test_unknown_package_is_none(self):
+        path = self._index([('rman', '3.2-10', '2020-05-20', 'reformat man pages')])
+        self.assertIsNone(review._package_description(path, 'other'))
+
+    def test_missing_description_column_is_none(self):
+        path = self._index([('rman', '3.2-10', '2020-05-20')], with_column=False)
+        self.assertIsNone(review._package_description(path, 'rman'))
+
+    def test_missing_package_table_is_none(self):
+        path = self._index([], with_table=False)
+        self.assertIsNone(review._package_description(path, 'rman'))

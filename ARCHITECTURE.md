@@ -99,15 +99,16 @@ installed-package inventory never leaves the machine.
   - `corpus.py` — crawls the archive's patched packages (reusing
     `apt_patches`' uncapped fetch) into a resumable, content-addressed
     corpus of raw patch bodies, capturing each package's
-    `debian/changelog` last-upload date for review-time package-age
-    display.
+    `debian/changelog` last-upload date and one-line `debian/control`
+    description synopsis for review-time display.
   - `fingerprint.py` — the pure, versioned `normalise()`/`fingerprint()`
     (canonical v1 = `strip_path`, `keep_context`); the identity every
     later phase keys on.
   - `measure.py` — deduplicates into a sqlite fingerprint index (a
-    `patch` table plus a `package` table carrying the changelog date and
-    `.dsc` binary names). Measured ≈61.5k carried patches → 60,640
-    distinct (dedup 1.02x — carried patches are overwhelmingly bespoke).
+    `patch` table plus a `package` table carrying the changelog date,
+    `.dsc` binary names and control synopsis). Measured ≈61.5k carried
+    patches → 60,640 distinct (dedup 1.02x — carried patches are
+    overwhelmingly bespoke).
   - `claim.py` / `content.py` / `rules.py` / `classify.py` — the
     deterministic extractors: the author's (untrusted) DEP-3 claim; the
     content profile (code-vs-prose file typing, conservative

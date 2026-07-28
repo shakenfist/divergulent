@@ -62,7 +62,7 @@ def _build_synthetic_corpus(corpus_dir):
     package_rows = [
         {'source_package': 'pkg-a', 'version': '1-1', 'state': 'patched',
          'source_format': '3.0 (quilt)', 'n_patches': 1, 'changelog_date': '2020-05-20',
-         'binaries': ['pkg-a', 'libpkg-a0'], 'error': None},
+         'binaries': ['pkg-a', 'libpkg-a0'], 'description': 'package a does things', 'error': None},
         {'source_package': 'pkg-b', 'version': '1-1', 'state': 'patched',
          'source_format': '3.0 (quilt)', 'n_patches': 1, 'error': None},
         {'source_package': 'pkg-c', 'version': '1-1', 'state': 'patched',
@@ -248,6 +248,16 @@ class WriteIndexTestCase(testtools.TestCase):
                     connection.execute('SELECT source_package, binaries FROM package')}
         self.assertEqual(['pkg-a', 'libpkg-a0'], binaries['pkg-a'])  # captured binary names
         self.assertEqual([], binaries['pkg-b'])                      # no binaries -> []
+
+    def test_index_package_table_carries_descriptions(self):
+        corpus_dir = self._corpus()
+        index_path = os.path.join(corpus_dir, 'fingerprints.sqlite')
+        measure.write_index(corpus_dir, index_path)
+        connection = sqlite3.connect(index_path)
+        self.addCleanup(connection.close)
+        descriptions = dict(connection.execute('SELECT source_package, description FROM package'))
+        self.assertEqual('package a does things', descriptions['pkg-a'])  # captured control synopsis
+        self.assertIsNone(descriptions['pkg-b'])                          # pre-feature row -> NULL
 
 
 class FindingsNoteTestCase(testtools.TestCase):

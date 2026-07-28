@@ -691,7 +691,10 @@ class ReviewContext:
     (``source_package``/``version``/``patch_name`` are the representative instance;
     ``patch_name`` travels here because the evidence blob records it; ``packages``
     is every source package carrying the identical patch -- a fingerprint is
-    deduplicated, so "which packages does this affect?" is real review context).
+    deduplicated, so "which packages does this affect?" is real review context;
+    ``package_description`` is the representative package's one-line
+    ``debian/control`` synopsis, orienting a reviewer who has never heard of the
+    package -- ``None`` on an index built before it was captured).
     The claim fields are AUTHOR-CONTROLLED and unverified -- they say what the
     author alleges the patch fixes, to be read against the diff, never trusted.
     ``reason`` is the queue routing reason when this context was built from a queue
@@ -726,6 +729,7 @@ class ReviewContext:
     patch_name: str
     packages: tuple[str, ...]
     package_date: str | None
+    package_description: str | None = None
     generated_detail: str | None = None
     generated_paths: frozenset[str] = frozenset()
     generated_residue: tuple[int, int] | None = None
@@ -842,6 +846,7 @@ def build_review_context(conn: sqlite3.Connection, corpus_dir: str, index_path: 
         patch_name=patch_name,
         packages=_carrying_packages(index_path, fingerprint),
         package_date=_package_date(index_path, source_package),
+        package_description=_package_description(index_path, source_package),
         generated_detail=generated_detail,
         generated_paths=generated_paths,
         generated_residue=generated_residue)
@@ -1004,6 +1009,31 @@ def _package_date(index_path: str, source_package: str) -> str | None:
         return row[0] if row else None
     except sqlite3.OperationalError:
         return None  # index built before the package table existed
+    finally:
+        connection.close()
+
+
+def _package_description(index_path: str, source_package: str) -> str | None:
+    """The one-line ``debian/control`` synopsis for ``source_package``, or None.
+
+    Reads the index's ``package`` table (``measure`` writes it from the corpus's
+    captured control synopses). Skips NULL rows and prefers the newest capture
+    (ordered by ``changelog_date``), so an older row without a description never
+    shadows a newer one. Returns ``None`` when the package has no recorded
+    synopsis OR when the index predates the ``description`` column (an older
+    corpus not yet re-measured), so the orientation line is simply absent rather
+    than an error.
+    """
+    connection = sqlite3.connect(index_path)
+    try:
+        row = connection.execute(
+            'SELECT description FROM package '
+            'WHERE source_package = ? AND description IS NOT NULL '
+            'ORDER BY changelog_date DESC LIMIT 1',
+            (source_package,)).fetchone()
+        return row[0] if row else None
+    except sqlite3.OperationalError:
+        return None  # index built before the description column existed
     finally:
         connection.close()
 
@@ -1175,13 +1205,18 @@ def _format_package_lines(context: ReviewContext, *, limit: int = MAX_PACKAGES_S
     """The package line(s) for the review view: representative + full blast radius.
 
     Always shows the representative ``package: <name> (<version>)``.  When the
-    fingerprint is carried by more than one source package, adds a second line
-    naming up to ``limit`` of them (truncating the rest as ``(+N more)``), so the
+    index recorded the package's one-line ``debian/control`` synopsis, a
+    ``description:`` line follows -- orienting a reviewer who has never heard of
+    the package (absent on an index built before it was captured).  When the
+    fingerprint is carried by more than one source package, adds a line naming
+    up to ``limit`` of them (truncating the rest as ``(+N more)``), so the
     reviewer sees how widely the identical patch is carried without flooding the
     screen for a fingerprint that spans dozens.
     """
     age = ' — last upload %s' % context.package_date if context.package_date else ''
     lines = ['package: %s (%s)%s' % (context.source_package, context.version, age)]
+    if context.package_description:
+        lines.append('description: %s' % context.package_description)
     others = context.packages
     if len(others) > 1:
         shown = ', '.join(others[:limit])

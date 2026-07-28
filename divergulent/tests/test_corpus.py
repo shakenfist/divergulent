@@ -15,21 +15,22 @@ PATCH_B = '--- a/y\n+++ b/y\n@@ -2 +2 @@\n-c\n+d\n'
 
 
 def _fake_fetch(table):
-    """Build a fetch() over a dict ``{(pkg, ver): (format, texts[, date[, binaries]])}``.
+    """Build a fetch() over a dict ``{(pkg, ver): (format, texts[, date[, binaries[, description]]])}``.
 
     A value of the string ``'raise'`` makes the fetch raise, exercising the
     fetch-error path; otherwise the value is padded to the full
-    ``(format, texts, changelog_date, binaries)`` shape.
+    ``(format, texts, changelog_date, binaries, description)`` shape.
     """
     def fetch(source_package, version):
         value = table[(source_package, version)]
         if value == 'raise':
             raise RuntimeError('boom')
-        # Accept legacy 2/3-tuples and pad missing changelog_date/binaries.
+        # Accept legacy 2/3/4-tuples and pad missing changelog_date/binaries/description.
         fmt, texts = value[0], value[1]
         changelog = value[2] if len(value) >= 3 else None
         binaries = value[3] if len(value) >= 4 else []
-        return fmt, texts, changelog, binaries
+        description = value[4] if len(value) >= 5 else None
+        return fmt, texts, changelog, binaries, description
     return fetch
 
 
@@ -227,6 +228,11 @@ class EndToEndExtractTestCase(testtools.TestCase):
             'real-pkg (3-1) unstable; urgency=medium\n\n'
             '  * Something.\n\n'
             ' -- Maint <m@e.org>  Wed, 20 May 2020 21:00:00 +0200\n')
+        control = (
+            'Source: real-pkg\n\n'
+            'Package: real-pkg\n'
+            'Description: a real package for testing\n'
+            ' The long description is not captured.\n')
 
         def download(source_package, version, dest):
             with open(os.path.join(dest, 'pkg.dsc'), 'w') as handle:
@@ -237,6 +243,7 @@ class EndToEndExtractTestCase(testtools.TestCase):
                 _add(tar, 'debian/patches/first.patch', PATCH_A)
                 _add(tar, 'debian/patches/second.patch', PATCH_B)
                 _add(tar, 'debian/changelog', changelog)
+                _add(tar, 'debian/control', control)
             return True
 
         def fetch(source_package, version):
@@ -252,6 +259,7 @@ class EndToEndExtractTestCase(testtools.TestCase):
         self.assertEqual(2, package_row['n_patches'])
         self.assertEqual('2020-05-20', package_row['changelog_date'])  # top entry's date
         self.assertEqual(['real-pkg', 'libreal0', 'libreal-dev'], package_row['binaries'])
+        self.assertEqual('a real package for testing', package_row['description'])  # control synopsis
         self.assertEqual(2, distinct_new)
         shas = {row['patch_name']: row['raw_sha256'] for row in patch_rows}
         self.assertEqual(body_sha256(PATCH_A), shas['first.patch'])
