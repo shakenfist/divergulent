@@ -24,7 +24,11 @@ Coverage:
   * a fingerprint carrying a live ``generated-content`` observation gets its mark
     (detail, marked paths, residue arithmetic) on the context, its marked rows
     tagged ``[gen]`` in the file list, and the mark summary under the totals --
-    while an unmarked one renders exactly as it did before the mark existed.
+    while an unmarked one renders exactly as it did before the mark existed;
+  * a marked fingerprint whose body also carries dangerous constructs gains the
+    construct-vs-residue tally line under that summary, with the residue count
+    emphasised (``!!``) when a construct landed outside the generated-claiming
+    files -- and no tally line at all when there is no mark or no construct.
 """
 import contextlib
 import io
@@ -92,6 +96,43 @@ MARKED_PATCH = (
     '-    char buf[64];\n'
     '+    char buf[4096];\n'
     ' \n')
+
+# gatos's construct story in miniature: a regenerated ``ltmain.sh`` whose added shell uses
+# backtick command substitution -- the shape of every one of gatos's 128 ``shell-out``
+# observations -- ahead of the hand-written residue.  ``ltmain.sh`` is marked by name and
+# typed ``code`` (``.sh``), so its lines are exactly what the dangerous-construct scan sees.
+# Scans to ``autotools/50``; tallies 2 construct hits, both in the marked file.
+MARKED_CONSTRUCT_PATCH = (
+    'Description: regenerate the libtool support after the buffer fix\n'
+    'Forwarded: no\n'
+    '\n'
+    '--- a/ltmain.sh\n'
+    '+++ b/ltmain.sh\n'
+    '@@ -1,1 +1,3 @@\n'
+    ' # ltmain.sh (GNU libtool) 1.5.22\n'
+    '+  func_dir=`dirname "$file"`\n'
+    '+  func_base=`basename "$file"`\n'
+    '--- a/src/reader.c\n'
+    '+++ b/src/reader.c\n'
+    '@@ -3,3 +3,3 @@\n'
+    ' int read_line(FILE *fp) {\n'
+    '-    char buf[64];\n'
+    '+    char buf[4096];\n'
+    ' \n')
+
+# The same patch with one construct in the HAND-WRITTEN residue -- the attention-worthy
+# case the tally exists to make loud.  Scans to ``autotools/40``; tallies 3 hits, 2 in the
+# marked file and 1 in ``src/reader.c``.
+RESIDUE_CONSTRUCT_PATCH = MARKED_CONSTRUCT_PATCH.replace(
+    '@@ -3,3 +3,3 @@\n'
+    ' int read_line(FILE *fp) {\n'
+    '-    char buf[64];\n'
+    '+    char buf[4096];\n',
+    '@@ -3,3 +3,4 @@\n'
+    ' int read_line(FILE *fp) {\n'
+    '-    char buf[64];\n'
+    '+    char buf[4096];\n'
+    '+    system(cmd);\n')
 
 SOURCE_PACKAGE = 'reader'
 VERSION = '1.2-3'
@@ -581,10 +622,11 @@ class RenderInContextTestCase(testtools.TestCase):
 
 
 def _context(*, packages, source_package='reader', version='1.2-3', package_date=None,
-             generated_detail=None, generated_paths=frozenset(), generated_residue=None):
+             generated_detail=None, generated_paths=frozenset(), generated_residue=None,
+             diff_body=''):
     """A minimal ReviewContext for exercising the package-line and mark formatters."""
     return review.ReviewContext(
-        fingerprint='f' * 64, diff_body='', context_view='',
+        fingerprint='f' * 64, diff_body=diff_body, context_view='',
         draft_category=None, draft_confidence=None, draft_reasoning=None,
         claim_category='unknown', claim_description=None, claim_forwarded='unknown',
         claim_bugs=(), claim_cves=(), claim_date=None, reason=None,
@@ -804,6 +846,47 @@ class FormatGeneratedSummaryTestCase(testtools.TestCase):
             generated_paths=frozenset(['configure', 'ltmain.sh']), generated_residue=(603, 46000))
         self.assertIn('1 of 2 files marked', review._format_generated_summary(context, self.STATS)[0])
 
+    def test_a_body_with_no_constructs_adds_no_tally_line(self):
+        # One line, exactly as before the tally existed: a zero row would be noise.
+        context = _context(
+            packages=['reader'], generated_detail='autotools/99',
+            generated_paths=frozenset(['configure']), generated_residue=(603, 46000))
+        self.assertEqual(1, len(review._format_generated_summary(context, self.STATS)))
+
+    def test_the_tally_line_splits_marked_from_residue(self):
+        context = _context(
+            packages=['reader'], diff_body=MARKED_CONSTRUCT_PATCH,
+            generated_detail='autotools/50', generated_paths=frozenset(['ltmain.sh']),
+            generated_residue=(2, 2))
+        self.assertEqual(
+            'dangerous constructs in this body: 2 total — 2 in generated-claiming files, '
+            '0 in the residue',
+            review._format_generated_summary(context, self.STATS)[1])
+
+    def test_a_residue_hit_is_emphasised(self):
+        context = _context(
+            packages=['reader'], diff_body=RESIDUE_CONSTRUCT_PATCH,
+            generated_detail='autotools/40', generated_paths=frozenset(['ltmain.sh']),
+            generated_residue=(3, 2))
+        line = review._format_generated_summary(context, self.STATS)[1]
+        self.assertIn('3 total', line)
+        self.assertIn('2 in generated-claiming files', line)
+        self.assertIn('!! 1 in the residue', line)
+
+    def test_the_tally_says_it_is_computed_from_this_body(self):
+        # Honest wording: it is a recount of this diff, never a claim about the ledger's
+        # recorded observation count (which may differ).
+        context = _context(
+            packages=['reader'], diff_body=MARKED_CONSTRUCT_PATCH,
+            generated_detail='autotools/50', generated_paths=frozenset(['ltmain.sh']),
+            generated_residue=(2, 2))
+        self.assertIn('in this body', review._format_generated_summary(context, self.STATS)[1])
+
+    def test_an_unmarked_context_never_tallies(self):
+        # No mark, no split to make -- and no new line on an unmarked view.
+        context = _context(packages=['reader'], diff_body=RESIDUE_CONSTRUCT_PATCH)
+        self.assertEqual([], review._format_generated_summary(context, self.STATS))
+
 
 def _rendered_view(context, choice='defer'):
     """The whole paged review view for ``context`` -- exactly what a reviewer sees.
@@ -856,6 +939,25 @@ class InteractiveViewMarkTestCase(ReviewFixture, testtools.TestCase):
         # path as it stood before the mark existed -- produces.
         untagged = '\n'.join(review._format_file_list(review.diff_file_stats(context.diff_body)))
         self.assertIn(untagged, view)
+
+    def test_the_marked_view_tallies_constructs_against_the_residue(self):
+        _context_unused, view = self._view(MARKED_CONSTRUCT_PATCH, mark=True)
+        self.assertIn(
+            'dangerous constructs in this body: 2 total — 2 in generated-claiming files, '
+            '0 in the residue', view)
+        self.assertNotIn('!!', view)
+
+    def test_a_residue_construct_is_loud_in_the_view(self):
+        _context_unused, view = self._view(RESIDUE_CONSTRUCT_PATCH, mark=True)
+        self.assertIn('!! 1 in the residue', view)
+        # And the line the reviewer must read is still right there in the diff.
+        self.assertIn('system(cmd);', view)
+
+    def test_an_unmarked_view_with_constructs_tallies_nothing(self):
+        # The split is a story about a mark; with no mark there is nothing to split, and
+        # the view is what it always was.
+        _context_unused, view = self._view(RESIDUE_CONSTRUCT_PATCH)
+        self.assertNotIn('dangerous constructs', view)
 
     def test_an_unmarked_patch_in_a_ledger_with_marks_is_untouched(self):
         # A ledger full of other fingerprints' marks must not leak a tag into this view.

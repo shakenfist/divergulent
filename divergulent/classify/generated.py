@@ -48,6 +48,15 @@ marked file with a loud note about what is not being shown, and
 the mark's residue arithmetic to say which oversized patches are reviewable after all.
 Neither is a verdict either: the first only changes what a model is shown (and says so in
 evidence), the second only changes which fingerprints reach one.
+
+Phase 4 adds the one DISPLAY helper the review UIs share, kept here for the same reason:
+``construct_tally(body, marked_paths)`` re-runs the deterministic dangerous-construct scan
+per file (``rules.scan_dangerous_constructs_by_file`` -- rules' own tables, never a second
+copy) and splits the hits into marked files versus the hand-written residue, so a reviewer
+sees whether a patch's construct hits are all generated shell or whether one landed in the
+residue.  It is advisory display recomputed from the body at render time: the ledger's
+``dangerous-construct`` observations are never read, rewritten or re-attributed, and the
+tally never claims to be their count.
 """
 from __future__ import annotations
 
@@ -57,6 +66,7 @@ from dataclasses import dataclass
 
 from divergulent.classify import content
 from divergulent.classify import fingerprint as fp
+from divergulent.classify import rules as rules_mod
 
 # Folds the name set + banner patterns into a version the phase-2 observation records;
 # bumping it supersedes prior observations and re-scans, like every deterministic rule.
@@ -261,6 +271,33 @@ class ProjectedDiff:
 
     projected: bool
     """False means the input was returned untouched; the caller records nothing."""
+
+
+@dataclass(frozen=True)
+class ConstructTally:
+    """Dangerous-construct hits in ONE body, split into marked files and the residue.
+
+    Recomputed at display time from the body (see :func:`construct_tally`); it is NOT the
+    ledger's count of ``dangerous-construct`` observations and must never be shown as one.
+    """
+
+    total: int
+    """Hits across every code-typed file in the body -- marked and residue together."""
+
+    in_marked: int
+    """Hits in files the mark says claim to be generator output."""
+
+    in_residue: int
+    """Hits in the hand-written residue.  Non-zero is the attention-worthy case.
+
+    Invariant: ``in_marked + in_residue == total``.
+    """
+
+    residue_hits: tuple[tuple[str, str], ...]
+    """Distinct ``(path, detail)`` residue hits, in first-hit order -- WHERE the loud
+    case is and WHICH pattern fired, for the display that calls it out.  Distinct
+    rather than one entry per hit: forty ``shell-out`` lines in one file are one fact
+    about that file, and ``in_residue`` already says how many there are."""
 
 
 @dataclass(frozen=True)
@@ -813,3 +850,48 @@ def residue_unlocked_fingerprints(conn) -> set[str]:
     return {digest for digest in reviewability_mod.oversized_fingerprints(conn)
             if digest in marks
             and marks[digest]['residue_changed'] <= reviewability_mod.REVIEWABILITY_OVERSIZED_LINES}
+
+
+# ---------------------------------------------------------------------------
+# Construct-vs-residue tally (render-time display)
+# ---------------------------------------------------------------------------
+
+def construct_tally(body: str, marked_paths: frozenset[str]) -> ConstructTally:
+    """Split ``body``'s dangerous-construct hits into marked files and the residue.
+
+    The number a reviewer of a gatos-shaped patch actually needs: 128 ``shell-out`` hits
+    are reassuring when every one of them is in a file that claims to be generated
+    ``configure``/``ltmain.sh`` shell, and are the whole point of the review when one of
+    them is in the hand-written residue.  ``marked_paths`` is the mark's path set (the
+    review context's ``generated_paths``); a path outside it is residue, which is the
+    honest default -- an empty set tallies everything as residue.
+
+    The hits come from ``rules.scan_dangerous_constructs_by_file``, i.e. THE recorded
+    scan's own pattern tables and its own code-vs-prose gate, reached through the live
+    module so a pattern added there flows into this tally with no second table to keep in
+    step.  A construct in a doc file (or a build file such as ``configure``) counts
+    nowhere here, exactly as it flagged nowhere when the observations were recorded.
+
+    ADVISORY DISPLAY ONLY.  Nothing here reads, rewrites or re-attributes the ledger's
+    ``dangerous-construct`` observations; those are recorded evidence and stay as
+    recorded.  ``total`` may therefore differ from a fingerprint's observation count --
+    the rows were recorded from the representative body under whatever rule version was
+    then current -- so the display says the tally is computed from THIS body and never
+    claims to be the ledger's number.
+
+    Pure: no I/O, no network.
+    """
+    total = in_marked = 0
+    residue_hits: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for path, flag in rules_mod.scan_dangerous_constructs_by_file(body):
+        total += 1
+        if path in marked_paths:
+            in_marked += 1
+            continue
+        key = (path, flag.detail)
+        if key not in seen:
+            seen.add(key)
+            residue_hits.append(key)
+    return ConstructTally(total=total, in_marked=in_marked, in_residue=total - in_marked,
+                          residue_hits=tuple(residue_hits))

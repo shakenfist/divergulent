@@ -22,7 +22,8 @@ from divergulent.classify import reviewability
 from divergulent.classify import risk
 from divergulent.classify import verdict as verdict_mod
 from divergulent.tests.test_review import (
-    MARKED_PATCH, ORIGINAL, SOURCE_PACKAGE, WHEN, _build_corpus)
+    MARKED_CONSTRUCT_PATCH, MARKED_PATCH, ORIGINAL, RESIDUE_CONSTRUCT_PATCH,
+    SOURCE_PACKAGE, WHEN, _build_corpus)
 
 
 def _fetch(url):
@@ -747,6 +748,84 @@ class GeneratedWebTestCase(ReviewWebFixture, testtools.TestCase):
         self.assertEqual(before, after)
         self.assertNotIn('<details', after)
         self.assertEqual(1, after.count('<pre class="diff">'))
+
+
+class ConstructTallyWebTestCase(ReviewWebFixture, testtools.TestCase):
+    """The construct-vs-residue tally on the detail page: how many of this body's
+    dangerous-construct hits sit in the generated-claiming files, and how many sit in the
+    residue -- the second being loud, because it is the one worth a reviewer's attention.
+
+    Advisory display recomputed from the body; the fixtures record the mark and nothing
+    else, so no ``dangerous-construct`` observation exists to be read or rewritten.
+    """
+
+    def _page(self, patch, *, mark=True):
+        client, conn, fp_hex = self._client(patch=patch)
+        if mark:
+            _seed_generated(conn, fp_hex, patch)
+        return client.get('/review/' + fp_hex).get_data(as_text=True)
+
+    def test_the_tally_states_the_counts(self):
+        body = self._page(MARKED_CONSTRUCT_PATCH)
+        self.assertIn('dangerous constructs in this body:', body)
+        self.assertIn('2 total', body)
+        self.assertIn('2 in generated-claiming files', body)
+        self.assertIn('0 in the residue', body)
+
+    def test_an_all_generated_tally_is_not_loud(self):
+        # The loud class is in the shared stylesheet always; what matters is that no
+        # element wears it when every hit is inside a generated-claiming file.
+        body = self._page(MARKED_CONSTRUCT_PATCH)
+        self.assertNotIn('class="residue-hit"', body)
+
+    def test_a_residue_hit_gets_the_loud_class_and_names_itself(self):
+        body = self._page(RESIDUE_CONSTRUCT_PATCH)
+        self.assertIn('class="residue-hit"', body)
+        self.assertIn('1 in the residue', body)
+        self.assertIn('3 total', body)
+        # The loud span says WHERE and WHICH pattern, so the reviewer knows what to read.
+        self.assertIn('shell-out in src/reader.c', body)
+
+    def test_the_tally_never_claims_to_be_the_ledger_count(self):
+        # The recorded observations come from the representative body at record time and
+        # can differ; the page says the number is recomputed here.
+        body = self._page(MARKED_CONSTRUCT_PATCH)
+        self.assertIn('Recomputed from this diff at display time', body)
+        self.assertNotIn('safe', body.lower())
+
+    def test_an_unmarked_page_with_constructs_renders_no_tally(self):
+        body = self._page(RESIDUE_CONSTRUCT_PATCH, mark=False)
+        self.assertNotIn('dangerous constructs in this body', body)
+        self.assertNotIn('class="residue-hit"', body)
+
+    def test_a_marked_page_with_no_constructs_renders_no_tally(self):
+        body = self._page(MARKED_PATCH)
+        self.assertIn('claims generated: autotools/60', body)   # marked, and badged
+        self.assertNotIn('dangerous constructs', body)          # but nothing to tally
+
+    def test_the_row_is_none_for_an_unmarked_context(self):
+        from divergulent.tests.test_review import _context
+        self.assertIsNone(review_web.construct_tally_row(
+            _context(packages=['reader'], diff_body=RESIDUE_CONSTRUCT_PATCH)))
+
+    def test_the_row_carries_the_split_and_the_hits(self):
+        from divergulent.tests.test_review import _context
+        row = review_web.construct_tally_row(_context(
+            packages=['reader'], diff_body=RESIDUE_CONSTRUCT_PATCH,
+            generated_detail='autotools/40', generated_paths=frozenset(['ltmain.sh'])))
+        self.assertEqual(
+            {'total': 3, 'in_marked': 2, 'in_residue': 1,
+             'residue_hits': 'shell-out in src/reader.c'}, row)
+
+    def test_an_unmarked_page_stays_byte_identical(self):
+        # The do-no-harm bar again, now with a body that HAS constructs: the tally adds
+        # nothing to a page with no mark, even once another fingerprint carries one.
+        client, conn, fp_hex = self._client(patch=RESIDUE_CONSTRUCT_PATCH)
+        before = client.get('/review/' + fp_hex).get_data(as_text=True)
+        _seed_generated(conn, 'b' * 64, MARKED_CONSTRUCT_PATCH)
+        after = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertEqual(before, after)
+        self.assertNotIn('dangerous constructs', after)
 
 
 class ReachWebTestCase(ReviewWebFixture, testtools.TestCase):

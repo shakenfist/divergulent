@@ -11,7 +11,7 @@ import testtools
 
 from divergulent.classify.content import (
     ContentProfile, CONTENT_RULE_VERSION, FILE_TYPES, code_added_lines,
-    code_added_lines_by_ext, profile)
+    code_added_lines_by_ext, code_added_lines_by_file, profile)
 from divergulent.classify.content import _classify_file
 
 
@@ -418,6 +418,35 @@ class CodeAddedLinesTestCase(testtools.TestCase):
         )
         self.assertEqual(
             [('.sh', 'echo hi'), ('.js', 'const x = 1')],
+            code_added_lines_by_ext(diff))
+
+    def test_by_file_tags_each_line_with_its_path(self):
+        # The attribution a per-file scan needs: which file each added line came from,
+        # so a construct hit can be located against the diff (never just counted).
+        diff = (
+            '--- a/run.sh\n+++ b/run.sh\n@@ -1 +1,2 @@\n ctx\n+echo hi\n'
+            '--- a/src/app.js\n+++ b/src/app.js\n@@ -1 +1,2 @@\n ctx\n+const x = 1\n'
+        )
+        self.assertEqual(
+            [('run.sh', '.sh', 'echo hi'), ('src/app.js', '.js', 'const x = 1')],
+            code_added_lines_by_file(diff))
+
+    def test_by_file_applies_the_same_code_gate(self):
+        # One gate, one definition: the path-carrying view drops prose exactly as the
+        # other two do.
+        diff = (
+            _edit('man/foo.1', removed='.B old', added='system("/bin/sh")')
+            + _edit('src/foo.c', removed='int x;', added='int y;')
+        )
+        self.assertEqual([('src/foo.c', '.c', 'int y;')], code_added_lines_by_file(diff))
+
+    def test_by_ext_is_by_file_with_the_path_dropped(self):
+        diff = (
+            '--- a/run.sh\n+++ b/run.sh\n@@ -1 +1,2 @@\n ctx\n+echo hi\n'
+            '--- a/src/app.js\n+++ b/src/app.js\n@@ -1 +1,2 @@\n ctx\n+const x = 1\n'
+        )
+        self.assertEqual(
+            [(ext, line) for _path, ext, line in code_added_lines_by_file(diff)],
             code_added_lines_by_ext(diff))
 
     def test_excludes_doc_added_lines(self):

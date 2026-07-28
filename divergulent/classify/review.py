@@ -1217,23 +1217,42 @@ def _format_file_list(stats: list[FileStat], marked_paths: frozenset[str] = froz
 
 
 def _format_generated_summary(context: ReviewContext, stats: list[FileStat]) -> list[str]:
-    """The mark's one-line summary, shown directly under the files-changed totals.
+    """The mark's summary lines, shown directly under the files-changed totals.
 
     EMPTY for an unmarked fingerprint, so an unmarked review view is byte-identical to the
-    one this tool rendered before the mark existed.  For a marked one it states how many
-    of the touched files claim to be generator output, the mark's ``'<family>/<percent>'``
-    detail, and the residue -- the hand-written changed lines that are what the reviewer is
-    actually being asked to read, and the number that decides how big this patch really is.
-    The count is taken over the files this diff touches, so it describes the list it heads
-    rather than the mark in the abstract.  "claiming", never "safe": the mark says only
-    what a file says about itself, and every marked file is still listed and still shown.
+    one this tool rendered before the mark existed.  For a marked one the first line states
+    how many of the touched files claim to be generator output, the mark's
+    ``'<family>/<percent>'`` detail, and the residue -- the hand-written changed lines that
+    are what the reviewer is actually being asked to read, and the number that decides how
+    big this patch really is.  The count is taken over the files this diff touches, so it
+    describes the list it heads rather than the mark in the abstract.  "claiming", never
+    "safe": the mark says only what a file says about itself, and every marked file is
+    still listed and still shown.
+
+    A marked patch that also carries dangerous-construct hits gains a second line splitting
+    them into marked files versus the residue (:func:`generated.construct_tally`), because
+    that split is what makes the hits readable: hundreds of ``shell-out`` matches inside a
+    regenerated ``ltmain.sh`` are the shape of autotools output, while ONE in the residue is
+    the thing to read the diff for -- so a non-zero residue count is called out with ``!!``.
+    The line is recomputed from this body and says so; it is not the ledger's observation
+    count (those rows are recorded evidence and are neither read nor changed here), and the
+    two can differ.
     """
     if context.generated_detail is None:
         return []
     marked = sum(1 for stat in stats if stat.path in context.generated_paths)
     residue = context.generated_residue[0] if context.generated_residue is not None else 0
-    return ['generated-claiming: %d of %d files marked (%s); residue %d lines changed' % (
+    lines = ['generated-claiming: %d of %d files marked (%s); residue %d lines changed' % (
         marked, len(stats), context.generated_detail, residue)]
+
+    tally = generated_mod.construct_tally(context.diff_body, context.generated_paths)
+    if tally.total:
+        residue_part = ('!! %d in the residue' % tally.in_residue if tally.in_residue
+                        else '%d in the residue' % tally.in_residue)
+        lines.append('dangerous constructs in this body: %d total — %d in '
+                     'generated-claiming files, %s' % (
+                         tally.total, tally.in_marked, residue_part))
+    return lines
 
 
 def _assignable_categories() -> tuple[str, ...]:

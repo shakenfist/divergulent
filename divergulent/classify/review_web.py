@@ -213,6 +213,34 @@ def diff_segments(rows: list[dict], files: list[dict], entries: dict[str, dict])
     return segments
 
 
+def construct_tally_row(context) -> dict | None:
+    """The dangerous-construct split for the detail page, or ``None`` to render nothing.
+
+    ``{total, in_marked, in_residue, residue_hits}`` from
+    ``generated.construct_tally`` over the context's own diff body, so the page can say
+    whether a marked patch's construct hits are all inside the generated-claiming files or
+    whether one landed in the hand-written residue -- the single fact that decides how much
+    of a 47k-line regeneration a reviewer has to worry about.
+
+    ``None`` when the fingerprint carries no mark (there is no marked/residue split to
+    make, and an unmarked page must render exactly as it did before) or when the body has
+    no construct hits at all (a zero row is noise).  ``residue_hits`` is a compact
+    ``'<detail> in <path>'`` list naming the loud case, for the summary's title text.
+
+    ADVISORY: recomputed from this body at render time.  No ``dangerous-construct``
+    observation is read or rewritten, and the page never presents this as the ledger's
+    count.
+    """
+    if context.generated_detail is None:
+        return None
+    tally = generated_mod.construct_tally(context.diff_body, context.generated_paths)
+    if not tally.total:
+        return None
+    return {'total': tally.total, 'in_marked': tally.in_marked, 'in_residue': tally.in_residue,
+            'residue_hits': ', '.join('%s in %s' % (detail, path)
+                                      for path, detail in tally.residue_hits)}
+
+
 def category_chips(counts: dict) -> list[dict]:
     """The full assignable category set as ``{name, count}`` chips, in enum order.
 
@@ -407,6 +435,9 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
         The context already carries the mark's badge and path set (they come from the same
         row); the per-file evidence the collapsed summaries state does not ride on the
         context, so the mark is read here for it.
+
+        ``tally`` is the construct-vs-residue split (:func:`construct_tally_row`) --
+        ``None`` for an unmarked page, so nothing new renders there.
         """
         entries = generated_entries(generated_mod.generated_marks(conn).get(context.fingerprint))
         files = file_rows(context.diff_body, context.generated_paths)
@@ -416,6 +447,7 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             'segments': segments,
             'collapsed': sum(1 for segment in segments if segment['generated']),
             'generated': context.generated_detail,
+            'tally': construct_tally_row(context),
         }
 
     @app.route('/review/<fingerprint>')
@@ -680,6 +712,9 @@ _HEAD = '''<!doctype html>
  details.gen-seg > summary { cursor: pointer; padding: 0.35rem 0.6rem; color: #b0b6c0;
                              font: 12px/1.4 ui-monospace, monospace; }
  details.gen-seg > pre.diff { border: 0; border-top: 1px solid #2a2f38; margin: 0; }
+ /* A dangerous-construct hit in the hand-written residue: the attention-worthy case,
+    so it is loud where an all-generated tally is merely muted reassurance. */
+ .residue-hit { color: #ff7b72; font-weight: bold; }
  .inj-block { background: #1e1428; border-left: 3px solid #a855f7;
               padding: 0.5rem 0.8rem; border-radius: 0.3rem; margin: 0.6rem 0; }
  .next { display: inline-block; margin: 0.5rem 0; padding: 0.4rem 0.8rem;
@@ -968,6 +1003,13 @@ document.addEventListener('keydown', function(e) {
 {% if collapsed %}<p class="muted">{{ collapsed }} generated-claiming file(s) below are
 collapsed &mdash; click a summary to expand one. Nothing is hidden: every collapsed block is
 on this page in full, and a mark says only what a file claims about itself.</p>
+{% endif %}{% if tally %}<p class="muted">dangerous constructs in this body:
+{{ tally.total }} total &mdash; {{ tally.in_marked }} in generated-claiming files,
+{% if tally.in_residue %}<span class="residue-hit"
+  title="{{ tally.residue_hits }}">{{ tally.in_residue }} in the residue</span>{%
+  else %}0 in the residue{% endif %}. Recomputed from this diff at display time (not the
+ledger's recorded observation count, which may differ); a construct claiming to be
+generated is still a construct.</p>
 {% endif %}{% for seg in segments %}{% if seg.generated %}<details class="gen-seg"
   id="file-{{ seg.file_index }}"><summary>{{ seg.path }}
   <span class="add">+{{ seg.added }}</span> <span class="del">-{{ seg.removed }}</span>
