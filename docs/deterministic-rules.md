@@ -340,6 +340,14 @@ projection only changes what text a model is shown, and re-risk only
 supersedes a score computed on the wrong input — routing, never a
 verdict.
 
+Phase 4 adds the display consumers: the CLI tags marked rows and
+appends a mark summary, the web UI badges and default-collapses
+marked segments, and both render a render-time construct-vs-residue
+tally (`generated.construct_tally`, over
+`rules.scan_dangerous_constructs_by_file`) that is honestly not the
+ledger's recorded observation count. Display only — no decision,
+observation or precedence changes.
+
 **Honest boundaries**: a mark, never a verdict — nothing downstream
 may map it to a category. The xz-utils backdoor shipped in exactly
 this kind of build machinery, the sort reviewers treat as noise, so

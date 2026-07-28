@@ -114,8 +114,13 @@ installed-package inventory never leaves the machine.
     trivial-change flags); the precedence-ordered category rules plus
     the code-aware dangerous-construct scan (flags, never verdicts); and
     the driver deriving claim/content consistency + a review flag.
-    Measured 29.2% of patches deterministically settled before
-    `test-only` was added.
+    `rules.py`'s per-file `scan_dangerous_constructs_by_file` and
+    `content.py`'s path-carrying `code_added_lines_by_file` (of which
+    the by-ext view is now a projection) single-source the same
+    pattern tables and code-vs-prose gate as the whole-patch scan —
+    the review UI's phase-4 construct tally reuses them rather than
+    keeping a second copy. Measured 29.2% of patches deterministically
+    settled before `test-only` was added.
   - `ledger.py` — the append-only provenance schema: a `rule` registry,
     an immutable `decision` table (only ever superseded), an
     `observation` table, and schema v2's `verified` flag,
@@ -203,8 +208,13 @@ installed-package inventory never leaves the machine.
     then one loud note per omitted generated file) before either
     consumer's character cap, recording the omission in evidence.
     Neither is a verdict: the first only changes which fingerprints
-    reach a model, the second only changes what text one is shown. A
-    review-UI badge is still phase 4, not yet built.
+    reach a model, the second only changes what text one is shown.
+    Phase 4 (S1–S4 implemented; verification pending) adds the one
+    DISPLAY helper the review UIs share: `construct_tally(body,
+    marked_paths)` reruns `rules.py`'s per-file dangerous-construct
+    scan and splits hits into marked files versus the hand-written
+    residue — advisory, recomputed from the body at render time,
+    never the ledger's recorded observation count.
     `tools/generated-marking/` holds the measurement prototype and
     full-corpus results.
   - `injection.py` — the deterministic prompt-injection tripwire over
@@ -253,7 +263,12 @@ installed-package inventory never leaves the machine.
     with a **files-changed summary** (per-file added/removed counts,
     largest change first) before the diff so the bulk of a huge
     multi-file patch and the small hand-edits buried in it are visible
-    before scrolling begins;
+    before scrolling begins; a file carrying the live
+    `generated-content` mark (phase 4) is tagged `[gen]` in that list,
+    with a one-line mark summary and a construct-vs-residue tally
+    (`generated.construct_tally`) rendered directly beneath the
+    totals — an unmarked fingerprint's view stays byte-identical to
+    before the mark existed;
     records a **Sigstore-signed ManualDecision** (`kind='human'`) that
     tops the precedence, authenticating once per session. The LLM
     backends and signing are curation-side only; clients never run
@@ -280,8 +295,16 @@ installed-package inventory never leaves the machine.
   `ensure_note_table`), signed with the same session signer as verdicts
   (`record_note`/`canonical_note`), shown with their identity + signature, badged
   on the worklist, and never published. The review page's files-changed list
-  anchor-links each row to its per-file block in the rendered diff. Flask +
-  Jinja2 (autoescaping HTML) live behind the optional **`review` extra**
+  anchor-links each row to its per-file block in the rendered diff. Phase 4
+  adds a `generated` badge (the worklist size cell and the detail-page
+  header) carrying the mark's detail, `[gen]`-tags marked rows in that
+  files-changed list, and wraps each marked file's block in a native
+  `<details>` element collapsed by default — summary stating path,
+  changed lines, signals, generator/version, no JavaScript, the anchor
+  moved onto the `<details>` itself — plus the same construct-vs-residue
+  tally the CLI renders; an unmarked page stays byte-identical to before
+  the mark existed.
+  Flask + Jinja2 (autoescaping HTML) live behind the optional **`review` extra**
   (`pip install divergulent[review]`, or `[review,verify]` to sign), off the
   default scan/report path; the server binds **loopback only**, has no auth, and
   is a single-user local tool — never CI, never a client feature. Signing is the

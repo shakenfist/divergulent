@@ -123,10 +123,10 @@ phase 2 of [its plan](plans/PLAN-generated-marking.md) — a
 generated-content mark for files that claim to be build-system
 generator output. As of phase 3 of the same plan the mark is
 consumed by both LLM stages below (the oversized unlock, the
-residue-first projection, and the risk gate's targeted re-risk); a
-review-UI badge is still phase 4, not yet built. These axes are
-described with the rules in
-[deterministic-rules.md](deterministic-rules.md).
+residue-first projection, and the risk gate's targeted re-risk);
+phase 4 adds the badge, collapse and construct tally the human-review
+stage below renders from it. These axes are described with the rules
+in [deterministic-rules.md](deterministic-rules.md).
 
 ### 6. The security-risk gate
 
@@ -186,10 +186,25 @@ human approval, never auto-applied.
 The top of the precedence order. A reviewer works the priority queue
 through a CLI or a local web UI (both record byte-identical verdicts
 against the same ledger), seeing each diff in its original source
-context beside the LLM draft. Human verdicts are signed with Sigstore
-and are authoritative. The web UI adds review-by-category, an
-audit/spot-check view for confirming the deterministic rules are
-classifying correctly, and signed append-only reviewer notes.
+context beside the LLM draft. A file carrying the generated-content
+mark is tagged in the files-changed list — `[gen]` in the CLI, a
+badge in the web UI — and both surfaces add a one-line mark summary
+above the diff: how many of the touched files claim generation, the
+mark's detail, and the hand-written residue that is what the
+reviewer is actually being asked to read. The web UI goes one step
+further and renders each marked file's block collapsed by default,
+behind a loud, factual summary (path, changed lines, signals,
+generator/version) — collapse is presentation, never information
+loss, and every block is one click from today's exact render, never
+hidden and never presumed benign. Both surfaces also recompute the
+dangerous-construct scan per file at display time and split its hits
+into the generated-claiming bulk versus the residue, honestly
+labelled as read from this diff rather than the ledger's recorded
+count, and loud whenever a hit lands in the residue. Human verdicts
+are signed with Sigstore and are authoritative. The web UI adds
+review-by-category, an audit/spot-check view for confirming the
+deterministic rules are classifying correctly, and signed append-only
+reviewer notes.
 
 ### 9. The derived verdict
 
