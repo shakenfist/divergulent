@@ -12,6 +12,7 @@ import tempfile
 
 import testtools
 
+from divergulent.classify import generated
 from divergulent.classify import injection as injection_mod
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import reach
@@ -20,7 +21,8 @@ from divergulent.classify import review_web
 from divergulent.classify import reviewability
 from divergulent.classify import risk
 from divergulent.classify import verdict as verdict_mod
-from divergulent.tests.test_review import ORIGINAL, SOURCE_PACKAGE, WHEN, _build_corpus
+from divergulent.tests.test_review import (
+    MARKED_PATCH, ORIGINAL, SOURCE_PACKAGE, WHEN, _build_corpus)
 
 
 def _fetch(url):
@@ -75,14 +77,33 @@ def _mark_reviewed(conn, fingerprint):
             ledger_mod.mark_reviewed(conn, item_id=item['id'], reviewed_at=WHEN)
 
 
+def _seed_generated(conn, fingerprint, patch_text):
+    """Record the live ``generated-content`` observation the UI badges and collapses.
+
+    Built from a REAL ``generated.scan`` of the fixture body through ``detail_for`` /
+    ``evidence_for`` -- never hand-crafted evidence JSON -- so the page is exercised
+    against exactly the row the deterministic record pass writes.
+    """
+    scan = generated.scan(patch_text)
+    ledger_mod.append_observation(
+        conn, fingerprint=fingerprint, kind=generated.GENERATED_KIND,
+        detail=generated.detail_for(scan), evidence=generated.evidence_for(scan),
+        observed_by=generated.GENERATED_OBSERVED_BY,
+        rule_version=generated.GENERATED_RULES_VERSION, observed_at=WHEN)
+    conn.commit()
+
+
 class ReviewWebFixture:
     """A synthetic corpus + ledger + a Flask test client over them."""
 
-    def _client(self, *, extra_items=(), signer=None, clock=None):
+    def _client(self, *, extra_items=(), signer=None, clock=None, patch=None):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         corpus_dir = tmp.name
-        index_path, fp_hex = _build_corpus(corpus_dir)
+        if patch is None:
+            index_path, fp_hex = _build_corpus(corpus_dir)
+        else:
+            index_path, fp_hex = _build_corpus(corpus_dir, patch)
 
         ledger_path = os.path.join(corpus_dir, 'ledger.sqlite')
         conn = ledger_mod.create_ledger(ledger_path)
@@ -620,6 +641,112 @@ class InjectionWebTestCase(ReviewWebFixture, testtools.TestCase):
         client, conn, fp_hex = self._client()
         body = client.get('/').get_data(as_text=True)
         self.assertNotIn('class="inj"', body)
+
+
+class GeneratedWebTestCase(ReviewWebFixture, testtools.TestCase):
+    """The generated-content mark surfaced in the UI: a worklist badge, a review-page
+    badge, tagged file rows, and the marked diff blocks collapsed but never hidden.
+
+    The fixture is gatos in miniature (``MARKED_PATCH``): a regenerated ``configure``
+    carrying its autoconf banner ahead of the one hand-written hunk -- so exactly one of
+    the two files is marked, which is what makes "only the marked block collapses"
+    testable.
+    """
+
+    def _marked(self):
+        """A client over the marked fixture, with the mark recorded."""
+        client, conn, fp_hex = self._client(patch=MARKED_PATCH)
+        _seed_generated(conn, fp_hex, MARKED_PATCH)
+        return client, conn, fp_hex
+
+    def _details_block(self, body):
+        """The whole ``<details>`` element wrapping the collapsed block."""
+        start = body.index('<details class="gen-seg"')
+        end = body.index('</details>', start) + len('</details>')
+        return body[start:end]
+
+    def test_worklist_badges_the_generated_mark(self):
+        client, _conn, _fp = self._marked()
+        body = client.get('/').get_data(as_text=True)
+        self.assertIn('class="gen"', body)
+        self.assertIn('autotools/60', body)          # the mark's detail, as the badge text
+        # A claim about the files, never a safety verdict.
+        self.assertNotIn('safe', body.lower())
+
+    def test_unmarked_row_has_no_generated_badge(self):
+        client, _conn, _fp = self._client()          # nothing claimed generation
+        body = client.get('/').get_data(as_text=True)
+        self.assertNotIn('class="gen"', body)
+
+    def test_review_page_shows_the_generated_badge(self):
+        client, _conn, fp_hex = self._marked()
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn('claims generated: autotools/60', body)
+
+    def test_marked_file_row_is_tagged_and_keeps_its_anchor(self):
+        client, _conn, fp_hex = self._marked()
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        # The marked file keeps its anchor link AND gains the tag; the residue file is
+        # linked and untagged.
+        self.assertIn('<a href="#file-1">configure</a> <span class="gen"', body)
+        self.assertIn('[gen]</span>', body)
+        self.assertIn('<a href="#file-2">src/reader.c</a></td>', body)
+
+    def test_only_the_marked_block_is_collapsed(self):
+        client, _conn, fp_hex = self._marked()
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertEqual(1, body.count('<details class="gen-seg"'))
+        details = self._details_block(body)
+        # Collapsed by default: no `open` attribute, and no script makes it so.
+        self.assertNotIn(' open', details)
+        self.assertIn('### configure', details)
+        self.assertNotIn('### src/reader.c', details)   # the residue stays expanded
+
+    def test_the_collapsed_block_carries_the_anchor(self):
+        # The anchor for a marked file lives on the <details> itself, so a click in the
+        # files-changed list lands on the summary line (a closed block's content cannot
+        # be scrolled to); the inner header line does not repeat the id.
+        client, _conn, fp_hex = self._marked()
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        details = self._details_block(body)
+        self.assertIn('id="file-1"', details.split('<summary>')[0])
+        self.assertEqual(1, body.count('id="file-1"'))
+        self.assertIn('href="#file-1"', body)           # the files-changed row links it
+        self.assertIn('<span id="file-2" class="file">', body)   # unmarked anchor untouched
+
+    def test_collapsed_summary_states_the_facts(self):
+        client, _conn, fp_hex = self._marked()
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        details = self._details_block(body)
+        summary = ' '.join(details.split('<summary>')[1].split('</summary>')[0].split())
+        self.assertIn('configure', summary)             # which file
+        self.assertIn('+3', summary)                    # and how much of it
+        self.assertIn('-0', summary)
+        self.assertIn('claims generated', summary)      # the vocabulary: a claim
+        self.assertIn('banner+name', summary)           # which signals fired
+        self.assertIn('autoconf 2.59', summary)         # generator and version
+
+    def test_the_collapsed_block_is_present_in_full(self):
+        # Collapse is presentation, not information loss: every line of the marked file
+        # is on the page, inside the <details>, one click away.
+        client, _conn, fp_hex = self._marked()
+        body = client.get('/review/' + fp_hex).get_data(as_text=True)
+        details = self._details_block(body)
+        for line in ('ac_cv_generated_a=yes', 'ac_cv_generated_b=yes', 'ac_cv_generated_c=yes'):
+            self.assertIn(line, details)
+        self.assertIn('# Generated by GNU Autoconf 2.59.', details)
+        self.assertIn('char buf[4096]', body)           # the residue, still expanded
+
+    def test_an_unmarked_page_is_byte_identical_with_marks_present(self):
+        # The do-no-harm bar: another fingerprint's mark changes nothing here, and an
+        # unmarked patch renders with no collapse markup at all.
+        client, conn, fp_hex = self._client()
+        before = client.get('/review/' + fp_hex).get_data(as_text=True)
+        _seed_generated(conn, 'b' * 64, MARKED_PATCH)
+        after = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertEqual(before, after)
+        self.assertNotIn('<details', after)
+        self.assertEqual(1, after.count('<pre class="diff">'))
 
 
 class ReachWebTestCase(ReviewWebFixture, testtools.TestCase):
