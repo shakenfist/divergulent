@@ -121,10 +121,12 @@ that ride alongside the category: reviewability (size), reach
 (install base), the phase-6 CVE/bug cross-reference, and — as of
 phase 2 of [its plan](plans/PLAN-generated-marking.md) — a
 generated-content mark for files that claim to be build-system
-generator output. That mark is recorded but not yet consumed:
-residue-first routing and a review-UI badge are phases 3 and 4 of
-the same plan, not yet built. These axes are described with the
-rules in [deterministic-rules.md](deterministic-rules.md).
+generator output. As of phase 3 of the same plan the mark is
+consumed by both LLM stages below (the oversized unlock, the
+residue-first projection, and the risk gate's targeted re-risk); a
+review-UI badge is still phase 4, not yet built. These axes are
+described with the rules in
+[deterministic-rules.md](deterministic-rules.md).
 
 ### 6. The security-risk gate
 
@@ -141,6 +143,19 @@ patches first, but it never sets a category and its failures degrade
 to `elevated` (recall-safe — a scoring failure makes a patch *more*
 visible, not less).
 
+Phase 3 of the generated-marking plan folds the mark into this gate
+too. An `oversized` patch is skipped only when its marked residue is
+*also* past the oversized cut — a small hand-written residue unlocks
+it into scoring — and every marked fingerprint's diff is projected
+residue-first before the gate ever sees it: a loud preamble plus one
+note per omitted generated file, standing in for the file itself. The
+existing 40k-char cap now applies *after* that projection, so its
+budget is spent on residue rather than generator noise. A separate
+`--re-risk-marked` pass re-scores exactly the marked fingerprints
+whose live score was read off a truncated generated head — gatos
+scored `elevated` off 40k characters of `configure` — superseding
+those scores and reprioritising the review queue.
+
 ### 7. LLM triage
 
 The substantive residue is triaged by a claim-blind LLM pass: the
@@ -148,7 +163,17 @@ model sees the diff, never the author's claim. Every draft verdict is
 **adversarially verified** by a second pass before it counts; an
 unverified draft is recorded for the audit trail but ranks *below*
 the deterministic rules in verdict precedence, so an unreviewed guess
-can never win. Triage runs over a bounded, prioritised slice (risk
+can never win. The same mark unlocks triage: an `oversized`
+fingerprint whose hand-written residue sits at or under the oversized
+cut reaches the LLM after all, shown the identical residue-first
+projection the risk gate reads; the still-unreviewable population —
+residue also past the cut, or no mark at all — keeps routing to a
+human with its honest reason. The injection tripwire still scans the
+*full* body regardless, and its skip outranks the unlock: a
+diff-region hit never reaches the model, marked or not. The verifier
+always reads exactly the same projected text the drafter did, and an
+unmarked fingerprint's prompt stays byte-identical to what it was
+before phase 3. Triage runs over a bounded, prioritised slice (risk
 first, then dangerous-construct flags, then high-occurrence), never
 the whole queue by accident. Model and prompt version are part of
 each decision's identity, so a model swap or prompt bump is cleanly
