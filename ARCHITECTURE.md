@@ -215,6 +215,18 @@ installed-package inventory never leaves the machine.
     scan and splits hits into marked files versus the hand-written
     residue — advisory, recomputed from the body at render time,
     never the ledger's recorded observation count.
+    Phase 5 (measurement only; findings pending) adds the corroborated
+    translation-catalogue CANDIDATE — `candidate_translation_hits`
+    over `TRANSLATION_EXTENSIONS` (`.ts`/`.po`/`.pot`), each match
+    reporting which content corroborators fired (Qt Linguist
+    DOCTYPE/root or message-structure elements; gettext
+    `msgid`/`msgstr` pair or catalogue header) — because the extension
+    alone is unsafe: measured over the corpus, `.ts` is 45% Qt
+    Linguist and 55% TypeScript (which `content.py` types as code,
+    the source of translation-string `shell-out` false positives like
+    acetoneiso's GPL text). Like `candidate_banner_hits`, `scan()`
+    never consults it — candidates are measured, never marking, until
+    the phase-5 findings adjudicate promotion.
     `tools/generated-marking/` holds the measurement prototype and
     full-corpus results.
   - `injection.py` — the deterministic prompt-injection tripwire over

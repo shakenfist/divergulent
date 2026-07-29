@@ -172,6 +172,7 @@ supersedes and re-scans exactly like every other deterministic rule.
 | 2. Ledger observation + record pass + rule docs | [PLAN-generated-marking-phase-02-observation.md](PLAN-generated-marking-phase-02-observation.md) | Implemented — real record run: 442 marked fingerprints (the findings' 429 was the name-signal count; banner-only marks add 13), gatos `autotools/99`, re-run appends 0 |
 | 3. Residue-first triage + risk projection | [PLAN-generated-marking-phase-03-residue-routing.md](PLAN-generated-marking-phase-03-residue-routing.md) | Implemented — real runs done: 24 unlocked; re-risk 5 elevated→low; 20 scored residue-first (1 new elevated: eblook); 13 triaged with drafts (gatos: security/medium → human review with a draft, from the 603-line residue) |
 | 4. Review UI badges + collapsed segments | [PLAN-generated-marking-phase-04-review-ui.md](PLAN-generated-marking-phase-04-review-ui.md) | Implemented — verified against the real ledger: gatos renders the badge, 21 collapsed blocks, tagged rows, and a 151-hit construct tally reading all-generated / 0 residue; unmarked control byte-clean |
+| 5. Translation catalogues (measurement) | [PLAN-generated-marking-phase-05-translations.md](PLAN-generated-marking-phase-05-translations.md) | In progress — candidate-only corroborated `.ts`/`.po`/`.pot` detector (extension alone is unsafe: `.ts` is also TypeScript) plus the measurement sections; full-corpus findings pending |
 
 Phase 1 mirrors the injection tripwire's evaluation-first approach:
 build the pure scanner, run it over the whole corpus (not just the

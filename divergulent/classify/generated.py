@@ -29,7 +29,10 @@ Posture (see ``docs/plans/PLAN-generated-marking.md``):
 
 The scanner is pure: no I/O, no network.  ``scan(text)`` is its whole public surface,
 plus ``candidate_banner_hits(text)`` which reports the unmeasured generic do-not-edit
-family for the phase-1 measurement tool WITHOUT ever marking on it.  Beside it sit the
+family for the phase-1 measurement tool WITHOUT ever marking on it, and
+``candidate_translation_hits(text)``, phase 5's equivalent for translation catalogues
+(Qt Linguist ``.ts`` with the TypeScript collision, gettext ``.po``/``.pot``) -- also
+measured, also never marking.  Beside it sit the
 observation helpers: a scan that marks anything rides alongside the category as ONE
 supersedable ``generated-content`` observation per fingerprint (``observed_by=
 'generated-scan'``, ``rule_version=GENERATED_RULES_VERSION``), recorded by the
@@ -213,6 +216,39 @@ CANDIDATE_BANNERS: tuple[re.Pattern, ...] = (
     re.compile(r'[Dd]o not edit this file'),
     re.compile(r'[Aa]utomatically generated'),
 )
+
+# CANDIDATE ONLY -- measured, never marking (phase 5).  Translation catalogues are the
+# next family candidate: Qt Linguist ``.ts`` and gettext ``.po``/``.pot`` files are
+# tool-managed serialisations whose bulk drowns a patch's hand-written residue (the
+# motivating case: acetoneiso's ``translate.patch``, fingerprint ``6b51f47b...`` -- 36 Qt
+# catalogues, ~58k added lines, a ~70-line ``.pro``/``.qrc`` residue).  The extension
+# alone is NOT evidence: ``.ts`` is also TypeScript, which ``content._CODE_EXTENSIONS``
+# already claims -- so each extension gets content corroborators, reported separately so
+# the phase-5 findings can adjudicate their strength.  ``scan`` must never consult these.
+TRANSLATION_EXTENSIONS = ('.po', '.pot', '.ts')
+
+# Qt Linguist corroborators.  The DOCTYPE / root element is the strongest claim but only
+# visible when a hunk touches the top of the file (the new-file and full-rewrite cases);
+# the element corroborator requires two DISTINCT message-structure element kinds in the
+# region, so an update hunk deep in the catalogue still corroborates while a TypeScript
+# file mentioning one such token in a string does not.  The root-element pattern is
+# anchored to (diff-prefixed) line start so a TypeScript generic like ``Promise<TS>``
+# mid-line never fires it.
+_TS_DOCTYPE_RE = re.compile(r'<!DOCTYPE TS>')
+_TS_ROOT_RE = re.compile(r'^[+\- ]?\s*<TS(?:\s[^>]*)?>\s*$')
+_TS_ELEMENT_RES = (
+    re.compile(r'<message[ >]'),
+    re.compile(r'<source>'),
+    re.compile(r'<translation[ >]'),
+)
+
+# gettext corroborators.  ``msgid``/``msgstr`` sit at column 0 in a catalogue, so both
+# patterns anchor to the one-character diff prefix (an obsolete ``#~ msgid`` line does
+# not corroborate); the pair must BOTH appear.  The header corroborator fires on the
+# catalogue's own ``Project-Id-Version`` header string.
+_PO_MSGID_RE = re.compile(r'^[+\- ]?msgid "')
+_PO_MSGSTR_RE = re.compile(r'^[+\- ]?msgstr(?:\[[0-9]+\])? "')
+_PO_HEADER_RE = re.compile(r'"Project-Id-Version:')
 
 
 # ---------------------------------------------------------------------------
@@ -612,6 +648,80 @@ def candidate_banner_hits(text: str) -> list[tuple[str, str]]:
             if any(pattern.search(line) for pattern in CANDIDATE_BANNERS):
                 hits.append((section.path, line.strip()[:120]))
                 break
+    return hits
+
+
+@dataclass(frozen=True)
+class TranslationCandidate:
+    """One touched file whose extension makes it a translation-catalogue candidate.
+
+    Measurement only (phase 5): ``scan`` never consults the translation tables, so a
+    candidate never marks anything.  ``corroborations`` is empty when the extension
+    matched but no content corroborator fired -- for ``.ts`` that population is expected
+    to be TypeScript, and sizing it is the point of reporting it.
+    """
+
+    path: str
+    """Path as ``content.profile`` reports it."""
+
+    extension: str
+    """The matching extension, backup suffixes stripped first (``'.ts'``, ``'.po'``...)."""
+
+    corroborations: tuple[str, ...]
+    """Sorted content corroborators that fired (``'ts-doctype'``, ``'ts-elements'``,
+    ``'po-msgid-msgstr'``, ``'po-header'``); empty means extension-only, never trusted."""
+
+    added: int
+    """``+`` lines in this file."""
+
+    removed: int
+    """``-`` lines in this file."""
+
+
+def _translation_corroborations(extension: str, lines: list[str]) -> list[str]:
+    """The content corroborators that fire in one candidate file's region."""
+    fired = []
+    if extension == '.ts':
+        if any(_TS_DOCTYPE_RE.search(line) or _TS_ROOT_RE.match(line) for line in lines):
+            fired.append('ts-doctype')
+        distinct = sum(
+            1 for pattern in _TS_ELEMENT_RES if any(pattern.search(line) for line in lines))
+        if distinct >= 2:
+            fired.append('ts-elements')
+    else:
+        if (any(_PO_MSGID_RE.match(line) for line in lines)
+                and any(_PO_MSGSTR_RE.match(line) for line in lines)):
+            fired.append('po-msgid-msgstr')
+        if any(_PO_HEADER_RE.search(line) for line in lines):
+            fired.append('po-header')
+    return fired
+
+
+def candidate_translation_hits(text: str) -> list[TranslationCandidate]:
+    """One record per touched file with a translation-catalogue extension.
+
+    Measurement only: like ``candidate_banner_hits``, ``scan`` never consults the
+    translation tables, so nothing here can mark a file.  Every extension match is
+    returned -- corroborated or not -- because the uncorroborated ``.ts`` population
+    (TypeScript) is exactly what the phase-5 findings must size before the family can be
+    promoted to a marking signal.
+    """
+    sections = content._parse_sections(text)
+    regions = _region_lines(text)
+
+    hits: list[TranslationCandidate] = []
+    for index, section in enumerate(sections):
+        basename = strip_backup_suffixes(content._basename(section.path))
+        extension = content._extension(basename)
+        if extension not in TRANSLATION_EXTENSIONS:
+            continue
+        lines = regions[index] if index < len(regions) else []
+        hits.append(TranslationCandidate(
+            path=section.path,
+            extension=extension,
+            corroborations=tuple(sorted(_translation_corroborations(extension, lines))),
+            added=len(section.added),
+            removed=len(section.removed)))
     return hits
 
 

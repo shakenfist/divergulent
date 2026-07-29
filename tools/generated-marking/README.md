@@ -31,11 +31,23 @@ fingerprint in `fingerprints.sqlite`'s `patch` table), scans each body from
   the first; this informs the plan's first-banner-wins vs
   added-lines-preferred open question);
 * the **candidate do-not-edit family** -- hit counts and sample snippets for
-  the generic banner family `scan()` never marks on.
+  the generic banner family `scan()` never marks on;
+* the **translation candidates** (phase 5,
+  [plan](../../docs/plans/PLAN-generated-marking-phase-05-translations.md)) --
+  per-extension corroboration rates for the `.ts`/`.po`/`.pot` candidate
+  (`generated.candidate_translation_hits`, also never marking), the
+  uncorroborated `.ts` population (TypeScript -- the collision that makes
+  extension-only marking unsafe), how `content._classify_file` types the
+  corroborated files today, the would-be coverage distribution, the
+  oversized-unlock arithmetic (union with existing generated marks), the
+  dangerous-construct hits sitting inside corroborated catalogues, and an
+  informational compiled-catalogue (`.qm`/`.mo`/`.gmo`) tally.
 
 Results feed
 [PLAN-generated-marking-phase-01-findings.md](../../docs/plans/PLAN-generated-marking-phase-01-findings.md)
 (step S3), which is a separate, opus-authored step against the real corpus.
+The phase-5 sections feed the phase-5 findings the same way; that
+full-corpus run is committed as `results-translations-full-corpus.json`.
 
 ### Usage
 

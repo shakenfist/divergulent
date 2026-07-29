@@ -11,6 +11,16 @@ multi-banner report, and the candidate do-not-edit family. No ledger, no routing
 network: this is measurement only, feeding
 docs/plans/PLAN-generated-marking-phase-01-findings.md.
 
+Phase 5 (docs/plans/PLAN-generated-marking-phase-05-translations.md) extends the walk
+with the corroborated translation-catalogue candidate (``generated.
+candidate_translation_hits``): per-extension corroboration rates for ``.ts``/``.po``/
+``.pot``, the uncorroborated ``.ts`` population (TypeScript -- the collision that makes
+extension-only marking unsafe), how ``content._classify_file`` types the corroborated
+files today, the would-be coverage distribution and oversized-unlock arithmetic, the
+dangerous-construct hits sitting inside corroborated catalogue files (the
+false-positive population an eventual mark would attribute), and an informational tally
+of compiled-catalogue (``.qm``/``.mo``/``.gmo``) touches.
+
 Must be run from THIS worktree checkout with ``PYTHONPATH=.`` -- the operator's editable
 install of divergulent tracks ``main``, not this branch, and would silently import the
 wrong (or absent) ``generated`` module otherwise.
@@ -44,6 +54,8 @@ from collections import defaultdict
 
 from divergulent.classify import content
 from divergulent.classify import generated
+from divergulent.classify import reviewability
+from divergulent.classify import rules
 
 # Caps on how many examples/samples each report section carries -- enough for a human to
 # eyeball, small enough that the printed summary and the JSON stay readable.
@@ -52,6 +64,11 @@ _MULTI_BANNER_EXAMPLES = 10
 _CANDIDATE_SAMPLES = 10
 _CANDIDATE_TOP_N = 20
 _LOW_FREQUENCY_MAX_TOTAL = 20
+_TRANSLATION_EXAMPLES = 25
+
+# Compiled catalogue extensions, tallied informationally: they arrive as binary and the
+# eventual family must decide whether to say anything about them.
+_COMPILED_CATALOGUE_EXTENSIONS = ('.gmo', '.mo', '.qm')
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +155,33 @@ class _Accumulator:
         self.candidate_basename_counts: dict[str, int] = defaultdict(int)
         self.candidate_samples: list[dict] = []
 
+        self.translation_ext_files: dict[str, int] = {
+            ext: 0 for ext in generated.TRANSLATION_EXTENSIONS}
+        self.translation_ext_corroborated: dict[str, int] = {
+            ext: 0 for ext in generated.TRANSLATION_EXTENSIONS}
+        self.translation_corroborator_counts: dict[str, int] = defaultdict(int)
+        self.translation_uncorroborated_counts: dict[str, int] = {
+            ext: 0 for ext in generated.TRANSLATION_EXTENSIONS}
+        self.translation_uncorroborated_examples: dict[str, list[dict]] = defaultdict(list)
+        self.translation_typed_as: dict[str, int] = defaultdict(int)
+
+        self.translation_fingerprints = 0
+        self.translation_cov_lt_0_5 = 0
+        self.translation_cov_ge_0_5_lt_0_9 = 0
+        self.translation_cov_ge_0_9 = 0
+        self.translation_ge_0_5_list: list[dict] = []
+
+        self.translation_oversized = 0
+        self.translation_unlocked = 0
+        self.translation_unlocked_examples: list[dict] = []
+
+        self.translation_construct_total = 0
+        self.translation_construct_files: set[tuple[str, str]] = set()
+        self.translation_construct_samples: list[dict] = []
+
+        self.compiled_catalogue_counts: dict[str, int] = {
+            ext: 0 for ext in _COMPILED_CATALOGUE_EXTENSIONS}
+
         self.scanned = 0
         self.missing = 0
 
@@ -174,6 +218,8 @@ class _Accumulator:
 
         for path, snippet in generated.candidate_banner_hits(text):
             self._add_candidate_hit(fingerprint, path, snippet)
+
+        self._add_translations(fingerprint, text, scan, sections)
 
     def _add_gap_hit(self, basename: str, entry) -> None:
         self.gap_counts[basename] += 1
@@ -227,6 +273,100 @@ class _Accumulator:
                 'path': path,
                 'snippet': snippet,
             })
+
+    def _add_translations(self, fingerprint: str, text: str, scan, sections) -> None:
+        """Accumulate the phase-5 translation-candidate sections for one body."""
+        for section in sections:
+            basename = generated.strip_backup_suffixes(content._basename(section.path))
+            extension = content._extension(basename)
+            if extension in _COMPILED_CATALOGUE_EXTENSIONS:
+                self.compiled_catalogue_counts[extension] += 1
+
+        candidates = generated.candidate_translation_hits(text)
+        if not candidates:
+            return
+
+        corroborated_paths: set[str] = set()
+        for candidate in candidates:
+            self.translation_ext_files[candidate.extension] += 1
+            if candidate.corroborations:
+                self.translation_ext_corroborated[candidate.extension] += 1
+                corroborated_paths.add(candidate.path)
+                for name in candidate.corroborations:
+                    self.translation_corroborator_counts[name] += 1
+                self.translation_typed_as[content._classify_file(candidate.path)] += 1
+            else:
+                self.translation_uncorroborated_counts[candidate.extension] += 1
+                examples = self.translation_uncorroborated_examples[candidate.extension]
+                if len(examples) < _TRANSLATION_EXAMPLES:
+                    examples.append({'fingerprint': fingerprint, 'path': candidate.path})
+
+        if not corroborated_paths:
+            return
+
+        # Would-be coverage/unlock arithmetic, over fingerprints carrying at least one
+        # corroborated catalogue file.  ``combined`` unions the corroborated candidates
+        # with what ``scan`` already marks, per file, so a patch carrying both autotools
+        # output and catalogues is not double-counted.
+        marked_paths = {entry.path for entry in scan.files}
+        translation_changed = 0
+        combined_changed = 0
+        for section in sections:
+            changed = len(section.added) + len(section.removed)
+            if section.path in corroborated_paths:
+                translation_changed += changed
+            if section.path in corroborated_paths or section.path in marked_paths:
+                combined_changed += changed
+
+        total_changed = scan.total_changed
+        coverage = translation_changed / total_changed if total_changed else 0.0
+        combined_residue = total_changed - combined_changed
+
+        self.translation_fingerprints += 1
+        if coverage < 0.5:
+            self.translation_cov_lt_0_5 += 1
+        elif coverage < 0.9:
+            self.translation_cov_ge_0_5_lt_0_9 += 1
+        else:
+            self.translation_cov_ge_0_9 += 1
+
+        record = {
+            'fingerprint': fingerprint,
+            'coverage': coverage,
+            'translation_changed': translation_changed,
+            'generated_changed': scan.generated_changed,
+            'combined_changed': combined_changed,
+            'combined_residue': combined_residue,
+            'total_changed': total_changed,
+        }
+        if coverage >= 0.5:
+            self.translation_ge_0_5_list.append(record)
+
+        oversized = total_changed > reviewability.REVIEWABILITY_OVERSIZED_LINES
+        if oversized:
+            self.translation_oversized += 1
+            already_unlocked = (
+                scan.residue_changed <= reviewability.REVIEWABILITY_OVERSIZED_LINES)
+            if (combined_residue <= reviewability.REVIEWABILITY_OVERSIZED_LINES
+                    and not already_unlocked):
+                self.translation_unlocked += 1
+                if len(self.translation_unlocked_examples) < _TRANSLATION_EXAMPLES:
+                    self.translation_unlocked_examples.append(record)
+
+        # The dangerous-construct hits an eventual mark would attribute to catalogue
+        # files -- run only when a corroborated candidate exists, so the whole-corpus
+        # walk does not pay the construct scan on every body.
+        for path, flag in rules.scan_dangerous_constructs_by_file(text):
+            if path in corroborated_paths:
+                self.translation_construct_total += 1
+                self.translation_construct_files.add((fingerprint, path))
+                if len(self.translation_construct_samples) < _TRANSLATION_EXAMPLES:
+                    self.translation_construct_samples.append({
+                        'fingerprint': fingerprint,
+                        'path': path,
+                        'detail': flag.detail,
+                        'evidence': flag.evidence[:120],
+                    })
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +453,58 @@ def _candidate_family(acc: _Accumulator) -> dict:
     }
 
 
+def _translation_candidates(acc: _Accumulator) -> dict:
+    per_extension = {}
+    for extension in generated.TRANSLATION_EXTENSIONS:
+        files = acc.translation_ext_files[extension]
+        corroborated = acc.translation_ext_corroborated[extension]
+        per_extension[extension] = {
+            'files': files,
+            'corroborated': corroborated,
+            'corroborated_fraction': (corroborated / files) if files else 0.0,
+        }
+    uncorroborated = {
+        extension: {
+            'count': acc.translation_uncorroborated_counts[extension],
+            'examples': sorted(
+                acc.translation_uncorroborated_examples.get(extension, []),
+                key=lambda r: (r['fingerprint'], r['path'])),
+        }
+        for extension in generated.TRANSLATION_EXTENSIONS
+    }
+    return {
+        'per_extension': per_extension,
+        'corroborator_counts': dict(acc.translation_corroborator_counts),
+        'uncorroborated': uncorroborated,
+        'corroborated_typed_as': dict(acc.translation_typed_as),
+        'coverage': {
+            'fingerprints_with_corroborated': acc.translation_fingerprints,
+            'buckets': {
+                'lt_0_5': acc.translation_cov_lt_0_5,
+                'ge_0_5_lt_0_9': acc.translation_cov_ge_0_5_lt_0_9,
+                'ge_0_9': acc.translation_cov_ge_0_9,
+            },
+            'ge_0_5_list': sorted(
+                acc.translation_ge_0_5_list,
+                key=lambda r: (-r['coverage'], r['fingerprint'])),
+        },
+        'unlock': {
+            'oversized_with_corroborated': acc.translation_oversized,
+            'unlocked_by_translations': acc.translation_unlocked,
+            'unlocked_examples': sorted(
+                acc.translation_unlocked_examples, key=lambda r: r['fingerprint']),
+        },
+        'construct_hits': {
+            'total': acc.translation_construct_total,
+            'distinct_files': len(acc.translation_construct_files),
+            'samples': sorted(
+                acc.translation_construct_samples,
+                key=lambda r: (r['fingerprint'], r['path'], r['detail'])),
+        },
+        'compiled_catalogues': dict(acc.compiled_catalogue_counts),
+    }
+
+
 def build_report(corpus_dir: str, limit: int | None = None) -> dict:
     """Walk ``corpus_dir`` and return the full measurement report as a plain dict."""
     started = time.monotonic()
@@ -336,6 +528,7 @@ def build_report(corpus_dir: str, limit: int | None = None) -> dict:
         'acinclude': _acinclude(acc),
         'multi_banner': _multi_banner(acc),
         'candidate_family': _candidate_family(acc),
+        'translation_candidates': _translation_candidates(acc),
         'totals': {
             'fingerprints_scanned': acc.scanned,
             'bodies_missing': acc.missing,
@@ -393,6 +586,38 @@ def print_summary(report: dict) -> None:
     print('\ncandidate do-not-edit family: %d files hit (top 10 basenames):' % candidate['total_files_hit'])
     for record in candidate['basename_counts'][:10]:
         print('  %-20s %d' % (record['basename'], record['count']))
+
+    translations = report['translation_candidates']
+    print('\ntranslation candidates (per extension):')
+    for extension, counts in sorted(translations['per_extension'].items()):
+        print('  %-6s files=%-6d corroborated=%-6d fraction=%.2f' % (
+            extension, counts['files'], counts['corroborated'], counts['corroborated_fraction']))
+    print('  corroborators: %s' % ', '.join(
+        '%s=%d' % (name, count)
+        for name, count in sorted(translations['corroborator_counts'].items())))
+    print('  uncorroborated .ts (TypeScript population): %d' % (
+        translations['uncorroborated']['.ts']['count']))
+    print('  corroborated files typed today as: %s' % ', '.join(
+        '%s=%d' % (name, count)
+        for name, count in sorted(translations['corroborated_typed_as'].items())))
+    coverage = translations['coverage']
+    print('  fingerprints with a corroborated catalogue: %d '
+          '(coverage <0.5: %d, 0.5-0.9: %d, >=0.9: %d)' % (
+              coverage['fingerprints_with_corroborated'],
+              coverage['buckets']['lt_0_5'],
+              coverage['buckets']['ge_0_5_lt_0_9'],
+              coverage['buckets']['ge_0_9']))
+    unlock = translations['unlock']
+    print('  oversized with a corroborated catalogue: %d, newly unlocked: %d' % (
+        unlock['oversized_with_corroborated'], unlock['unlocked_by_translations']))
+    constructs = translations['construct_hits']
+    print('  construct hits inside corroborated catalogues: %d across %d files' % (
+        constructs['total'], constructs['distinct_files']))
+    for sample in constructs['samples'][:5]:
+        print('    %s %-40s %s' % (sample['fingerprint'][:12], sample['path'], sample['detail']))
+    print('  compiled catalogues touched: %s' % ', '.join(
+        '%s=%d' % (name, count)
+        for name, count in sorted(translations['compiled_catalogues'].items())))
 
 
 # ---------------------------------------------------------------------------
