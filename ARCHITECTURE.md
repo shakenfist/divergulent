@@ -357,9 +357,11 @@ installed-package inventory never leaves the machine.
   reason + the deciding rule) with **no raw LLM evidence** (that stays in the
   export). CI builds it from the export (`tools/build-classification.sh`, pure
   Python), signs keyless (`tools/sign-bundle.sh`) and publishes to the rolling
-  `classification` release (`build-classification.yml`); the client pulls it (`cache
-  pull-classification`) and `show` joins by hashing the patch body it already
-  fetched. It *grows* as review settles the residue.
+  `classification` release (`build-classification.yml`, daily on the cache's
+  cadence — the human gate is the export commit/push into the reviews repo, so
+  a scheduled run only projects what that gate already approved); the client
+  pulls it (`cache pull-classification`) and `show` joins by hashing the patch
+  body it already fetched. It *grows* as review settles the residue.
 - `divergulent/bundle.py` — the precomputed cache **bundle** schema, a
   gzipped-JSON `write()` and `load()`. A bundle is the shareable half of
   a cold run: staleness and divergence for a whole Debian release,

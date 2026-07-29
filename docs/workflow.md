@@ -225,9 +225,11 @@ JSONL export (reviewable diffs, no binary sqlite in git). From it, CI
 builds the lean **classification bundle** — a gzipped
 fingerprint → verdict map carrying category, the three axes, a short
 reason, and the deciding rule, with no raw LLM evidence — signs it
-with Sigstore, and publishes it to a rolling release. The bundle
-*grows* as review settles more of the residue; clients simply re-pull
-to see more of their patches explained.
+with Sigstore, and publishes it to a rolling release — daily, on the
+divergence cache's cadence; the human publish gate is the export
+commit itself, so the schedule only automates the projection. The
+bundle *grows* as review settles more of the residue; clients simply
+re-pull to see more of their patches explained.
 
 ## Where the boundaries are
 

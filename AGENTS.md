@@ -359,7 +359,9 @@ LLM evidence** (that stays auditable in the export). CI builds it from the expor
 (`tools/build-classification.sh`, pure Python — no archive/deb-src), signs it
 keyless (reusing `tools/sign-bundle.sh`) and publishes to the rolling
 `classification` release (`tools/publish-classification.sh`,
-`.github/workflows/build-classification.yml`). The **client** pulls it (`cache
+`.github/workflows/build-classification.yml` — a daily schedule that publishes,
+like the cache; the human gate stays the export commit/push into the reviews
+repo). The **client** pulls it (`cache
 pull-classification`, signature-verified against `verify.CLASSIFICATION_SIGNER_IDENTITY`,
 no spot-check — a verdict has no live oracle), and `show` joins it by hashing each
 patch body it already fetched (`PatchDetail.fingerprint`, the same normalised-diff

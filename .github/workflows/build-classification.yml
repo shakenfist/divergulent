@@ -13,9 +13,18 @@ permissions:
 # (its commit diff is the operator's reviewable publish gate). Being public, the
 # checkout needs no token -- the default github.token clones it. Override the repo
 # with the LEDGER_REPO variable (and add a LEDGER_REPO_TOKEN secret if you point it
-# at a private repo). Manual for now (workflow_dispatch); a push trigger on the
-# data repo is the intended automation once the flow is proven.
+# at a private repo).
+#
+# Runs daily like the divergence cache, and a scheduled run PUBLISHES: the
+# human-in-the-loop gate is the export -> commit -> push into the data repo, so
+# this job only ever projects what that gate already approved -- automating the
+# mechanics does not weaken the gate. (Measured cost of leaving it manual: the
+# published bundle went three weeks stale while 23 approved exports queued
+# behind a dispatch nobody sent.) A manual dispatch still defaults to a
+# build-only dry run unless `publish` is set.
 on:
+  schedule:
+    - cron: '31 4 * * *'    # daily (staggered off the hour and the cache build)
   workflow_dispatch:
     inputs:
       release:
@@ -51,16 +60,22 @@ jobs:
           path: ledger-data
 
       - name: Build classification bundle
+        env:
+          # Scheduled runs carry no inputs; fall back to the dispatch defaults.
+          RELEASE: ${{ github.event.inputs.release || 'trixie' }}
+          LEDGER_PATH: ${{ github.event.inputs.ledger_path || 'ledger' }}
         run: >-
           tools/build-classification.sh
-          "classification-bundle/classification-${{ github.event.inputs.release }}.json.gz"
-          "ledger-data/${{ github.event.inputs.ledger_path }}"
-          "${{ github.event.inputs.release }}"
+          "classification-bundle/classification-${RELEASE}.json.gz"
+          "ledger-data/${LEDGER_PATH}"
+          "${RELEASE}"
 
       - name: Sign classification bundle
+        env:
+          RELEASE: ${{ github.event.inputs.release || 'trixie' }}
         run: >-
           tools/sign-bundle.sh
-          "classification-bundle/classification-${{ github.event.inputs.release }}.json.gz"
+          "classification-bundle/classification-${RELEASE}.json.gz"
 
       - name: Upload classification bundle
         uses: actions/upload-artifact@v7
@@ -69,9 +84,10 @@ jobs:
           path: classification-bundle/
 
       - name: Publish classification bundle
-        if: github.event.inputs.publish == 'true'
+        if: github.event_name == 'schedule' || github.event.inputs.publish == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE: ${{ github.event.inputs.release || 'trixie' }}
         run: >-
           tools/publish-classification.sh
-          "classification-bundle/classification-${{ github.event.inputs.release }}.json.gz"
+          "classification-bundle/classification-${RELEASE}.json.gz"
