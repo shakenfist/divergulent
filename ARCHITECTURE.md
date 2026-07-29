@@ -215,18 +215,24 @@ installed-package inventory never leaves the machine.
     scan and splits hits into marked files versus the hand-written
     residue — advisory, recomputed from the body at render time,
     never the ledger's recorded observation count.
-    Phase 5 (measurement only; findings pending) adds the corroborated
-    translation-catalogue CANDIDATE — `candidate_translation_hits`
-    over `TRANSLATION_EXTENSIONS` (`.ts`/`.po`/`.pot`), each match
-    reporting which content corroborators fired (Qt Linguist
-    DOCTYPE/root or message-structure elements; gettext
-    `msgid`/`msgstr` pair or catalogue header) — because the extension
-    alone is unsafe: measured over the corpus, `.ts` is 45% Qt
-    Linguist and 55% TypeScript (which `content.py` types as code,
-    the source of translation-string `shell-out` false positives like
-    acetoneiso's GPL text). Like `candidate_banner_hits`, `scan()`
-    never consults it — candidates are measured, never marking, until
-    the phase-5 findings adjudicate promotion.
+    Phase 5 (promoted; rule version 2) adds the **translations
+    family**: a `.ts`/`.po`/`.pot` extension match marks
+    `family='translations'` only when catalogue structure corroborates
+    it in the touched region (Qt Linguist DOCTYPE/root or two distinct
+    message-structure element kinds; gettext `msgid`/`msgstr` pair or
+    catalogue header), with the corroborator names as the per-file
+    signals and the catalogue tool (`qt-linguist`/`gettext`) as the
+    generator label — because the extension alone is majority-wrong:
+    measured over the corpus, `.ts` is 45% Qt Linguist and 55%
+    TypeScript (which `content.py` types as code, the source of
+    translation-string `shell-out` false positives like acetoneiso's
+    GPL text). The family name says "translations", not "generated" —
+    `.po` content is human-authored even though tool-managed.
+    `candidate_translation_hits` remains the measurement view (every
+    extension match, corroborated or not, so the tool keeps sizing
+    the TypeScript population and the recall cost). All the routing
+    and display machinery (residue unlock, projection, badges,
+    construct tally) consumes the new family unchanged.
     `tools/generated-marking/` holds the measurement prototype and
     full-corpus results.
   - `injection.py` — the deterministic prompt-injection tripwire over

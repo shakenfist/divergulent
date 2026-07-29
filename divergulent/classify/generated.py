@@ -27,12 +27,18 @@ Posture (see ``docs/plans/PLAN-generated-marking.md``):
   (rebuilding the era's autotools output and subtracting it) is deliberately out of
   scope; the vocabulary here says "claims" and means it.
 
+Phase 5 promotes the **translations family**: a ``.ts``/``.po``/``.pot`` extension match
+corroborated by catalogue structure in the hunks marks ``family='translations'``, with
+the corroborator names as the file's signals.  The extension alone never marks -- ``.ts``
+measured 45% Qt Linguist / 55% TypeScript -- and the family name says "translations",
+not "generated", because ``.po`` content is human-authored even though tool-managed.
+
 The scanner is pure: no I/O, no network.  ``scan(text)`` is its whole public surface,
 plus ``candidate_banner_hits(text)`` which reports the unmeasured generic do-not-edit
 family for the phase-1 measurement tool WITHOUT ever marking on it, and
-``candidate_translation_hits(text)``, phase 5's equivalent for translation catalogues
-(Qt Linguist ``.ts`` with the TypeScript collision, gettext ``.po``/``.pot``) -- also
-measured, also never marking.  Beside it sit the
+``candidate_translation_hits(text)``, the measurement view of the translations family
+(every extension match, corroborated or not -- the uncorroborated ``.ts`` population is
+TypeScript, and the measurement tool sizes it).  Beside it sit the
 observation helpers: a scan that marks anything rides alongside the category as ONE
 supersedable ``generated-content`` observation per fingerprint (``observed_by=
 'generated-scan'``, ``rule_version=GENERATED_RULES_VERSION``), recorded by the
@@ -73,7 +79,9 @@ from divergulent.classify import rules as rules_mod
 
 # Folds the name set + banner patterns into a version the phase-2 observation records;
 # bumping it supersedes prior observations and re-scans, like every deterministic rule.
-GENERATED_RULES_VERSION = 1
+# v2: the translations family (corroborated ``.ts``/``.po``/``.pot`` catalogues) joins
+# the autotools name set and the banners.
+GENERATED_RULES_VERSION = 2
 
 # The observation kind a marked fingerprint records.  A single string shared by the
 # recorder (``record.py``), and later the routing and the review UI, so the wire name is
@@ -88,9 +96,11 @@ GENERATED_OBSERVED_BY = 'generated-scan'
 NAME_SIGNAL = 'name'
 BANNER_SIGNAL = 'banner'
 
-# Well-known generator output basenames, keyed by family.  Only ``autotools`` exists in
-# v1; the shape is a registry so gettext / cmake families can be added later without
-# reshaping the scanner.  Matched by EXACT basename equality (never substring) at any
+# Well-known generator output basenames, keyed by family.  Only ``autotools`` names
+# exist; the shape is a registry so cmake / protobuf families can be added later without
+# reshaping the scanner.  (v2's translations family matches by EXTENSION + content
+# corroboration instead -- see ``TRANSLATION_EXTENSIONS`` -- so it has no entry here.)
+# Matched by EXACT basename equality (never substring) at any
 # path depth, and case-sensitively -- these names are case-sensitive on disk, and
 # ``Configure`` is somebody else's file.
 _NAME_SETS: dict[str, tuple[str, ...]] = {
@@ -217,15 +227,24 @@ CANDIDATE_BANNERS: tuple[re.Pattern, ...] = (
     re.compile(r'[Aa]utomatically generated'),
 )
 
-# CANDIDATE ONLY -- measured, never marking (phase 5).  Translation catalogues are the
-# next family candidate: Qt Linguist ``.ts`` and gettext ``.po``/``.pot`` files are
-# tool-managed serialisations whose bulk drowns a patch's hand-written residue (the
-# motivating case: acetoneiso's ``translate.patch``, fingerprint ``6b51f47b...`` -- 36 Qt
-# catalogues, ~58k added lines, a ~70-line ``.pro``/``.qrc`` residue).  The extension
-# alone is NOT evidence: ``.ts`` is also TypeScript, which ``content._CODE_EXTENSIONS``
-# already claims -- so each extension gets content corroborators, reported separately so
-# the phase-5 findings can adjudicate their strength.  ``scan`` must never consult these.
+# The translations family (phase 5, promoted after the corpus measurement).  Translation
+# catalogues are tool-managed serialisations whose bulk drowns a patch's hand-written
+# residue (the motivating case: acetoneiso's ``translate.patch``, fingerprint
+# ``6b51f47b...`` -- 36 Qt catalogues, ~58k added lines, a ~70-line ``.pro``/``.qrc``
+# residue).  The extension alone is NOT evidence and never marks: measured over the
+# corpus, ``.ts`` is 45% Qt Linguist and 55% TypeScript (which
+# ``content._CODE_EXTENSIONS`` already claims), so an extension match counts ONLY when a
+# content corroborator also fires -- the ``_NAME_REQUIRES_BANNER`` posture generalised,
+# with the corroborator names as the per-file signals.  The corroboration recall cost is
+# 591 changed lines corpus-wide (0.03% of corroborated ``.po`` lines; phase-5 findings).
+# ``family='translations'``, not "generated": ``.po`` content is human-AUTHORED
+# (translators) even though tool-managed, and the family name must not overclaim.
+TRANSLATION_FAMILY = 'translations'
 TRANSLATION_EXTENSIONS = ('.po', '.pot', '.ts')
+
+# The tool each extension's catalogue format belongs to -- the ``generator`` label a
+# marked file carries (no version: catalogue formats do not stamp one).
+TRANSLATION_GENERATORS = {'.po': 'gettext', '.pot': 'gettext', '.ts': 'qt-linguist'}
 
 # Qt Linguist corroborators.  The DOCTYPE / root element is the strongest claim but only
 # visible when a hunk touches the top of the file (the new-file and full-rewrite cases);
@@ -263,16 +282,22 @@ class GeneratedFile:
     """Path as ``content.profile`` reports it (``a/``/``b/`` prefix and timestamp gone)."""
 
     family: str
-    """Generator family: ``'autotools'`` in v1, or ``'marker'`` for a bare ``@generated``.
+    """Generator family: ``'autotools'``, ``'translations'`` (v2), or ``'marker'`` for a
+    bare ``@generated``.
 
-    A name match settles the family; a banner-only match uses the banner's family.
+    A name or corroborated-extension match settles the family; a banner-only match uses
+    the banner's family.
     """
 
     signals: tuple[str, ...]
-    """Sorted subset of ``('banner', 'name')`` -- which independent claims fired."""
+    """Sorted claims that fired: ``'name'``/``'banner'``, or for the translations family
+    the corroborator names (``'ts-doctype'``, ``'ts-elements'``, ``'po-msgid-msgstr'``,
+    ``'po-header'``) -- the family-honest vocabulary, never a bare extension match."""
 
     generator: str | None
-    """Generator named by the first banner (``'autoconf'``, ``'automake'`` ...), else None.
+    """Generator named by the first banner (``'autoconf'``, ``'automake'`` ...), the
+    catalogue tool for a translations-family file (``'qt-linguist'``, ``'gettext'``),
+    else None.
 
     For a name-matched ``config.guess``/``config.sub`` with no banner, the basename, whose
     datestamp is the only version evidence those files carry.
@@ -557,9 +582,10 @@ def scan(text: str) -> GeneratedScan:
     skipped via ``fingerprint``'s diff-start detection, so file segmentation and the
     added/removed counts match ``content.profile`` exactly.
 
-    A file is marked when its name is in the generated set, or a generator banner is
-    visible anywhere in its hunks, or both -- reported per file as separate signals.  The
-    result is an observation, never a verdict: see the module docstring.
+    A file is marked when its name is in the generated set, a generator banner is
+    visible anywhere in its hunks, or (v2) a translation-catalogue extension is
+    corroborated by catalogue structure in its hunks -- reported per file as separate
+    signals.  The result is an observation, never a verdict: see the module docstring.
     """
     sections = content._parse_sections(text)
     regions = _region_lines(text)
@@ -594,11 +620,26 @@ def scan(text: str) -> GeneratedScan:
                 signals = [NAME_SIGNAL, BANNER_SIGNAL]
         else:
             signals = [NAME_SIGNAL] if family else []
+            # The translations family: an extension match counts ONLY alongside content
+            # corroboration (the ``.ts``/TypeScript collision), and the corroborator
+            # names ARE the file's signals.  No version to capture; the generator label
+            # is the catalogue format's tool.
+            extension = content._extension(basename)
+            if extension in TRANSLATION_EXTENSIONS:
+                corroborations = _translation_corroborations(extension, lines)
+                if corroborations:
+                    signals.extend(corroborations)
+                    family = family or TRANSLATION_FAMILY
+                    generator = TRANSLATION_GENERATORS[extension]
             if banner is not None:
-                generator, banner_family, version = banner
+                banner_generator, banner_family, banner_version = banner
                 signals.append(BANNER_SIGNAL)
-                # A name match settles the family; a banner-only match uses the banner's.
+                # A name or corroborated-extension match settles the family; a
+                # banner-only match uses the banner's.  A corroborated catalogue keeps
+                # its tool as ``generator`` -- the banner still shows in signals.
                 family = family or banner_family
+                if generator is None:
+                    generator, version = banner_generator, banner_version
 
         # Version evidence for the two datestamped names, on a name match only, and
         # only where no banner already identified a generator.
@@ -655,10 +696,11 @@ def candidate_banner_hits(text: str) -> list[tuple[str, str]]:
 class TranslationCandidate:
     """One touched file whose extension makes it a translation-catalogue candidate.
 
-    Measurement only (phase 5): ``scan`` never consults the translation tables, so a
-    candidate never marks anything.  ``corroborations`` is empty when the extension
-    matched but no content corroborator fired -- for ``.ts`` that population is expected
-    to be TypeScript, and sizing it is the point of reporting it.
+    The measurement view of the translations family: unlike ``scan`` -- which marks only
+    corroborated matches -- every extension match is reported.  ``corroborations`` is
+    empty when the extension matched but no content corroborator fired; for ``.ts`` that
+    population is TypeScript (measured 55% of corpus matches), and sizing it is the point
+    of reporting it.
     """
 
     path: str
@@ -700,11 +742,11 @@ def _translation_corroborations(extension: str, lines: list[str]) -> list[str]:
 def candidate_translation_hits(text: str) -> list[TranslationCandidate]:
     """One record per touched file with a translation-catalogue extension.
 
-    Measurement only: like ``candidate_banner_hits``, ``scan`` never consults the
-    translation tables, so nothing here can mark a file.  Every extension match is
-    returned -- corroborated or not -- because the uncorroborated ``.ts`` population
-    (TypeScript) is exactly what the phase-5 findings must size before the family can be
-    promoted to a marking signal.
+    Measurement only, but over the SAME tables ``scan`` marks with: a record whose
+    ``corroborations`` is non-empty is exactly a file ``scan`` marks ``translations``,
+    and an empty one is exactly a file it skips.  Every extension match is returned --
+    corroborated or not -- so the measurement tool can keep sizing the uncorroborated
+    ``.ts`` (TypeScript) population and the corroboration recall cost.
     """
     sections = content._parse_sections(text)
     regions = _region_lines(text)

@@ -433,8 +433,8 @@ class TranslationMeasureTestCase(testtools.TestCase):
         qt = records['fp-qt']
         self.assertEqual(10, qt['translation_changed'])
         self.assertEqual(13, qt['total_changed'])
-        self.assertEqual(3, qt['combined_residue'])
-        self.assertEqual(0, qt['generated_changed'])
+        self.assertEqual(3, qt['residue_changed'])
+        self.assertEqual(0, qt['other_marked_changed'])
 
     def test_the_oversized_catalogue_is_newly_unlocked(self):
         unlock = self.translations['unlock']
@@ -442,7 +442,7 @@ class TranslationMeasureTestCase(testtools.TestCase):
         self.assertEqual(1, unlock['unlocked_by_translations'])
         self.assertEqual(['fp-unlock'],
                          [record['fingerprint'] for record in unlock['unlocked_examples']])
-        self.assertEqual(2, unlock['unlocked_examples'][0]['combined_residue'])
+        self.assertEqual(2, unlock['unlocked_examples'][0]['residue_changed'])
 
     def test_construct_hits_are_attributed_to_the_corroborated_catalogue(self):
         constructs = self.translations['construct_hits']

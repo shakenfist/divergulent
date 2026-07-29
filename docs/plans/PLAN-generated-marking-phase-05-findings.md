@@ -157,3 +157,33 @@ the family says nothing about compiled catalogues.**
 - Whether promotion should also feed the phase-4 findings' naming
   vocabulary back into `detail_for` (`translations/98` vs a
   family-qualified detail) — cosmetic, settle at implementation.
+
+## Adjudication outcome (2026-07-29)
+
+Promotion approved and implemented as rule version 2, with the two
+open questions settled at implementation: a **zero-residue
+projection stays notes-only** (loud and honest — the model is told
+exactly what it is not being shown, and scores on that), and the
+projection/UI **"generated-claiming" umbrella wording is kept**
+(the observation kind is literally `generated-content`; the per-file
+signals and the `qt-linguist`/`gettext` generator labels carry the
+family-honest vocabulary).
+
+Real runs against the reviews ledger: all 442 v1 marks superseded
+and re-recorded, **685 live marks** (243 fingerprints newly marked;
+7 catalogue carriers already carried autotools marks); unlocked
+24 → 34. Re-risk of the truncated-score marked fingerprints: mcrypt
+`low → elevated` on its first residue-first read, grass `none`,
+djview4 `low` (mozc remains locked — its residue is still over the
+cut). acetoneiso's failed-call `elevated` (a 2.2M-token prompt the
+backend refused, degraded recall-safe) was superseded and re-scored
+**`none`** from its 68-line residue. Seven unlocked catalogue
+patches received real triage drafts (schroot verified
+`documentation`; the rest `needs_human` with drafts —
+acetoneiso drafts `feature`, its residue being new-locale
+registration). sgt-puzzles' `206_translate-docs.diff` was already
+deterministically settled (`build-only` → packaging) and correctly
+never entered the residue; aumix already carried a real draft;
+gimp-data-extras stays **injection-diverted** (bidi controls in RTL
+catalogue content) — the tripwire outranks the unlock by design and
+its 85-line residue belongs to a human.

@@ -288,6 +288,29 @@ anyway, so the requirement costs the target population nothing while
 dropping a majority-wrong claim (the findings' "The `Makefile.in`
 problem").
 
+Rule version 2 adds the **translations family**: a
+`.ts`/`.po`/`.pot` extension match (backup-stripped, like names)
+marks `family='translations'` **only** when catalogue structure
+corroborates it in the touched region — the `Makefile.in` posture
+generalised, because the extension alone is majority-wrong: measured,
+`.ts` is 45% Qt Linguist and 55% TypeScript (plus one TeXmacs style
+file). The corroborators are the file's signals — `ts-doctype` (the
+`<!DOCTYPE TS>`/root element, line-anchored so a mid-line TypeScript
+generic cannot fire it), `ts-elements` (two distinct
+message-structure element kinds, so update hunks deep in a catalogue
+still corroborate), `po-msgid-msgstr` (both prefix-anchored lines
+present), `po-header` (`"Project-Id-Version:`) — and the `generator`
+label is the catalogue tool (`qt-linguist`, `gettext`), no version.
+The family is named "translations", not "generated": `.po` content
+is human-authored (translators) even though tool-managed, and
+translated strings are a real attack surface (historically,
+format-string bugs via malicious `msgstr`), so the
+mark-never-verdict posture is load-bearing here. The corroboration
+recall cost is 591 changed lines corpus-wide (0.03% of corroborated
+`.po` changed lines — header-only edits, `msgstr` continuation
+strings, comment/flag lines, obsolete `#~` entries; phase-5
+findings): a missed mark is honest, a false mark is not.
+
 Banner versions are captured **added-lines-preferred**: the first
 hit on an added line wins, then context, then a removed line —
 evidence about the file *as the patch leaves it*, not the version it
@@ -296,7 +319,7 @@ about-to-be-replaced version in 59 of 61 multi-banner regions
 measured.
 
 **What it records**: at most one `generated-content` observation per
-fingerprint (`observed_by='generated-scan'`, `rule_version=1`) —
+fingerprint (`observed_by='generated-scan'`, `rule_version=2`) —
 mirroring `reviewability`, not a per-hit shape, since gatos's 21
 marked files are one claim about one patch, not 21 rows. `detail` is
 `'<family>/<percent>'` (the dominant family by generated changed
@@ -316,6 +339,15 @@ coverage ≥0.5 with ≥1,000 changed lines — the population
 residue-first routing acts on.
 The motivating case, gatos, reads 98.7% generated with a 603-line
 residue in the hand-written source that remains.
+
+The version-2 record run (translations family): all 442 v1 marks
+superseded and re-recorded, **685 fingerprints** now live — 243
+newly marked by the translations family, 7 catalogue carriers
+already marked by autotools signals. The unlocked population grew
+24 → 34; the phase-5 motivating case, acetoneiso's
+`translate.patch`, reads `translations/100` and was re-scored
+`none` residue-first (its previous `elevated` was a failed-call
+degradation on a 2.2M-token prompt).
 
 **Consumed by**: phase 3 of
 [its plan](plans/PLAN-generated-marking.md) turns the recorded mark

@@ -304,23 +304,27 @@ class _Accumulator:
         if not corroborated_paths:
             return
 
-        # Would-be coverage/unlock arithmetic, over fingerprints carrying at least one
-        # corroborated catalogue file.  ``combined`` unions the corroborated candidates
-        # with what ``scan`` already marks, per file, so a patch carrying both autotools
-        # output and catalogues is not double-counted.
+        # Coverage/unlock arithmetic over fingerprints carrying at least one marked
+        # catalogue.  Since promotion, ``scan`` itself marks the corroborated files
+        # (``family='translations'``), so the residue is scan's own; the "newly
+        # unlocked" figure compares it against the WITHOUT-translations counterfactual
+        # (what phase 3's autotools-and-banner marks alone would leave).
+        translation_marked = {
+            entry.path for entry in scan.files
+            if entry.family == generated.TRANSLATION_FAMILY}
         marked_paths = {entry.path for entry in scan.files}
         translation_changed = 0
-        combined_changed = 0
+        other_marked_changed = 0
         for section in sections:
             changed = len(section.added) + len(section.removed)
-            if section.path in corroborated_paths:
+            if section.path in translation_marked:
                 translation_changed += changed
-            if section.path in corroborated_paths or section.path in marked_paths:
-                combined_changed += changed
+            elif section.path in marked_paths:
+                other_marked_changed += changed
 
         total_changed = scan.total_changed
         coverage = translation_changed / total_changed if total_changed else 0.0
-        combined_residue = total_changed - combined_changed
+        residue_changed = scan.residue_changed
 
         self.translation_fingerprints += 1
         if coverage < 0.5:
@@ -334,9 +338,8 @@ class _Accumulator:
             'fingerprint': fingerprint,
             'coverage': coverage,
             'translation_changed': translation_changed,
-            'generated_changed': scan.generated_changed,
-            'combined_changed': combined_changed,
-            'combined_residue': combined_residue,
+            'other_marked_changed': other_marked_changed,
+            'residue_changed': residue_changed,
             'total_changed': total_changed,
         }
         if coverage >= 0.5:
@@ -345,19 +348,20 @@ class _Accumulator:
         oversized = total_changed > reviewability.REVIEWABILITY_OVERSIZED_LINES
         if oversized:
             self.translation_oversized += 1
+            residue_without_translations = total_changed - other_marked_changed
             already_unlocked = (
-                scan.residue_changed <= reviewability.REVIEWABILITY_OVERSIZED_LINES)
-            if (combined_residue <= reviewability.REVIEWABILITY_OVERSIZED_LINES
+                residue_without_translations <= reviewability.REVIEWABILITY_OVERSIZED_LINES)
+            if (residue_changed <= reviewability.REVIEWABILITY_OVERSIZED_LINES
                     and not already_unlocked):
                 self.translation_unlocked += 1
                 if len(self.translation_unlocked_examples) < _TRANSLATION_EXAMPLES:
                     self.translation_unlocked_examples.append(record)
 
-        # The dangerous-construct hits an eventual mark would attribute to catalogue
-        # files -- run only when a corroborated candidate exists, so the whole-corpus
-        # walk does not pay the construct scan on every body.
+        # The dangerous-construct hits the mark attributes to catalogue files -- run
+        # only when a marked catalogue exists, so the whole-corpus walk does not pay
+        # the construct scan on every body.
         for path, flag in rules.scan_dangerous_constructs_by_file(text):
-            if path in corroborated_paths:
+            if path in translation_marked:
                 self.translation_construct_total += 1
                 self.translation_construct_files.add((fingerprint, path))
                 if len(self.translation_construct_samples) < _TRANSLATION_EXAMPLES:
