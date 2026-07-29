@@ -325,23 +325,63 @@ def _read_binaries(dest_dir: str) -> list[str]:
     return [name.strip() for name in value.replace('\n', ' ').split(',') if name.strip()]
 
 
+def _control_synopsis(text: str, source_package: str) -> str | None:
+    """The one-line description for ``source_package`` from a ``debian/control`` text.
+
+    ``Description:`` is a per-BINARY-package field, but the corpus is keyed by
+    source package, so one stanza must speak for the whole source: the binary
+    named exactly like the source when there is one (the usual convention), else
+    the FIRST binary stanza carrying a description. Only the first line -- the
+    short synopsis -- is kept. ``None`` when no binary stanza has a description.
+    """
+    fallback = None
+    for stanza in deb822.Deb822.iter_paragraphs(text.splitlines()):
+        description = stanza.get('Description') or ''
+        synopsis = description.splitlines()[0].strip() if description else ''
+        if not stanza.get('Package') or not synopsis:
+            continue
+        if stanza['Package'] == source_package:
+            return synopsis
+        if fallback is None:
+            fallback = synopsis
+    return fallback
+
+
+def _extract_description(dest_dir: str, source_package: str) -> str | None:
+    """The package's one-line synopsis from ``debian/control`` in the debian tar.
+
+    The same ``.debian.tar.*`` ``_extract_patches`` reads, so no extra download.
+    ``None`` when there is no debian tar (native / non-quilt) or no control file.
+    """
+    debian_tars = glob.glob(os.path.join(dest_dir, '*.debian.tar.*'))
+    if not debian_tars:
+        return None
+    with tarfile.open(debian_tars[0], 'r:*') as tar:
+        member = _member(tar, 'debian/control')
+        if member is None:
+            return None
+        return _control_synopsis(_read(tar, member), source_package)
+
+
 def _fetch_source(source_package: str, version: str, *, download: Callable[..., bool]
-                  ) -> tuple[str | None, dict[str, str] | None, str | None, list[str]]:
-    '''Download once; return ``(source_format, texts, changelog_date, binaries)``.
+                  ) -> tuple[str | None, dict[str, str] | None, str | None, list[str], str | None]:
+    '''Download once; return ``(source_format, texts, changelog_date, binaries, description)``.
 
     The shared core of :func:`fetch_patch_texts` (texts only) and
     :func:`fetch_source_details` (texts + the package's changelog date + binary
-    names), so both cost a single ``.dsc`` + ``.debian.tar.*`` download.
+    names + description synopsis), so both cost a single ``.dsc`` +
+    ``.debian.tar.*`` download.
     '''
     with tempfile.TemporaryDirectory() as dest:
         if not download(source_package, version, dest):
-            return None, None, None, []
+            return None, None, None, [], None
         source_format = _read_format(dest)
         changelog_date = _extract_changelog_date(dest)
         binaries = _read_binaries(dest)
+        description = _extract_description(dest, source_package)
         if 'native' in (source_format or '').lower():
-            return source_format, None, changelog_date, binaries
-        return source_format, _extract_patches(dest), changelog_date, binaries
+            return source_format, None, changelog_date, binaries, description
+        return source_format, _extract_patches(dest), changelog_date, binaries, description
 
 
 def fetch_patch_texts(source_package: str, version: str, *,
@@ -364,19 +404,20 @@ def fetch_patch_texts(source_package: str, version: str, *,
     any other format (e.g. ``1.0``) means a non-quilt source. This mirrors the
     distinctions ``details()`` draws today.
     '''
-    source_format, texts, _date, _binaries = _fetch_source(source_package, version, download=download)
+    source_format, texts, _date, _binaries, _description = _fetch_source(source_package, version, download=download)
     return source_format, texts
 
 
 def fetch_source_details(source_package: str, version: str, *,
                          download: Callable[..., bool] = _download_source
-                         ) -> tuple[str | None, dict[str, str] | None, str | None, list[str]]:
-    '''Like :func:`fetch_patch_texts` but also returns the changelog date and binaries.
+                         ) -> tuple[str | None, dict[str, str] | None, str | None, list[str], str | None]:
+    '''Like :func:`fetch_patch_texts` but also returns the changelog date, binaries and description.
 
     The curation-side corpus builder uses this to record the package's last-upload
-    date and its binary package names (for the reach axis) alongside its patches,
+    date, its binary package names (for the reach axis) and its one-line
+    ``debian/control`` synopsis (review-time orientation) alongside its patches,
     from the SAME download. The client divergence path stays on
-    :func:`fetch_patch_texts` (it needs neither).
+    :func:`fetch_patch_texts` (it needs none of them).
     '''
     return _fetch_source(source_package, version, download=download)
 

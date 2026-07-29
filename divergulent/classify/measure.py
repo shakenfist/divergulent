@@ -369,9 +369,11 @@ def write_index(corpus_dir: str, index_path: str) -> int:
         connection.execute('CREATE INDEX idx_patch_source_package ON patch (source_package)')
 
         # A `package` table carries per-package metadata the `patch` table does not
-        # -- notably the changelog (last-upload) date -- so the review UI can show
-        # package age with one indexed lookup. ``changelog_date`` is None for a
-        # native/non-quilt package or a corpus built before it was captured.
+        # -- notably the changelog (last-upload) date and the one-line control
+        # synopsis -- so the review UI can show package age and "what is this
+        # package?" with one indexed lookup. ``changelog_date`` and ``description``
+        # are None for a native/non-quilt package or a corpus built before each
+        # was captured.
         package_rows = _latest_package_rows(
             _read_jsonl(os.path.join(corpus_dir, 'packages.jsonl')))
         connection.execute(
@@ -379,12 +381,13 @@ def write_index(corpus_dir: str, index_path: str) -> int:
             'source_package TEXT NOT NULL, '
             'version TEXT NOT NULL, '
             'changelog_date TEXT, '
-            'binaries TEXT)')
+            'binaries TEXT, '
+            'description TEXT)')
         connection.executemany(
-            'INSERT INTO package (source_package, version, changelog_date, binaries) '
-            'VALUES (?, ?, ?, ?)',
+            'INSERT INTO package (source_package, version, changelog_date, binaries, description) '
+            'VALUES (?, ?, ?, ?, ?)',
             [(row['source_package'], row['version'], row.get('changelog_date'),
-              json.dumps(row.get('binaries') or []))
+              json.dumps(row.get('binaries') or []), row.get('description'))
              for row in package_rows])
         connection.execute('CREATE INDEX idx_package_source_package ON package (source_package)')
         connection.commit()

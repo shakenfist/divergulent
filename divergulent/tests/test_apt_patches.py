@@ -183,3 +183,75 @@ class ReadBinariesTestCase(testtools.TestCase):
     def test_no_dsc_is_empty(self):
         from divergulent.sources.apt_patches import _read_binaries
         self.assertEqual([], _read_binaries(self._dest_with_dsc(None)))
+
+
+CONTROL = (
+    'Source: openssl\n'
+    'Section: utils\n'
+    'Priority: optional\n'
+    '\n'
+    'Package: libssl3\n'
+    'Architecture: any\n'
+    'Description: Secure Sockets Layer toolkit - shared libraries\n'
+    ' This package is part of the OpenSSL project.\n'
+    '\n'
+    'Package: openssl\n'
+    'Architecture: any\n'
+    'Description: Secure Sockets Layer toolkit - cryptographic utility\n'
+    ' The long description continues here and must not be captured.\n')
+
+
+class ControlSynopsisTestCase(testtools.TestCase):
+
+    def test_prefers_the_binary_named_like_the_source(self):
+        from divergulent.sources.apt_patches import _control_synopsis
+        # The matching stanza wins even though libssl3 comes first.
+        self.assertEqual(
+            'Secure Sockets Layer toolkit - cryptographic utility',
+            _control_synopsis(CONTROL, 'openssl'))
+
+    def test_falls_back_to_the_first_binary_stanza(self):
+        from divergulent.sources.apt_patches import _control_synopsis
+        # No binary is named like the source (e.g. src:expat -> libexpat1).
+        self.assertEqual(
+            'Secure Sockets Layer toolkit - shared libraries',
+            _control_synopsis(CONTROL, 'openssl-source'))
+
+    def test_only_the_synopsis_line_is_kept(self):
+        from divergulent.sources.apt_patches import _control_synopsis
+        self.assertNotIn('must not be captured', _control_synopsis(CONTROL, 'openssl'))
+
+    def test_source_only_control_is_none(self):
+        from divergulent.sources.apt_patches import _control_synopsis
+        self.assertIsNone(_control_synopsis('Source: foo\nSection: utils\n', 'foo'))
+
+    def test_blank_description_is_skipped(self):
+        from divergulent.sources.apt_patches import _control_synopsis
+        text = 'Package: foo\nDescription:\n\nPackage: bar\nDescription: a real synopsis\n'
+        self.assertEqual('a real synopsis', _control_synopsis(text, 'foo'))
+
+
+class ExtractDescriptionTestCase(testtools.TestCase):
+
+    def _dest(self, control=CONTROL, with_debian_tar=True):
+        dest = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__('shutil').rmtree(dest, ignore_errors=True))
+        if with_debian_tar:
+            with tarfile.open(os.path.join(dest, 'pkg.debian.tar.xz'), 'w:xz') as tar:
+                if control is not None:
+                    _add(tar, 'debian/control', control)
+        return dest
+
+    def test_reads_the_synopsis_from_the_debian_tar(self):
+        from divergulent.sources.apt_patches import _extract_description
+        self.assertEqual(
+            'Secure Sockets Layer toolkit - cryptographic utility',
+            _extract_description(self._dest(), 'openssl'))
+
+    def test_no_control_file_is_none(self):
+        from divergulent.sources.apt_patches import _extract_description
+        self.assertIsNone(_extract_description(self._dest(control=None), 'openssl'))
+
+    def test_no_debian_tar_is_none(self):
+        from divergulent.sources.apt_patches import _extract_description
+        self.assertIsNone(_extract_description(self._dest(with_debian_tar=False), 'openssl'))
