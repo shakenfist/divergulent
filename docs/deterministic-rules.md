@@ -532,4 +532,4 @@ the dangerous-construct tables, adjust an axis threshold, or bump any
 `*_VERSION` constant — update this document (the tables above and,
 for a new rule, a short subsection saying what it matches and why it
 is safe to settle deterministically). The pre-push checklist
-(`PUSH-TEMPLATE.md`) checks for exactly this.
+(`PUSH-AUDIT.md`) checks for exactly this.

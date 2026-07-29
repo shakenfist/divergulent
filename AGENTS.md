@@ -464,7 +464,7 @@ dependency wall that must never reach the package's own dependency set).
 
 Plans live in `docs/plans/` — a master plan plus one file per phase,
 created from [PLAN-TEMPLATE.md](PLAN-TEMPLATE.md). Pre-push checks are in
-[PUSH-TEMPLATE.md](PUSH-TEMPLATE.md).
+[PUSH-AUDIT.md](PUSH-AUDIT.md).
 
 ## Documentation workflow
 
@@ -481,4 +481,4 @@ Two documents track the code and must move with it:
 - [docs/workflow.md](docs/workflow.md) — any change to the pipeline's
   stages, tiers, or CLI verbs must be reflected there.
 
-PUSH-TEMPLATE.md's documentation-review wave checks both.
+PUSH-AUDIT.md's documentation-review wave checks both.
