@@ -1403,3 +1403,172 @@ class RecordRetractionTestCase(testtools.TestCase):
         self.assertEqual([], self._rows(live_only=True))
         self.assertEqual(1, len(self._rows(live_only=False)))
         self.assertEqual({}, generated.generated_marks(self.conn))
+
+
+# The phase-5 translation-catalogue candidate (measurement only -- never marks).
+
+QT_TS_NEW_FILE = _file_diff('src/locale/app_de.ts', [
+    '+<?xml version="1.0" encoding="utf-8"?>',
+    '+<!DOCTYPE TS>',
+    '+<TS version="2.1" language="de_DE">',
+    '+<context>',
+    '+    <message>',
+    '+        <source>Open image</source>',
+    '+        <translation>Abbild öffnen</translation>',
+    '+    </message>',
+    '+</context>',
+    '+</TS>',
+])
+
+QT_TS_UPDATE_HUNK = _file_diff('locale/app_fr.ts', [
+    '     <message>',
+    '         <source>Open image</source>',
+    '-        <translation type="unfinished"></translation>',
+    '+        <translation>Ouvrir l\'image</translation>',
+    '     </message>',
+])
+
+TYPESCRIPT_DECOY = _file_diff('src/app.ts', [
+    '+const pending: Promise<TS> = load();',
+    '+export function run(): void {',
+    '+    console.log("translation");',
+    '+}',
+])
+
+PO_UPDATE_HUNK = _file_diff('po/fr.po', [
+    ' msgid "Open image"',
+    '-msgstr "Ouvrir image"',
+    '+msgstr "Ouvrir l\'image"',
+])
+
+PO_HEADER_ONLY = _file_diff('po/de.po', [
+    '-"Project-Id-Version: app 1.0\\n"',
+    '+"Project-Id-Version: app 2.0\\n"',
+])
+
+PO_PLURAL_FORMS = _file_diff('po/pl.po', [
+    ' msgid "%d file"',
+    '+msgstr[0] "%d plik"',
+    '+msgstr[1] "%d pliki"',
+])
+
+PO_COMMENT_ONLY = _file_diff('po/it.po', [
+    '-# old translator comment',
+    '+# new translator comment',
+])
+
+
+class TranslationCandidateTestCase(testtools.TestCase):
+
+    def _single(self, text):
+        hits = generated.candidate_translation_hits(text)
+        self.assertEqual(1, len(hits))
+        return hits[0]
+
+    def test_qt_new_file_corroborates_doctype_and_elements(self):
+        hit = self._single(QT_TS_NEW_FILE)
+        self.assertEqual('src/locale/app_de.ts', hit.path)
+        self.assertEqual('.ts', hit.extension)
+        self.assertEqual(('ts-doctype', 'ts-elements'), hit.corroborations)
+        self.assertEqual(10, hit.added)
+        self.assertEqual(0, hit.removed)
+
+    def test_qt_update_hunk_corroborates_on_elements_alone(self):
+        # No hunk touches the top of the file, so no DOCTYPE is visible; the message
+        # structure in the hunk still corroborates.
+        hit = self._single(QT_TS_UPDATE_HUNK)
+        self.assertEqual(('ts-elements',), hit.corroborations)
+
+    def test_typescript_is_reported_uncorroborated(self):
+        # The collision that makes extension-only marking unsafe: a mid-line generic
+        # (``Promise<TS>``) must not fire the anchored root-element pattern, and one
+        # element-like token would not reach the two-distinct-kinds bar.
+        hit = self._single(TYPESCRIPT_DECOY)
+        self.assertEqual('.ts', hit.extension)
+        self.assertEqual((), hit.corroborations)
+
+    def test_po_update_hunk_corroborates_on_the_msgid_msgstr_pair(self):
+        hit = self._single(PO_UPDATE_HUNK)
+        self.assertEqual('.po', hit.extension)
+        self.assertEqual(('po-msgid-msgstr',), hit.corroborations)
+
+    def test_po_header_hunk_corroborates_on_the_header(self):
+        hit = self._single(PO_HEADER_ONLY)
+        self.assertEqual(('po-header',), hit.corroborations)
+
+    def test_po_plural_msgstr_counts_toward_the_pair(self):
+        hit = self._single(PO_PLURAL_FORMS)
+        self.assertEqual(('po-msgid-msgstr',), hit.corroborations)
+
+    def test_po_comment_only_hunk_is_uncorroborated(self):
+        # Honest recall accounting: a hunk that never shows catalogue structure does not
+        # corroborate, and the findings must size how often that happens.
+        hit = self._single(PO_COMMENT_ONLY)
+        self.assertEqual((), hit.corroborations)
+
+    def test_backup_suffix_is_stripped_before_the_extension_match(self):
+        text = _file_diff('locale/app_de.ts.orig', [
+            ' <message>',
+            ' <source>x</source>',
+            '+<translation>y</translation>',
+        ])
+        hit = self._single(text)
+        self.assertEqual('.ts', hit.extension)
+        self.assertEqual(('ts-elements',), hit.corroborations)
+
+    def test_pot_template_matches(self):
+        text = _file_diff('po/app.pot', [
+            '+msgid "Open image"',
+            '+msgstr ""',
+        ])
+        self.assertEqual('.pot', self._single(text).extension)
+
+    def test_other_extensions_are_not_candidates(self):
+        self.assertEqual([], generated.candidate_translation_hits(
+            _file_diff('src/main.c', ['+int x;'])))
+
+    def test_scan_marks_a_corroborated_qt_catalogue(self):
+        scan = generated.scan(QT_TS_NEW_FILE)
+        self.assertEqual(1, len(scan.files))
+        entry = scan.files[0]
+        self.assertEqual('src/locale/app_de.ts', entry.path)
+        self.assertEqual('translations', entry.family)
+        self.assertEqual(('ts-doctype', 'ts-elements'), entry.signals)
+        self.assertEqual('qt-linguist', entry.generator)
+        self.assertIsNone(entry.version)
+
+    def test_scan_marks_a_corroborated_po_catalogue(self):
+        scan = generated.scan(PO_UPDATE_HUNK)
+        self.assertEqual(1, len(scan.files))
+        entry = scan.files[0]
+        self.assertEqual('translations', entry.family)
+        self.assertEqual(('po-msgid-msgstr',), entry.signals)
+        self.assertEqual('gettext', entry.generator)
+
+    def test_scan_never_marks_on_the_extension_alone(self):
+        # The promotion keeps the corroboration bar: TypeScript and a structure-free
+        # catalogue hunk stay unmarked, exactly as when they were candidates.
+        self.assertEqual((), generated.scan(TYPESCRIPT_DECOY).files)
+        self.assertEqual((), generated.scan(PO_COMMENT_ONLY).files)
+
+    def test_scan_residue_arithmetic_with_a_translation_mark(self):
+        text = QT_TS_NEW_FILE + _file_diff('src/app.pro', ['-TRANSLATIONS =', '+TRANSLATIONS = a'])
+        scan = generated.scan(text)
+        self.assertEqual(10, scan.generated_changed)
+        self.assertEqual(2, scan.residue_changed)
+        self.assertEqual(12, scan.total_changed)
+        self.assertEqual('translations/83', generated.detail_for(scan))
+
+    def test_a_catalogue_with_a_banner_keeps_its_tool_as_generator(self):
+        # The '@generated' marker in a corroborated catalogue adds the banner signal but
+        # the family and generator stay the catalogue's own.
+        text = _file_diff('po/fr.po', [
+            ' # @generated by the l10n pipeline',
+            ' msgid "Open"',
+            '-msgstr "Ouvrir!"',
+            '+msgstr "Ouvrir"',
+        ])
+        entry = generated.scan(text).files[0]
+        self.assertEqual('translations', entry.family)
+        self.assertEqual(('banner', 'po-msgid-msgstr'), entry.signals)
+        self.assertEqual('gettext', entry.generator)

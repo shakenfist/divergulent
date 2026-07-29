@@ -243,8 +243,14 @@ class MeasureCorpusTestCase(testtools.TestCase):
     def test_report_has_every_expected_top_level_key(self):
         self.assertEqual({
             'name_match_counts', 'gap_list', 'coverage_distribution', 'low_frequency_names',
-            'acinclude', 'multi_banner', 'candidate_family', 'totals',
+            'acinclude', 'multi_banner', 'candidate_family', 'translation_candidates', 'totals',
         }, set(self.report))
+
+    def test_no_translation_candidates_in_the_phase_1_fixture(self):
+        translations = self.report['translation_candidates']
+        self.assertEqual(0, translations['coverage']['fingerprints_with_corroborated'])
+        self.assertEqual(0, sum(
+            counts['files'] for counts in translations['per_extension'].values()))
 
 
 class MeasureCliTestCase(testtools.TestCase):
@@ -267,7 +273,7 @@ class MeasureCliTestCase(testtools.TestCase):
 
         self.assertEqual({
             'name_match_counts', 'gap_list', 'coverage_distribution', 'low_frequency_names',
-            'acinclude', 'multi_banner', 'candidate_family', 'totals',
+            'acinclude', 'multi_banner', 'candidate_family', 'translation_candidates', 'totals',
         }, set(loaded))
         self.assertEqual(5, loaded['totals']['fingerprints_scanned'])
         self.assertEqual(1, loaded['totals']['bodies_missing'])
@@ -279,3 +285,174 @@ class MeasureCliTestCase(testtools.TestCase):
             loaded = json.load(handle)
         # Only the first fingerprint in sorted order is scanned or counted missing.
         self.assertEqual(1, loaded['totals']['fingerprints_scanned'] + loaded['totals']['bodies_missing'])
+
+
+# --- phase-5 translation-candidate fixtures (their own corpus, so the phase-1
+# fixture's exact-count assertions above stay untouched) -----------------------
+
+QT_TRANSLATION_TEXT = ''.join([
+    # An acetoneiso-shaped patch: a corroborated Qt catalogue (with a construct-looking
+    # string INSIDE a translation -- the attribution the construct section must report),
+    # a hand-written build-file residue, and a compiled-catalogue touch.
+    _file_diff('acetoneiso/locale/app_de.ts', [
+        '+<?xml version="1.0" encoding="utf-8"?>',
+        '+<!DOCTYPE TS>',
+        '+<TS version="2.1" language="de_DE">',
+        '+<context>',
+        '+    <message>',
+        '+        <source>Run command</source>',
+        '+        <translation>run system(now)</translation>',
+        '+    </message>',
+        '+</context>',
+        '+</TS>',
+    ]),
+    _file_diff('acetoneiso/acetoneiso.pro', [
+        '-TRANSLATIONS = locale/app_fr.ts',
+        '+TRANSLATIONS = locale/app_fr.ts locale/app_de.ts']),
+    _file_diff('acetoneiso/locale/app_de.qm', ['+(binary payload placeholder)']),
+])
+# .ts changed=10 (corroborated: doctype + elements), .pro changed=2 (build-typed
+# residue), .qm changed=1 (compiled-catalogue tally); total=13, coverage 10/13 -> the
+# [0.5, 0.9) bucket.  The system( string sits in the corroborated catalogue, so the
+# construct section must attribute exactly one shell-out hit to it.
+
+TS_DECOY_TEXT = _file_diff('web/src/app.ts', [
+    '+const pending: Promise<TS> = load();',
+    '+export const label = "translation";',
+])
+# TypeScript: extension matches, nothing corroborates -- the uncorroborated example.
+
+PO_TRANSLATION_TEXT = _file_diff('po/fr.po', [
+    ' msgid "Open"',
+    '-msgstr "Ouvrir!"',
+    '+msgstr "Ouvrir"',
+])
+# changed=2, all corroborated -> coverage 1.0, the >=0.9 bucket.
+
+
+def _unlock_translation_text():
+    """An oversized body whose corroborated catalogue is nearly all of it.
+
+    total changed > REVIEWABILITY_OVERSIZED_LINES with a 2-line hand-written residue:
+    the unlock arithmetic must count it as newly unlocked by the translation family
+    (nothing is generated-marked, so the phase-3 unlock alone would not reach it).
+    """
+    lines = ['+<?xml version="1.0" encoding="utf-8"?>', '+<!DOCTYPE TS>', '+<TS version="2.1">']
+    lines.extend(
+        '+<message><source>s%d</source><translation>t%d</translation></message>' % (i, i)
+        for i in range(5100))
+    lines.append('+</TS>')
+    return ''.join([
+        _file_diff('locale/big_de.ts', lines),
+        _file_diff('src/hand.c', ['+int a;', '+int b;']),
+    ])
+
+
+def _build_translation_corpus(corpus_dir):
+    os.makedirs(corpus_dir, exist_ok=True)
+
+    sha_qt = '6666666666666666666666666666666666666666666666666666666666666666'
+    sha_decoy = '7777777777777777777777777777777777777777777777777777777777777777'
+    sha_po = '8888888888888888888888888888888888888888888888888888888888888888'
+    sha_unlock = '9999999999999999999999999999999999999999999999999999999999999999'
+
+    _write_body(corpus_dir, sha_qt, QT_TRANSLATION_TEXT)
+    _write_body(corpus_dir, sha_decoy, TS_DECOY_TEXT)
+    _write_body(corpus_dir, sha_po, PO_TRANSLATION_TEXT)
+    _write_body(corpus_dir, sha_unlock, _unlock_translation_text())
+
+    rows = [
+        ('pkg-qt', '1.0', '01-qt.patch', sha_qt, 'fp-qt'),
+        ('pkg-decoy', '1.0', '01-decoy.patch', sha_decoy, 'fp-tsdecoy'),
+        ('pkg-po', '1.0', '01-po.patch', sha_po, 'fp-po'),
+        ('pkg-unlock', '1.0', '01-unlock.patch', sha_unlock, 'fp-unlock'),
+    ]
+
+    connection = sqlite3.connect(os.path.join(corpus_dir, 'fingerprints.sqlite'))
+    try:
+        connection.execute(
+            'CREATE TABLE patch ('
+            'source_package TEXT NOT NULL, '
+            'version TEXT NOT NULL, '
+            'patch_name TEXT NOT NULL, '
+            'raw_sha256 TEXT NOT NULL, '
+            'normalisation_version INTEGER NOT NULL, '
+            'fingerprint TEXT NOT NULL)')
+        connection.executemany(
+            'INSERT INTO patch (source_package, version, patch_name, raw_sha256, '
+            'normalisation_version, fingerprint) VALUES (?, ?, ?, ?, 1, ?)',
+            rows)
+        connection.commit()
+    finally:
+        connection.close()
+
+
+class TranslationMeasureTestCase(testtools.TestCase):
+
+    def setUp(self):
+        super().setUp()
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        self.corpus_dir = os.path.join(tempdir.name, 'corpus')
+        _build_translation_corpus(self.corpus_dir)
+        self.translations = measure.build_report(self.corpus_dir)['translation_candidates']
+
+    def test_per_extension_counts_and_corroboration(self):
+        per_extension = self.translations['per_extension']
+        # .ts: the qt catalogue, the oversized catalogue, and the TypeScript decoy.
+        self.assertEqual(3, per_extension['.ts']['files'])
+        self.assertEqual(2, per_extension['.ts']['corroborated'])
+        self.assertEqual({'files': 1, 'corroborated': 1, 'corroborated_fraction': 1.0},
+                         per_extension['.po'])
+        self.assertEqual({'files': 0, 'corroborated': 0, 'corroborated_fraction': 0.0},
+                         per_extension['.pot'])
+
+    def test_corroborator_counts(self):
+        self.assertEqual(
+            {'ts-doctype': 2, 'ts-elements': 2, 'po-msgid-msgstr': 1},
+            self.translations['corroborator_counts'])
+
+    def test_the_typescript_decoy_is_the_uncorroborated_example(self):
+        uncorroborated = self.translations['uncorroborated']['.ts']
+        self.assertEqual(1, uncorroborated['count'])
+        self.assertEqual(
+            [{'fingerprint': 'fp-tsdecoy', 'path': 'web/src/app.ts'}],
+            uncorroborated['examples'])
+
+    def test_corroborated_files_are_typed_as_code_and_data_today(self):
+        # The collision this phase exists to measure: Qt catalogues type as CODE via
+        # content's ``.ts`` (TypeScript) extension; ``.po`` falls through to data.
+        self.assertEqual({'code': 2, 'data': 1}, self.translations['corroborated_typed_as'])
+
+    def test_coverage_buckets_and_records(self):
+        coverage = self.translations['coverage']
+        self.assertEqual(3, coverage['fingerprints_with_corroborated'])
+        self.assertEqual({'lt_0_5': 0, 'ge_0_5_lt_0_9': 1, 'ge_0_9': 2}, coverage['buckets'])
+        records = {record['fingerprint']: record for record in coverage['ge_0_5_list']}
+        self.assertEqual({'fp-po', 'fp-qt', 'fp-unlock'}, set(records))
+        qt = records['fp-qt']
+        self.assertEqual(10, qt['translation_changed'])
+        self.assertEqual(13, qt['total_changed'])
+        self.assertEqual(3, qt['residue_changed'])
+        self.assertEqual(0, qt['other_marked_changed'])
+
+    def test_the_oversized_catalogue_is_newly_unlocked(self):
+        unlock = self.translations['unlock']
+        self.assertEqual(1, unlock['oversized_with_corroborated'])
+        self.assertEqual(1, unlock['unlocked_by_translations'])
+        self.assertEqual(['fp-unlock'],
+                         [record['fingerprint'] for record in unlock['unlocked_examples']])
+        self.assertEqual(2, unlock['unlocked_examples'][0]['residue_changed'])
+
+    def test_construct_hits_are_attributed_to_the_corroborated_catalogue(self):
+        constructs = self.translations['construct_hits']
+        self.assertEqual(1, constructs['total'])
+        self.assertEqual(1, constructs['distinct_files'])
+        sample = constructs['samples'][0]
+        self.assertEqual('fp-qt', sample['fingerprint'])
+        self.assertEqual('acetoneiso/locale/app_de.ts', sample['path'])
+        self.assertEqual('shell-out', sample['detail'])
+
+    def test_compiled_catalogue_tally(self):
+        self.assertEqual({'.gmo': 0, '.mo': 0, '.qm': 1},
+                         self.translations['compiled_catalogues'])
