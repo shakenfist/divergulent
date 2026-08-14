@@ -32,6 +32,9 @@ and worked examples over API reference.
   deterministic rule and axis, one by one: what it matches, what it
   decides, its precedence, and — just as importantly — what it
   deliberately refuses to decide.
+- [Patch classification](patch-classification.md) — the curation-side
+  pipeline: the corpus crawl, deterministic classification, the
+  append-only decision ledger, LLM and human triage, and publishing.
 - [Plans](plans/index.md) — the planning documents that drove each
   phase of the work, kept for the historical record. The documents
   above describe the system as it is; the plans describe how it got

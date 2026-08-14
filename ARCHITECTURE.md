@@ -182,9 +182,9 @@ installed-package inventory never leaves the machine.
     copy; `Makefile.in` requires banner corroboration, measured ~⅔
     hand-written otherwise) and generator banners with versions
     captured as the-file-as-the-patch-leaves-it evidence — plus the
-    residue arithmetic (changed lines outside marked files) phase 3
-    routes on. Phase 2 of
-    [its plan](docs/plans/PLAN-generated-marking.md) is done: the
+    residue arithmetic (changed lines outside marked files) that the
+    routing helpers below consume. See
+    [its plan](docs/plans/PLAN-generated-marking.md). The
     observation helpers (`detail_for`, `evidence_for`,
     `generated_marks`) and the record-pass integration, so a marked
     scan now rides alongside the category as ONE supersedable
@@ -197,10 +197,9 @@ installed-package inventory never leaves the machine.
     fingerprints in ~76 s; 442 fingerprints carry the live
     observation; 41 generated-dominated patches (coverage ≥0.5,
     ≥1,000 changed lines); the gatos motivating case reads 98.7%
-    generated / 603-line residue. Phase 3 (S1-S4 implemented; real
-    runs pending) adds the two ROUTING helpers consumed by both
-    `triage_driver.py` and `risk.py`, kept here beside the mark so
-    neither consumer reimplements the composition:
+    generated / 603-line residue. Two ROUTING helpers consumed by both
+    are consumed by both `triage_driver.py` and `risk.py`, and kept
+    here beside the mark so neither reimplements the composition:
     `residue_unlocked_fingerprints(conn)` composes `reviewability`'s
     `oversized` set with the mark's `residue_changed` to say which
     oversized fingerprints are triageable/scorable after all, and
@@ -210,13 +209,12 @@ installed-package inventory never leaves the machine.
     consumer's character cap, recording the omission in evidence.
     Neither is a verdict: the first only changes which fingerprints
     reach a model, the second only changes what text one is shown.
-    Phase 4 (S1–S4 implemented; verification pending) adds the one
-    DISPLAY helper the review UIs share: `construct_tally(body,
+    One DISPLAY helper is shared by the review UIs: `construct_tally(body,
     marked_paths)` reruns `rules.py`'s per-file dangerous-construct
     scan and splits hits into marked files versus the hand-written
     residue — advisory, recomputed from the body at render time,
     never the ledger's recorded observation count.
-    Phase 5 (promoted; rule version 2) adds the **translations
+    Rule version 2 adds the **translations
     family**: a `.ts`/`.po`/`.pot` extension match marks
     `family='translations'` only when catalogue structure corroborates
     it in the touched region (Qt Linguist DOCTYPE/root or two distinct
@@ -283,7 +281,7 @@ installed-package inventory never leaves the machine.
     largest change first) before the diff so the bulk of a huge
     multi-file patch and the small hand-edits buried in it are visible
     before scrolling begins; a file carrying the live
-    `generated-content` mark (phase 4) is tagged `[gen]` in that list,
+    `generated-content` mark is tagged `[gen]` in that list,
     with a one-line mark summary and a construct-vs-residue tally
     (`generated.construct_tally`) rendered directly beneath the
     totals — an unmarked fingerprint's view stays byte-identical to
@@ -314,8 +312,8 @@ installed-package inventory never leaves the machine.
   `ensure_note_table`), signed with the same session signer as verdicts
   (`record_note`/`canonical_note`), shown with their identity + signature, badged
   on the worklist, and never published. The review page's files-changed list
-  anchor-links each row to its per-file block in the rendered diff. Phase 4
-  adds a `generated` badge (the worklist size cell and the detail-page
+  anchor-links each row to its per-file block in the rendered diff. A
+  `generated` badge (the worklist size cell and the detail-page
   header) carrying the mark's detail, `[gen]`-tags marked rows in that
   files-changed list, and wraps each marked file's block in a native
   `<details>` element collapsed by default — summary stating path,
