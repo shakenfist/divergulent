@@ -349,7 +349,7 @@ already marked by autotools signals. The unlocked population grew
 `none` residue-first (its previous `elevated` was a failed-call
 degradation on a 2.2M-token prompt).
 
-**Consumed by**: phase 3 of
+**Consumed by**: the ledger stage of
 [its plan](plans/PLAN-generated-marking.md) turns the recorded mark
 into two routing decisions, composed through one shared helper
 (`generated.residue_unlocked_fingerprints`) so the triage driver and
@@ -372,7 +372,7 @@ projection only changes what text a model is shown, and re-risk only
 supersedes a score computed on the wrong input — routing, never a
 verdict.
 
-Phase 4 adds the display consumers: the CLI tags marked rows and
+The display consumers are the CLI, which tags marked rows, and
 appends a mark summary, the web UI badges and default-collapses
 marked segments, and both render a render-time construct-vs-residue
 tally (`generated.construct_tally`, over

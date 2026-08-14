@@ -119,12 +119,12 @@ exactly the fingerprints it had settled, and nothing else.
 The same recording pass also attaches cheap deterministic **axes**
 that ride alongside the category: reviewability (size), reach
 (install base), the phase-6 CVE/bug cross-reference, and — as of
-phase 2 of [its plan](plans/PLAN-generated-marking.md) — a
+part of [its plan](plans/PLAN-generated-marking.md) — a
 generated-content mark for files that claim to be build-system
-generator output. As of phase 3 of the same plan the mark is
+generator output. The mark is
 consumed by both LLM stages below (the oversized unlock, the
 residue-first projection, and the risk gate's targeted re-risk);
-phase 4 adds the badge, collapse and construct tally the human-review
+the badge, collapse and construct tally give the human-review
 stage below renders from it. These axes are described with the rules
 in [deterministic-rules.md](deterministic-rules.md).
 
@@ -143,7 +143,7 @@ patches first, but it never sets a category and its failures degrade
 to `elevated` (recall-safe — a scoring failure makes a patch *more*
 visible, not less).
 
-Phase 3 of the generated-marking plan folds the mark into this gate
+The generated-marking work folds the mark into this gate
 too. An `oversized` patch is skipped only when its marked residue is
 *also* past the oversized cut — a small hand-written residue unlocks
 it into scoring — and every marked fingerprint's diff is projected
@@ -173,7 +173,7 @@ human with its honest reason. The injection tripwire still scans the
 diff-region hit never reaches the model, marked or not. The verifier
 always reads exactly the same projected text the drafter did, and an
 unmarked fingerprint's prompt stays byte-identical to what it was
-before phase 3. Triage runs over a bounded, prioritised slice (risk
+before that. Triage runs over a bounded, prioritised slice (risk
 first, then dangerous-construct flags, then high-occurrence), never
 the whole queue by accident. Model and prompt version are part of
 each decision's identity, so a model swap or prompt bump is cleanly
