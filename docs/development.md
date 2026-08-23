@@ -22,6 +22,23 @@ CI runs `pre-commit run --all-files` on push and pull requests
 enforced rather than advisory: a commit made with `--no-verify`, or
 from a clone that never ran `pre-commit install`, is still checked.
 
+Once CI passes on a pull request, `shakenfist-bot` posts an automated
+review. The reviewer itself lives in
+[shakenfist/actions](https://github.com/shakenfist/actions); this
+repository only carries the calling job at the bottom of
+`unit-tests.yml`, whose `needs:` list is the CI-passed gate. It reviews
+a pull request once. Two bot commands are available to anyone with
+write access, as comments on the pull request:
+
+| Comment | Effect |
+|---------|--------|
+| `@shakenfist-bot please re-review` | Request a fresh review of a pull request the bot has already reviewed |
+| `@shakenfist-bot please retest` | Re-run the CI checks without pushing a commit |
+
+Neither runs on a pull request from a fork: the reviewer runs Claude
+Code with a write-capable token over a diff it did not write, so fork
+pull requests are reviewed only on an explicit human request.
+
 A second workflow (`.github/workflows/secret-scan.yml`) scans the
 history for leaked credentials with `gitleaks`, on pull requests and on
 pushes to `develop`. It is not a pre-commit hook and it carries no
