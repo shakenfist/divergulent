@@ -32,19 +32,33 @@ from divergulent.sources.debian_patches import DivergenceState
 # (sigstore-python's default output name).
 SIGNATURE_SUFFIX = '.sigstore.json'
 
-# The identity the published bundle must be signed by. Sigstore binds the
-# signing certificate to the CI workflow's OIDC identity; the client refuses a
-# bundle signed by anything else. Provisional: if phase 5 moves signing into a
-# dedicated publish workflow, this ref changes with it.
+# The identities the published bundle may be signed by. Sigstore binds the
+# signing certificate to the CI workflow's OIDC identity, which embeds the ref
+# the workflow ran from; the client refuses a bundle signed by anything else.
+# Provisional: if signing moves into a dedicated publish workflow, these refs
+# change with it.
+#
+# Two refs rather than one because the default branch was renamed from ``main``
+# to ``develop``. The certificate identity is a property of the run, not of the
+# artefact, so bundles published before the rename are signed ``@refs/heads/main``
+# and are still the ones a client downloads until the next scheduled build
+# republishes. Refusing them would break every installed client the moment the
+# branch was renamed. Each candidate is tried in turn and any match verifies, so
+# the ``main`` entry can be dropped once no published bundle predates the rename.
 EXPECTED_SIGNER_ISSUER = 'https://token.actions.githubusercontent.com'
-EXPECTED_SIGNER_IDENTITY = (
-    'https://github.com/shakenfist/divergulent/.github/workflows/build-cache.yml@refs/heads/main')
+EXPECTED_SIGNER_IDENTITIES = (
+    'https://github.com/shakenfist/divergulent/.github/workflows/build-cache.yml@refs/heads/develop',
+    'https://github.com/shakenfist/divergulent/.github/workflows/build-cache.yml@refs/heads/main',
+)
 
 # The classification bundle is published and signed by its own workflow, so it has
-# its own expected signer identity (the issuer is the same GitHub OIDC issuer).
-CLASSIFICATION_SIGNER_IDENTITY = (
+# its own expected signer identities (the issuer is the same GitHub OIDC issuer).
+CLASSIFICATION_SIGNER_IDENTITIES = (
     'https://github.com/shakenfist/divergulent/.github/workflows/'
-    'build-classification.yml@refs/heads/main')
+    'build-classification.yml@refs/heads/develop',
+    'https://github.com/shakenfist/divergulent/.github/workflows/'
+    'build-classification.yml@refs/heads/main',
+)
 
 # Default number of bundle entries to spot-check against the live origin. Small,
 # to stay a polite client; the live half is the unthrottled sources.debian.org.
@@ -77,13 +91,14 @@ class SpotCheckResult:
 
 
 def verify_signature(artifact_bytes: bytes, signature_bytes: bytes, *,
-                     identity: str = EXPECTED_SIGNER_IDENTITY,
+                     identities: tuple = EXPECTED_SIGNER_IDENTITIES,
                      issuer: str = EXPECTED_SIGNER_ISSUER) -> SignatureResult:
-    '''Verify a Sigstore signature over ``artifact_bytes`` against an identity.
+    '''Verify a Sigstore signature over ``artifact_bytes`` against known identities.
 
-    Returns SKIPPED (not FAILED) when the optional ``sigstore`` dependency is
-    absent, so a minimal install is not penalised. The import is lazy for the
-    same reason.
+    ``identities`` is tried in order and the first that verifies wins; the
+    result is FAILED only when none of them does. Returns SKIPPED (not FAILED)
+    when the optional ``sigstore`` dependency is absent, so a minimal install is
+    not penalised. The import is lazy for the same reason.
     '''
     try:
         from sigstore.errors import VerificationError
@@ -94,23 +109,29 @@ def verify_signature(artifact_bytes: bytes, signature_bytes: bytes, *,
             SignatureStatus.SKIPPED,
             'sigstore not installed; run "pip install divergulent[verify]" to verify signatures')
     return _verify_with_sigstore(
-        Bundle, Verifier, policy, VerificationError, artifact_bytes, signature_bytes, identity, issuer)
+        Bundle, Verifier, policy, VerificationError, artifact_bytes, signature_bytes, identities, issuer)
 
 
 def _verify_with_sigstore(bundle_cls, verifier_cls, policy_mod, verification_error,
-                          artifact_bytes, signature_bytes, identity, issuer) -> SignatureResult:
+                          artifact_bytes, signature_bytes, identities, issuer) -> SignatureResult:
     '''The sigstore-backed core, with the library objects injected for testing.'''
     try:
         signature_bundle = bundle_cls.from_json(signature_bytes)
     except Exception as exc:  # noqa: BLE001 - any parse error is an invalid signature
         return SignatureResult(SignatureStatus.FAILED, 'signature is not a valid Sigstore bundle: %s' % exc)
 
-    verification_policy = policy_mod.Identity(identity=identity, issuer=issuer)
-    try:
-        verifier_cls.production().verify_artifact(artifact_bytes, signature_bundle, verification_policy)
-    except verification_error as exc:
-        return SignatureResult(SignatureStatus.FAILED, str(exc))
-    return SignatureResult(SignatureStatus.VERIFIED, 'signed by %s' % identity)
+    # Fail closed: only a verify_artifact() that raises nothing accepts the
+    # bundle, and the last error is what the operator is shown when none does.
+    last_error = 'no expected signer identity was configured'
+    for identity in identities:
+        verification_policy = policy_mod.Identity(identity=identity, issuer=issuer)
+        try:
+            verifier_cls.production().verify_artifact(artifact_bytes, signature_bundle, verification_policy)
+        except verification_error as exc:
+            last_error = str(exc)
+            continue
+        return SignatureResult(SignatureStatus.VERIFIED, 'signed by %s' % identity)
+    return SignatureResult(SignatureStatus.FAILED, last_error)
 
 
 @dataclass(frozen=True)

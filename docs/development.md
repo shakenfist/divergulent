@@ -21,15 +21,15 @@ rebuild weekly — so `divergulent cache pull` serves a fresh, signed
 bundle. Software releases are tag-driven
 (`v*`) and publish to PyPI via Sigstore-signed tags and PyPI trusted
 publishing — see
-[RELEASE-SETUP.md](https://github.com/shakenfist/divergulent/blob/main/RELEASE-SETUP.md)
+[RELEASE-SETUP.md](https://github.com/shakenfist/divergulent/blob/develop/RELEASE-SETUP.md)
 for the one-time configuration.
 
 Process documents live at the repository root:
-[PLAN-TEMPLATE.md](https://github.com/shakenfist/divergulent/blob/main/PLAN-TEMPLATE.md)
+[PLAN-TEMPLATE.md](https://github.com/shakenfist/divergulent/blob/develop/PLAN-TEMPLATE.md)
 (the starting point for new plan files) and
-[PUSH-AUDIT.md](https://github.com/shakenfist/divergulent/blob/main/PUSH-AUDIT.md)
+[PUSH-AUDIT.md](https://github.com/shakenfist/divergulent/blob/develop/PUSH-AUDIT.md)
 (the pre-push audit runbook). For build, test, and style conventions
 see
-[AGENTS.md](https://github.com/shakenfist/divergulent/blob/main/AGENTS.md);
+[AGENTS.md](https://github.com/shakenfist/divergulent/blob/develop/AGENTS.md);
 for a module-by-module tour of the code see
-[ARCHITECTURE.md](https://github.com/shakenfist/divergulent/blob/main/ARCHITECTURE.md).
+[ARCHITECTURE.md](https://github.com/shakenfist/divergulent/blob/develop/ARCHITECTURE.md).

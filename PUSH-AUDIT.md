@@ -20,7 +20,7 @@ can be spawned in parallel.
 The management session reviews all findings, fixes any
 issues, and confirms the push.
 
-These checks assume the default branch is `main`; adjust the
+These checks assume the default branch is `develop`; adjust the
 diff base below if the repository uses something else.
 
 ## Wave 1: Mechanical checks
@@ -46,13 +46,13 @@ tox          # or pytest, run in an environment with no network
 ```
 
 Then a few grep-level style and hygiene checks on the diff
-against `main`:
+against `develop`:
 
 ```
-git diff main...HEAD -- '*.py' | grep -nE '^\+[^+].{120,}'  # lines > 120 chars
-git diff main...HEAD -- '*.py' | grep -nE '^\+[^+].*\bprint\('  # stray print() in new code
-git diff main...HEAD -- '*.py' | grep -nE '^\+[^+].*requests\.(get|post)\(' | grep -v 'timeout'  # network calls missing a timeout
-git diff main...HEAD -- '*.py' | grep -nE '^\+[^+].*(subprocess\.|os\.system|shell=True)\b'  # shell-out review
+git diff develop...HEAD -- '*.py' | grep -nE '^\+[^+].{120,}'  # lines > 120 chars
+git diff develop...HEAD -- '*.py' | grep -nE '^\+[^+].*\bprint\('  # stray print() in new code
+git diff develop...HEAD -- '*.py' | grep -nE '^\+[^+].*requests\.(get|post)\(' | grep -v 'timeout'  # network calls missing a timeout
+git diff develop...HEAD -- '*.py' | grep -nE '^\+[^+].*(subprocess\.|os\.system|shell=True)\b'  # shell-out review
 ```
 
 Exit condition: wave 1 passes when pre-commit, the test
@@ -72,7 +72,7 @@ style questions need a sub-agent to read code:
 
 **Brief for sub-agent (only if wave 1 passes):**
 
-Check `git diff main...HEAD` for adherence to project
+Check `git diff develop...HEAD` for adherence to project
 conventions in `CLAUDE.md` and `AGENTS.md`:
 
 - Python conventions: import ordering, single quotes for
@@ -105,29 +105,29 @@ Start with the mechanical sweep on the diff:
 
 ```
 # TODO / FIXME / HACK / XXX in changed files
-git diff main...HEAD -- '*.py' | grep -nE '^\+.*\b(TODO|FIXME|HACK|XXX)\b'
+git diff develop...HEAD -- '*.py' | grep -nE '^\+.*\b(TODO|FIXME|HACK|XXX)\b'
 
 # New `# noqa`, `# type: ignore`, or `pragma: no cover`
-git diff main...HEAD -- '*.py' | grep -nE '^\+.*(# noqa|# type: ignore|pragma: no cover)'
+git diff develop...HEAD -- '*.py' | grep -nE '^\+.*(# noqa|# type: ignore|pragma: no cover)'
 
 # Unsafe parsing of remote data (this tool parses a lot of it)
-git diff main...HEAD -- '*.py' | grep -nE '^\+.*\b(yaml\.load\b|pickle\.load|eval\(|exec\()'
+git diff develop...HEAD -- '*.py' | grep -nE '^\+.*\b(yaml\.load\b|pickle\.load|eval\(|exec\()'
 
 # New test functions vs files changed (sanity ratio)
-git diff main...HEAD --stat | tail -1
-git diff main...HEAD -- '*.py' | grep -cE '^\+\s*def test_'
+git diff develop...HEAD --stat | tail -1
+git diff develop...HEAD -- '*.py' | grep -cE '^\+\s*def test_'
 
 # Documentation files touched (warns if none — the diff may have merited doc updates)
-git diff main...HEAD --name-only -- 'docs/*' '*.md'
+git diff develop...HEAD --name-only -- 'docs/*' '*.md'
 
 # Classifier changed without the classifier docs being touched — if the
 # first grep matches and the second is empty, the reader docs probably
 # need an update (see 2c below)
-git diff main...HEAD --name-only -- 'divergulent/classify/*' 'divergulent/dep3.py'
-git diff main...HEAD --name-only -- 'docs/deterministic-rules.md' 'docs/workflow.md'
+git diff develop...HEAD --name-only -- 'divergulent/classify/*' 'divergulent/dep3.py'
+git diff develop...HEAD --name-only -- 'docs/deterministic-rules.md' 'docs/workflow.md'
 
 # New dependencies (supply-chain surface of the tool itself)
-git diff main...HEAD --name-only | grep -E 'requirements.*\.txt|pyproject\.toml|setup\.(py|cfg)'
+git diff develop...HEAD --name-only | grep -E 'requirements.*\.txt|pyproject\.toml|setup\.(py|cfg)'
 ```
 
 These report only — they do not block. Treat the output as
@@ -150,7 +150,7 @@ comments, new `# noqa` / `# type: ignore`, and unsafe-parse
 patterns. Take that report as input.
 
 Add the judgment-level review on the diff
-(`git diff main...HEAD`):
+(`git diff develop...HEAD`):
 
 - **Duplicated code:** Are there significant blocks of
   duplicated logic the mechanical scan can't see? Look
@@ -217,7 +217,7 @@ push) or advisory (can address later).
 
 **Brief for sub-agent:**
 
-Review the diff (`git diff main...HEAD`) for test coverage:
+Review the diff (`git diff develop...HEAD`) for test coverage:
 
 - Does every new public function or significant code path
   have unit test coverage?
@@ -249,7 +249,7 @@ Report findings as a bullet list grouped by file.
 **Brief for sub-agent:**
 
 Check that documentation matches the current code state.
-Read the diff (`git diff main...HEAD`) and verify:
+Read the diff (`git diff develop...HEAD`) and verify:
 
 <!-- shared-block: readme-discipline v1 -->
 README discipline (shared block; do not edit -- the canonical
@@ -319,7 +319,7 @@ found" is a valid answer.
 
 **Brief for sub-agent:**
 
-Security review of the diff (`git diff main...HEAD`). This
+Security review of the diff (`git diff develop...HEAD`). This
 requires careful judgment — read the actual code, not just
 the diff summary. Divergulent is a supply-chain *visibility*
 tool, so both classic vulnerabilities and trust/integrity

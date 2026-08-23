@@ -62,28 +62,28 @@ divergulent show bash     # per-patch detail for one package
 divergulent cache pull    # fetch the published cache bundle for fast runs
 ```
 
-See [docs/usage.md](https://github.com/shakenfist/divergulent/blob/main/docs/usage.md)
+See [docs/usage.md](https://github.com/shakenfist/divergulent/blob/develop/docs/usage.md)
 for the complete command reference, including cache bundles, bundle
 verification, and the optional patch-classification bundle.
 
 ## Documentation
 
-In the [docs/](https://github.com/shakenfist/divergulent/blob/main/docs/index.md)
+In the [docs/](https://github.com/shakenfist/divergulent/blob/develop/docs/index.md)
 directory:
 
-- [Documentation Index](https://github.com/shakenfist/divergulent/blob/main/docs/index.md) - Where to start
-- [What is divergulent?](https://github.com/shakenfist/divergulent/blob/main/docs/what-is-divergulent.md) - Motivation, the two axes, and design principles
-- [Usage](https://github.com/shakenfist/divergulent/blob/main/docs/usage.md) - The complete command reference
-- [The processing workflow](https://github.com/shakenfist/divergulent/blob/main/docs/workflow.md) - How a carried patch travels from discovery to a signed verdict
-- [The deterministic rules](https://github.com/shakenfist/divergulent/blob/main/docs/deterministic-rules.md) - Every classification rule, its precedence, and its hit rate
-- [Status](https://github.com/shakenfist/divergulent/blob/main/docs/status.md) - What works today and the pieces in flight
-- [Development](https://github.com/shakenfist/divergulent/blob/main/docs/development.md) - Tests, CI workflows, and releasing
+- [Documentation Index](https://github.com/shakenfist/divergulent/blob/develop/docs/index.md) - Where to start
+- [What is divergulent?](https://github.com/shakenfist/divergulent/blob/develop/docs/what-is-divergulent.md) - Motivation, the two axes, and design principles
+- [Usage](https://github.com/shakenfist/divergulent/blob/develop/docs/usage.md) - The complete command reference
+- [The processing workflow](https://github.com/shakenfist/divergulent/blob/develop/docs/workflow.md) - How a carried patch travels from discovery to a signed verdict
+- [The deterministic rules](https://github.com/shakenfist/divergulent/blob/develop/docs/deterministic-rules.md) - Every classification rule, its precedence, and its hit rate
+- [Status](https://github.com/shakenfist/divergulent/blob/develop/docs/status.md) - What works today and the pieces in flight
+- [Development](https://github.com/shakenfist/divergulent/blob/develop/docs/development.md) - Tests, CI workflows, and releasing
 
 Project reference files:
 
-- [ARCHITECTURE.md](https://github.com/shakenfist/divergulent/blob/main/ARCHITECTURE.md) - A module-by-module tour of the code
-- [AGENTS.md](https://github.com/shakenfist/divergulent/blob/main/AGENTS.md) - Build, test, and style conventions
+- [ARCHITECTURE.md](https://github.com/shakenfist/divergulent/blob/develop/ARCHITECTURE.md) - A module-by-module tour of the code
+- [AGENTS.md](https://github.com/shakenfist/divergulent/blob/develop/AGENTS.md) - Build, test, and style conventions
 
 ## License
 
-Apache License 2.0. See [LICENSE](https://github.com/shakenfist/divergulent/blob/main/LICENSE).
+Apache License 2.0. See [LICENSE](https://github.com/shakenfist/divergulent/blob/develop/LICENSE).

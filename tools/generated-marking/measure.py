@@ -22,7 +22,7 @@ false-positive population an eventual mark would attribute), and an informationa
 of compiled-catalogue (``.qm``/``.mo``/``.gmo``) touches.
 
 Must be run from THIS worktree checkout with ``PYTHONPATH=.`` -- the operator's editable
-install of divergulent tracks ``main``, not this branch, and would silently import the
+install of divergulent tracks ``develop``, not this branch, and would silently import the
 wrong (or absent) ``generated`` module otherwise.
 
 Usage:

@@ -71,7 +71,7 @@ class VerifySignatureCoreTestCase(testtools.TestCase):
         verifier = _verifier('ok')
         result = verify._verify_with_sigstore(
             FakeBundle, verifier, FakePolicyModule, FakeVerificationError,
-            b'artifact', b'sig', 'expected-id', 'expected-issuer')
+            b'artifact', b'sig', ('expected-id',), 'expected-issuer')
         self.assertEqual(verify.SignatureStatus.VERIFIED, result.status)
         self.assertEqual(b'artifact', verifier.captured['artifact'])
         self.assertEqual('expected-id', verifier.captured['identity'])
@@ -80,13 +80,44 @@ class VerifySignatureCoreTestCase(testtools.TestCase):
     def test_verification_error_is_failed(self):
         result = verify._verify_with_sigstore(
             FakeBundle, _verifier('raise'), FakePolicyModule, FakeVerificationError,
-            b'artifact', b'sig', 'id', 'iss')
+            b'artifact', b'sig', ('id',), 'iss')
+        self.assertEqual(verify.SignatureStatus.FAILED, result.status)
+
+    def test_second_identity_verifies_when_the_first_does_not(self):
+        # The default branch rename means a published bundle may carry either
+        # ref in its certificate, so a candidate that fails must not end the
+        # search. Fails on the first identity, verifies on the second.
+        class FirstFailsVerifier:
+            captured = {}
+            attempts = []
+
+            @classmethod
+            def production(cls):
+                return cls()
+
+            def verify_artifact(self, artifact, signature_bundle, policy):
+                FirstFailsVerifier.attempts.append(policy.identity)
+                if policy.identity == 'old-id':
+                    raise FakeVerificationError('identity mismatch')
+                FirstFailsVerifier.captured = {'identity': policy.identity}
+
+        result = verify._verify_with_sigstore(
+            FakeBundle, FirstFailsVerifier, FakePolicyModule, FakeVerificationError,
+            b'artifact', b'sig', ('old-id', 'new-id'), 'iss')
+        self.assertEqual(verify.SignatureStatus.VERIFIED, result.status)
+        self.assertEqual(['old-id', 'new-id'], FirstFailsVerifier.attempts)
+        self.assertEqual('new-id', FirstFailsVerifier.captured['identity'])
+
+    def test_failed_when_no_identity_verifies(self):
+        result = verify._verify_with_sigstore(
+            FakeBundle, _verifier('raise'), FakePolicyModule, FakeVerificationError,
+            b'artifact', b'sig', ('old-id', 'new-id'), 'iss')
         self.assertEqual(verify.SignatureStatus.FAILED, result.status)
 
     def test_malformed_signature_is_failed(self):
         result = verify._verify_with_sigstore(
             FakeBadBundle, _verifier('ok'), FakePolicyModule, FakeVerificationError,
-            b'artifact', b'not-a-bundle', 'id', 'iss')
+            b'artifact', b'not-a-bundle', ('id',), 'iss')
         self.assertEqual(verify.SignatureStatus.FAILED, result.status)
 
 

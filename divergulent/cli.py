@@ -998,7 +998,7 @@ def _cache_pull_classification_command(args):
     # oracle for a verdict), so we verify the signature only.
     signature = http.get_bytes(url + verify.SIGNATURE_SUFFIX)
     if not _verify_signature_only(data, signature, args,
-                                  identity=verify.CLASSIFICATION_SIGNER_IDENTITY):
+                                  identities=verify.CLASSIFICATION_SIGNER_IDENTITIES):
         print('divergulent: verification failed; not stored.', file=sys.stderr)
         return 1
 
@@ -1013,7 +1013,7 @@ def _cache_pull_classification_command(args):
     return 0
 
 
-def _verify_signature_only(data, signature, args, *, identity):
+def _verify_signature_only(data, signature, args, *, identities):
     '''Signature-only verification for a bundle with no live spot-check oracle.
 
     Mirrors _verify_bundle's signature half: --insecure skips; a missing or
@@ -1026,7 +1026,7 @@ def _verify_signature_only(data, signature, args, *, identity):
     if signature is None:
         print('divergulent: no signature found for the bundle.', file=sys.stderr)
         return not args.require_signature
-    result = verify.verify_signature(data, signature, identity=identity)
+    result = verify.verify_signature(data, signature, identities=identities)
     if result.status == verify.SignatureStatus.VERIFIED:
         print('divergulent: signature verified (%s).' % result.detail, file=sys.stderr)
         return True

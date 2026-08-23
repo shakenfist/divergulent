@@ -41,7 +41,7 @@ and worked examples over API reference.
   there.
 
 For contributor-facing material (build, test, and style conventions)
-see [AGENTS.md](https://github.com/shakenfist/divergulent/blob/main/AGENTS.md)
+see [AGENTS.md](https://github.com/shakenfist/divergulent/blob/develop/AGENTS.md)
 at the repository root; for a module-by-module tour of the code see
-[ARCHITECTURE.md](https://github.com/shakenfist/divergulent/blob/main/ARCHITECTURE.md);
+[ARCHITECTURE.md](https://github.com/shakenfist/divergulent/blob/develop/ARCHITECTURE.md);
 for CLI usage see [usage.md](usage.md).

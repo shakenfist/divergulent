@@ -52,7 +52,7 @@ full-corpus run is committed as `results-translations-full-corpus.json`.
 ### Usage
 
 Must be run from this worktree checkout with `PYTHONPATH=.` -- the
-operator's editable install of divergulent tracks `main`, not this branch,
+operator's editable install of divergulent tracks `develop`, not this branch,
 and would otherwise silently scan with a different (or absent) `generated`
 module.
 
