@@ -103,7 +103,7 @@ they can land in any order.
 ## Agent guidance
 
 Follows the execution model, effort/model rubric, and review
-checklist in [PLAN-TEMPLATE.md](../../PLAN-TEMPLATE.md). In
+checklist in [PLAN-TEMPLATE.md](https://github.com/shakenfist/divergulent/blob/develop/PLAN-TEMPLATE.md). In
 summary: sub-agents implement per the phase step tables; the
 management session reviews the actual files and commits; tests
 stay offline (HTTP mocked); skew to the more capable model when

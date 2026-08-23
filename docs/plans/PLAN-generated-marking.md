@@ -261,7 +261,7 @@ should be planned at high effort.
   deliberately does not do today. A batch tool run once, emitting a
   `generated-verified` observation — not a pipeline tier.
 - **User-facing "ancient and crufty" signal.** Graduated to its own
-  master plan, [PLAN-maintenance-health.md](PLAN-maintenance-health.md),
+  master plan, [PLAN-maintenance-health.md](https://github.com/shakenfist/divergulent/blob/develop/docs/plans/PLAN-maintenance-health.md),
   which splits it into a client-facing maintenance-health block and
   a curation-facing review-freshness ordering. This plan's
   generator-version stamps (autoconf 2.59 dates gatos's last real

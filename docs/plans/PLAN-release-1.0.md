@@ -3,7 +3,7 @@
 A living checklist of what divergulent must do before it earns a `1.0`
 tag. This is a placeholder/tracking plan: each workstream graduates to its
 own detailed `PLAN-…` (and per-phase files) when we pick it up. Created
-from [PLAN-TEMPLATE.md](../../PLAN-TEMPLATE.md) in spirit, but kept as a
+from [PLAN-TEMPLATE.md](https://github.com/shakenfist/divergulent/blob/develop/PLAN-TEMPLATE.md) in spirit, but kept as a
 checklist rather than a single linear phase list.
 
 ## What 1.0 means for divergulent

@@ -1,7 +1,7 @@
 # Plan index
 
 This directory holds divergulent's planning documents. Each master plan
-is created from [PLAN-TEMPLATE.md](../../PLAN-TEMPLATE.md); detailed
+is created from [PLAN-TEMPLATE.md](https://github.com/shakenfist/divergulent/blob/develop/PLAN-TEMPLATE.md); detailed
 per-phase plans live alongside their master plan and are linked from the
 master plan's Execution table.
 
