@@ -1,0 +1,52 @@
+# gitleaks configuration for divergulent.
+#
+# Run in CI by .github/workflows/secret-scan.yml through
+# tools/gitleaks-scan.sh, which invokes the Debian-packaged gitleaks
+# directly rather than using gitleaks-action, because that action refuses
+# to run on organization repositories without a paid licence.
+#
+# There are two places to record an accepted finding, and they are not
+# interchangeable. Content which recurs -- a documentation placeholder, a
+# test fixture -- is allowlisted here, because it reappears in a new
+# commit every time the file around it is edited. A specific historical
+# event is recorded as a fingerprint in .gitleaksignore, which forgives
+# that one occurrence and nothing else. Never suppress a finding for a
+# credential that still authorises something: history cannot be rewritten
+# to unpublish anything from a public repository, so an accepted finding
+# is a claim the credential has been dealt with where it was trusted.
+#
+# This file is written against 8.16's schema, which is not the one the
+# current upstream documentation describes -- per-rule allowlists became
+# a repeatable [[rules.allowlists]] array in a later release, while 8.16
+# takes a single [rules.allowlist] table. Note also that 8.16 matches
+# global allowlist regexes against the whole match rather than the secret
+# alone, so anchoring one with ^...$ silently stops it matching. Check
+# any change against the packaged version rather than the website.
+
+title = "divergulent"
+
+[extend]
+# divergulent mints no credentials of its own, so there is nothing to add
+# to the upstream rules -- only the third-party shapes to keep.
+useDefault = true
+
+[allowlist]
+description = """
+PEM banner lines with no key material after them.
+
+divergulent's classifier flags carried patches that embed a private key,
+so its rule tests assert on the banner line itself -- see
+divergulent/tests/test_rules.py and the embedded-private-key rule in
+divergulent/classify/rules.py. The banner is the whole fixture: there is
+no base64 body, so there is no key.
+
+Keyed on the text rather than on the path, because blinding
+test_rules.py would also blind a real key added to it later. A genuine
+private key still fires: the banner is followed by its body, which this
+regex does not admit. Deliberately unanchored -- 8.16 matches global
+allowlist regexes against the whole match, so ^...$ would silently stop
+this matching.
+"""
+regexes = [
+  '''-----BEGIN (?:RSA |DSA |EC |OPENSSH |PGP )?PRIVATE KEY-----(?:"|'|\s*$)''',
+]

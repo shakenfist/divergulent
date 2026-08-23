@@ -20,7 +20,21 @@ pre-commit run --all-files
 CI runs `pre-commit run --all-files` on push and pull requests
 (`.github/workflows/unit-tests.yml`), which is what makes the hooks
 enforced rather than advisory: a commit made with `--no-verify`, or
-from a clone that never ran `pre-commit install`, is still checked. A separate workflow
+from a clone that never ran `pre-commit install`, is still checked.
+
+A second workflow (`.github/workflows/secret-scan.yml`) scans the
+history for leaked credentials with `gitleaks`, on pull requests and on
+pushes to `develop`. It is not a pre-commit hook and it carries no
+path filter: a credential pasted into a documentation example is a
+credential, so the scan deliberately reads the prose a filter would
+skip. Reproduce it locally with `tools/gitleaks-scan.sh`, which runs
+the same scan the workflow does — including the positive control that
+plants a key and fails if `gitleaks` does not report it, so a clean
+result means the scanner ran rather than that it was broken. Accepted
+findings go in `.gitleaks.toml` when the content recurs (a test
+fixture, a documentation placeholder) or in `.gitleaksignore` as a
+fingerprint when a specific historical commit is being forgiven; never
+suppress a finding for a credential that still authorises something. A separate workflow
 (`.github/workflows/sample-output.yml`) runs a full `divergulent score`
 on a Debian 13 runner and uploads the rendered report as a build
 artifact, so reviewers can see how the output looks on a real machine
