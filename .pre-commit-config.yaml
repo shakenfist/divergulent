@@ -13,6 +13,19 @@ repos:
         types_or: [sh, bash, shell]
         args: ['-x']
 
+  # The llm-context-lint-ci audit requires every audited project with
+  # agent context to run skillsaw here and in CI. This repo carries
+  # AGENTS.md, which is loaded into every agent session, so a smuggled
+  # instruction or a stray credential in it should be caught by the
+  # commit that introduces it rather than by the next morning's audit.
+  #
+  # The rev is renovate-managed via the pre-commit manager enabled in
+  # renovate.json; expect bumps to arrive as pull requests.
+  - repo: https://github.com/stbenjam/skillsaw
+    rev: v0.18.0
+    hooks:
+      - id: skillsaw
+
   - repo: local
     hooks:
       - id: tox-flake8

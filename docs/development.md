@@ -7,8 +7,20 @@ tox -epy3      # unit tests (stestr + testtools)
 tox -eflake8   # style checks on the current change
 ```
 
-CI runs the same checks on push and pull requests
-(`.github/workflows/unit-tests.yml`). A separate workflow
+Everything the project gates on is a pre-commit hook — actionlint over
+the workflows, shellcheck over `tools/`, skillsaw over the agent
+context files, and the two `tox` environments above — so the local
+run is the same gate CI applies:
+
+```bash
+pre-commit install       # once, per clone
+pre-commit run --all-files
+```
+
+CI runs `pre-commit run --all-files` on push and pull requests
+(`.github/workflows/unit-tests.yml`), which is what makes the hooks
+enforced rather than advisory: a commit made with `--no-verify`, or
+from a clone that never ran `pre-commit install`, is still checked. A separate workflow
 (`.github/workflows/sample-output.yml`) runs a full `divergulent score`
 on a Debian 13 runner and uploads the rendered report as a build
 artifact, so reviewers can see how the output looks on a real machine

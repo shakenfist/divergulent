@@ -21,18 +21,25 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Install tox in a venv
+      # A venv because the runners enforce PEP 668 and refuse a bare
+      # install. tox as well as pre-commit: the flake8 and unit-test
+      # hooks are `language: system` and shell out to tox, so it has to
+      # be on PATH before pre-commit runs.
+      - name: Install tox and pre-commit in a venv
         run: |
           rm -rf test-venv
           python3 -m venv test-venv
           test-venv/bin/pip install --upgrade pip
-          test-venv/bin/pip install tox
+          test-venv/bin/pip install tox pre-commit
           echo "${GITHUB_WORKSPACE}/test-venv/bin" >> "${GITHUB_PATH}"
 
-      - name: Lint with flake8
+      # This is the whole gate, and running it here rather than naming
+      # each linter is what the llm-context-lint-ci audit asks for: a
+      # hook can be skipped with --no-verify or by a clone that never
+      # ran `pre-commit install`, and CI is where that stops mattering.
+      # actionlint, shellcheck, skillsaw, flake8 and the unit tests are
+      # all hooks, so this runs strictly more than the two tox
+      # invocations it replaces.
+      - name: Run pre-commit hooks
         run: |
-          tox -eflake8
-
-      - name: Run unit tests
-        run: |
-          tox -epy3
+          pre-commit run --all-files --show-diff-on-failure
