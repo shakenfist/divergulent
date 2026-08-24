@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # languages: is stated rather than auto-detected. Auto-detection
       # follows GitHub's language statistics, so a directory of shell or
