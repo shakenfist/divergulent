@@ -46,7 +46,10 @@ private key still fires: the banner is followed by its body, which this
 regex does not admit. Deliberately unanchored -- 8.16 matches global
 allowlist regexes against the whole match, so ^...$ would silently stop
 this matching.
+
+The alternation is in the same order as the pattern it shadows in
+divergulent/classify/rules.py, so the two can be compared at a glance.
 """
 regexes = [
-  '''-----BEGIN (?:RSA |DSA |EC |OPENSSH |PGP )?PRIVATE KEY-----(?:"|'|\s*$)''',
+  '''-----BEGIN (?:RSA |OPENSSH |EC |DSA |PGP )?PRIVATE KEY-----(?:"|'|\s*$)''',
 ]

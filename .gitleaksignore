@@ -1,0 +1,30 @@
+# Accepted historical gitleaks findings, one fingerprint per line.
+#
+# This file forgives one specific occurrence and nothing else: the same
+# secret appearing in a new commit fails the scan again. That is what
+# makes it the right place for a specific historical event, and the wrong
+# place for content that recurs -- a documentation placeholder or a test
+# fixture reappears in a new commit every time the text around it is
+# edited, so it belongs in the [allowlist] regexes in .gitleaks.toml
+# instead.
+#
+# The format is the Fingerprint line gitleaks prints for the finding:
+#
+#   commit:path:rule-id:line
+#
+# for example
+#
+#   69231b06a90e6e2155187016c4ca1f3715b63feb:divergulent/tests/test_rules.py:private-key:140
+#
+# Every entry needs a comment above it saying what the credential was and
+# what was done about it. An undocumented entry is indistinguishable from
+# a mistake.
+#
+# Never add an entry for a credential that still authorises something.
+# History cannot be rewritten to unpublish anything from a public
+# repository -- the objects survive in every fork and in GitHub's own
+# reflog -- so an accepted finding is a claim that the credential has
+# been dealt with where it was trusted, not that it has been tidied out
+# of sight. Rotate first, then record it here.
+#
+# There are no accepted findings today.

@@ -56,6 +56,14 @@ if ! command -v "$GITLEAKS" >/dev/null 2>&1 && [ ! -x "$GITLEAKS" ]; then
     exit 1
 fi
 
+# The version, in the log next to the result. .gitleaks.toml targets 8.16's
+# schema specifically -- per-rule allowlists changed shape later, and 8.16
+# matches global allowlist regexes against the whole match rather than the
+# secret -- and the workflow installs whatever Debian currently ships. The
+# positive control below catches the catastrophic case; printing the version
+# is what makes the subtler drift diagnosable when it happens.
+echo "Using gitleaks: $("$GITLEAKS" version 2>&1 | head -1) (from $GITLEAKS)"
+
 # .gitleaks.toml is named relative to the working directory. Run from a
 # subdirectory -- the obvious thing to do when reproducing a CI failure
 # -- it would simply not be found, and the scan would silently run
@@ -85,6 +93,17 @@ set +e
     --report-format json
 control_status=$?
 set -e
+
+# Before parsing, not after. Under `set -e` a missing report file exits the
+# script on the assignment below with a FileNotFoundError traceback and no
+# explanation -- which reads as a broken script rather than as "the scanner
+# did not run", the exact confusion this control exists to prevent.
+if [ ! -f "$CONTROL/report.json" ]; then
+    echo
+    echo "gitleaks produced no report for the positive control, so it did"
+    echo "not run. Do not trust a clean scan until this passes."
+    exit 1
+fi
 
 found=$(python3 -c "
 import json
