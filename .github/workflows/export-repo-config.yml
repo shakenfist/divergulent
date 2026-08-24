@@ -10,6 +10,14 @@ on:
     - cron: '30 00 * * *'
 
 jobs:
+  # `secrets: inherit` is correct here and is deliberately the opposite of the
+  # rule unit-tests.yml states for its reviewer job. The distinction is whether
+  # the callee reads a secret: pr-auto-review.yml declares none and
+  # authenticates with github.token, so inheriting there would hand this
+  # repository's publishing credentials to another repository for nothing. This
+  # workflow does read one -- it needs a token that can push a branch and open
+  # a pull request carrying the exported configuration -- so it inherits, as
+  # the shared template and the export-repo-config audit both expect.
   export-config:
     uses: shakenfist/actions/.github/workflows/export-repo-config.yml@main
     secrets: inherit

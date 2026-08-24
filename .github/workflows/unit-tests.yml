@@ -14,7 +14,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  lint:
+  # Named for what it now does rather than what it used to. This job absorbed
+  # the unit test run when the two tox steps became `pre-commit run`, so a
+  # failure reported under `lint` would be a test failure wearing the wrong
+  # label. There is no branch protection referencing the old name.
+  checks:
+    name: "Sanity checks"
     runs-on: [self-hosted, static]
 
     steps:
@@ -46,7 +51,7 @@ jobs:
         run: |
           pre-commit run --all-files --show-diff-on-failure
 
-  # The automatic review, gated on the lint job passing: a job that is
+  # The automatic review, gated on the checks job passing: a job that is
   # skipped because a dependency failed never starts the reusable
   # workflow, so the needs list *is* the CI-passed gate.
   #
@@ -76,7 +81,7 @@ jobs:
   # review.
   automated_reviewer:
     name: "Automated reviewer"
-    needs: [lint]
+    needs: [checks]
     permissions:
       contents: read
       pull-requests: write

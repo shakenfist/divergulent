@@ -101,8 +101,9 @@ jobs:
       # pull request's code and the next step runs Claude Code over it
       # with --dangerously-skip-permissions. The default leaves a
       # write-scoped token in .git/config of exactly that tree.
-      # review-pr-with-claude authenticates gh from GH_TOKEN and never
-      # pushes, so it does not need the git credential helper.
+      # review-pr-with-claude sets GH_TOKEN from github.token inside the
+      # action itself and never pushes, so it needs neither an input from
+      # this file nor the git credential helper.
       # The retired pr-address-comments.yml always did this; this
       # file did not.
       - name: Checkout the pull request

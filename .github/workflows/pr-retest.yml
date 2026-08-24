@@ -41,6 +41,13 @@ jobs:
     runs-on: [self-hosted, static]
     # Just a few gh API calls, so anything beyond this is a hang.
     timeout-minutes: 10
+    # Two retest requests in quick succession would otherwise dispatch two
+    # runs and post two confirmation comments. Milder than the duplicate
+    # review pr-re-review.yml guards against -- this lane runs on the
+    # plentiful static runner -- but the duplicate comments are still noise.
+    concurrency:
+      group: pr-retest-${{ github.event.issue.number }}
+      cancel-in-progress: true
 
     steps:
       - name: Handle trigger
