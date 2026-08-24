@@ -99,7 +99,18 @@ def verify_signature(artifact_bytes: bytes, signature_bytes: bytes, *,
     result is FAILED only when none of them does. Returns SKIPPED (not FAILED)
     when the optional ``sigstore`` dependency is absent, so a minimal install is
     not penalised. The import is lazy for the same reason.
+
+    A ``str`` is refused rather than accepted. This parameter used to be
+    ``identity`` and used to take one, so the shape a stale caller passes is
+    exactly the shape a string iterates into: dozens of single-character
+    candidate identities, every one of them failing, ending in a FAILED whose
+    detail is about the identity ``'l'``. Failing loudly at the call is the
+    difference between a typo and a verification that quietly means nothing.
     '''
+    if isinstance(identities, str):
+        raise TypeError(
+            'identities takes a sequence of identities, not a single string; '
+            'pass (%r,) if you meant one' % identities)
     try:
         from sigstore.errors import VerificationError
         from sigstore.models import Bundle
@@ -120,18 +131,32 @@ def _verify_with_sigstore(bundle_cls, verifier_cls, policy_mod, verification_err
     except Exception as exc:  # noqa: BLE001 - any parse error is an invalid signature
         return SignatureResult(SignatureStatus.FAILED, 'signature is not a valid Sigstore bundle: %s' % exc)
 
+    if not identities:
+        return SignatureResult(SignatureStatus.FAILED, 'no expected signer identity was configured')
+
+    # Built once, outside the loop: the verifier loads Sigstore's TUF trust
+    # root and is identity-independent, so only the policy changes per
+    # candidate. Rebuilding it per candidate made a failed first identity pay
+    # for the trust root twice.
+    verifier = verifier_cls.production()
+
     # Fail closed: only a verify_artifact() that raises nothing accepts the
-    # bundle, and the last error is what the operator is shown when none does.
-    last_error = 'no expected signer identity was configured'
+    # bundle. Every candidate's error is kept, not just the last one -- the
+    # last is the vestigial pre-rename ``main`` entry, so reporting it alone
+    # would answer "why was this bundle refused?" with a complaint about the
+    # identity it was never supposed to carry.
+    errors = []
     for identity in identities:
         verification_policy = policy_mod.Identity(identity=identity, issuer=issuer)
         try:
-            verifier_cls.production().verify_artifact(artifact_bytes, signature_bundle, verification_policy)
+            verifier.verify_artifact(artifact_bytes, signature_bundle, verification_policy)
         except verification_error as exc:
-            last_error = str(exc)
+            errors.append('%s: %s' % (identity, exc))
             continue
         return SignatureResult(SignatureStatus.VERIFIED, 'signed by %s' % identity)
-    return SignatureResult(SignatureStatus.FAILED, last_error)
+    return SignatureResult(
+        SignatureStatus.FAILED,
+        'no expected signer identity verified: ' + '; '.join(errors))
 
 
 @dataclass(frozen=True)
