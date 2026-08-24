@@ -16,6 +16,7 @@ from unittest import mock
 import testtools
 
 from divergulent import cli
+from divergulent import verify
 from divergulent import debversion
 from divergulent.classify import classification_bundle as cb
 from divergulent.classify import fingerprint as fingerprint_mod
@@ -189,6 +190,44 @@ class PullClassificationTestCase(testtools.TestCase):
         stored = cb.stored_path(tmp.name, 'trixie')
         self.assertTrue(os.path.exists(stored))
         self.assertEqual(1, len(cb.load(stored).verdicts))
+
+    def test_pull_verifies_against_the_classification_identities(self):
+        # The only call site of verify_signature's `identities` keyword. Every
+        # other test on this path passes --insecure, which returns before the
+        # call is reached, so a mistyped keyword here would be a TypeError for
+        # every user who does not pass it -- with CI green.
+        #
+        # The constant matters as much as the keyword: the classification
+        # bundle is signed by its own workflow, so passing the cache's
+        # identities would accept a bundle signed by the wrong builder.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        data = self._bundle_bytes()
+        captured = {}
+
+        class FakeHttp:
+            def get_bytes(self, url):
+                if url.endswith('.json.gz'):
+                    return data
+                if url.endswith(verify.SIGNATURE_SUFFIX):
+                    return b'{"signature": "fake"}'
+                return None
+
+        def recorder(artifact, signature, *, identities, **kwargs):
+            captured['identities'] = identities
+            captured['artifact'] = artifact
+            return verify.SignatureResult(verify.SignatureStatus.VERIFIED, 'signed by test')
+
+        err = io.StringIO()
+        with mock.patch('divergulent.cli._detect_release', return_value='trixie'), \
+                mock.patch('divergulent.cli._http_client', return_value=FakeHttp()), \
+                mock.patch('divergulent.cli.default_cache_dir', return_value=tmp.name), \
+                mock.patch('divergulent.verify.verify_signature', recorder), \
+                contextlib.redirect_stderr(err):
+            rc = cli.main(['cache', 'pull-classification'])
+        self.assertEqual(0, rc)
+        self.assertEqual(verify.CLASSIFICATION_SIGNER_IDENTITIES, captured['identities'])
+        self.assertEqual(data, captured['artifact'])
 
 
 def _dump(bundle):

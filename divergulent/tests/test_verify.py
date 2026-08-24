@@ -21,6 +21,7 @@ def _bundle(divergence):
 
 # --- signature verification (sigstore objects injected) -----------------------
 
+
 class FakeBundle:
     last = None
 
@@ -71,7 +72,7 @@ class VerifySignatureCoreTestCase(testtools.TestCase):
         verifier = _verifier('ok')
         result = verify._verify_with_sigstore(
             FakeBundle, verifier, FakePolicyModule, FakeVerificationError,
-            b'artifact', b'sig', 'expected-id', 'expected-issuer')
+            b'artifact', b'sig', ('expected-id',), 'expected-issuer')
         self.assertEqual(verify.SignatureStatus.VERIFIED, result.status)
         self.assertEqual(b'artifact', verifier.captured['artifact'])
         self.assertEqual('expected-id', verifier.captured['identity'])
@@ -80,14 +81,87 @@ class VerifySignatureCoreTestCase(testtools.TestCase):
     def test_verification_error_is_failed(self):
         result = verify._verify_with_sigstore(
             FakeBundle, _verifier('raise'), FakePolicyModule, FakeVerificationError,
-            b'artifact', b'sig', 'id', 'iss')
+            b'artifact', b'sig', ('id',), 'iss')
         self.assertEqual(verify.SignatureStatus.FAILED, result.status)
+
+    def test_second_identity_verifies_when_the_first_does_not(self):
+        # The default branch rename means a published bundle may carry either
+        # ref in its certificate, so a candidate that fails must not end the
+        # search. Fails on the first identity, verifies on the second.
+        class FirstFailsVerifier:
+            captured = {}
+            attempts = []
+
+            @classmethod
+            def production(cls):
+                return cls()
+
+            def verify_artifact(self, artifact, signature_bundle, policy):
+                FirstFailsVerifier.attempts.append(policy.identity)
+                if policy.identity == 'old-id':
+                    raise FakeVerificationError('identity mismatch')
+                FirstFailsVerifier.captured = {'identity': policy.identity}
+
+        result = verify._verify_with_sigstore(
+            FakeBundle, FirstFailsVerifier, FakePolicyModule, FakeVerificationError,
+            b'artifact', b'sig', ('old-id', 'new-id'), 'iss')
+        self.assertEqual(verify.SignatureStatus.VERIFIED, result.status)
+        self.assertEqual(['old-id', 'new-id'], FirstFailsVerifier.attempts)
+        self.assertEqual('new-id', FirstFailsVerifier.captured['identity'])
+
+    def test_failed_when_no_identity_verifies(self):
+        result = verify._verify_with_sigstore(
+            FakeBundle, _verifier('raise'), FakePolicyModule, FakeVerificationError,
+            b'artifact', b'sig', ('old-id', 'new-id'), 'iss')
+        self.assertEqual(verify.SignatureStatus.FAILED, result.status)
+        # Every candidate is named, not just the last. The last is the
+        # vestigial pre-rename ref, so reporting it alone would explain a
+        # refusal in terms of the identity the bundle never had.
+        self.assertIn('old-id', result.detail)
+        self.assertIn('new-id', result.detail)
+
+    def test_verifier_is_built_once_not_once_per_identity(self):
+        # The verifier loads Sigstore's TUF trust root and does not depend on
+        # the identity, so a failed first candidate must not pay for it twice.
+        class CountingVerifier:
+            builds = 0
+
+            @classmethod
+            def production(cls):
+                cls.builds += 1
+                return cls()
+
+            def verify_artifact(self, artifact, signature_bundle, policy):
+                raise FakeVerificationError('identity mismatch')
+
+        verify._verify_with_sigstore(
+            FakeBundle, CountingVerifier, FakePolicyModule, FakeVerificationError,
+            b'artifact', b'sig', ('a', 'b', 'c'), 'iss')
+        self.assertEqual(1, CountingVerifier.builds)
+
+    def test_empty_identities_is_failed(self):
+        result = verify._verify_with_sigstore(
+            FakeBundle, _verifier('ok'), FakePolicyModule, FakeVerificationError,
+            b'artifact', b'sig', (), 'iss')
+        self.assertEqual(verify.SignatureStatus.FAILED, result.status)
+        self.assertIn('no expected signer identity was configured', result.detail)
 
     def test_malformed_signature_is_failed(self):
         result = verify._verify_with_sigstore(
             FakeBadBundle, _verifier('ok'), FakePolicyModule, FakeVerificationError,
-            b'artifact', b'not-a-bundle', 'id', 'iss')
+            b'artifact', b'not-a-bundle', ('id',), 'iss')
         self.assertEqual(verify.SignatureStatus.FAILED, result.status)
+
+
+class VerifySignatureArgumentTestCase(testtools.TestCase):
+
+    def test_a_bare_string_is_refused(self):
+        # The parameter was `identity` and took one string. A stale caller
+        # passing one would otherwise iterate it character by character and
+        # report a mismatch against the identity 'l'.
+        self.assertRaises(
+            TypeError, verify.verify_signature, b'artifact', b'sig',
+            identities='https://github.com/shakenfist/divergulent/x.yml@refs/heads/main')
 
 
 class VerifySignatureSkipTestCase(testtools.TestCase):
@@ -100,6 +174,7 @@ class VerifySignatureSkipTestCase(testtools.TestCase):
 
 
 # --- spot-check against the live origin --------------------------------------
+
 
 class FakePatches:
     def __init__(self, by_source):

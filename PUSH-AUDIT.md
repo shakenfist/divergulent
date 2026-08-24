@@ -20,7 +20,7 @@ can be spawned in parallel.
 The management session reviews all findings, fixes any
 issues, and confirms the push.
 
-These checks assume the default branch is `main`; adjust the
+These checks assume the default branch is `develop`; adjust the
 diff base below if the repository uses something else.
 
 ## Wave 1: Mechanical checks
@@ -46,13 +46,13 @@ tox          # or pytest, run in an environment with no network
 ```
 
 Then a few grep-level style and hygiene checks on the diff
-against `main`:
+against `develop`:
 
 ```
-git diff main...HEAD -- '*.py' | grep -nE '^\+[^+].{120,}'  # lines > 120 chars
-git diff main...HEAD -- '*.py' | grep -nE '^\+[^+].*\bprint\('  # stray print() in new code
-git diff main...HEAD -- '*.py' | grep -nE '^\+[^+].*requests\.(get|post)\(' | grep -v 'timeout'  # network calls missing a timeout
-git diff main...HEAD -- '*.py' | grep -nE '^\+[^+].*(subprocess\.|os\.system|shell=True)\b'  # shell-out review
+git diff develop...HEAD -- '*.py' | grep -nE '^\+[^+].{120,}'  # lines > 120 chars
+git diff develop...HEAD -- '*.py' | grep -nE '^\+[^+].*\bprint\('  # stray print() in new code
+git diff develop...HEAD -- '*.py' | grep -nE '^\+[^+].*requests\.(get|post)\(' | grep -v 'timeout'  # network calls missing a timeout
+git diff develop...HEAD -- '*.py' | grep -nE '^\+[^+].*(subprocess\.|os\.system|shell=True)\b'  # shell-out review
 ```
 
 Exit condition: wave 1 passes when pre-commit, the test
@@ -72,7 +72,7 @@ style questions need a sub-agent to read code:
 
 **Brief for sub-agent (only if wave 1 passes):**
 
-Check `git diff main...HEAD` for adherence to project
+Check `git diff develop...HEAD` for adherence to project
 conventions in `CLAUDE.md` and `AGENTS.md`:
 
 - Python conventions: import ordering, single quotes for
@@ -105,29 +105,29 @@ Start with the mechanical sweep on the diff:
 
 ```
 # TODO / FIXME / HACK / XXX in changed files
-git diff main...HEAD -- '*.py' | grep -nE '^\+.*\b(TODO|FIXME|HACK|XXX)\b'
+git diff develop...HEAD -- '*.py' | grep -nE '^\+.*\b(TODO|FIXME|HACK|XXX)\b'
 
 # New `# noqa`, `# type: ignore`, or `pragma: no cover`
-git diff main...HEAD -- '*.py' | grep -nE '^\+.*(# noqa|# type: ignore|pragma: no cover)'
+git diff develop...HEAD -- '*.py' | grep -nE '^\+.*(# noqa|# type: ignore|pragma: no cover)'
 
 # Unsafe parsing of remote data (this tool parses a lot of it)
-git diff main...HEAD -- '*.py' | grep -nE '^\+.*\b(yaml\.load\b|pickle\.load|eval\(|exec\()'
+git diff develop...HEAD -- '*.py' | grep -nE '^\+.*\b(yaml\.load\b|pickle\.load|eval\(|exec\()'
 
 # New test functions vs files changed (sanity ratio)
-git diff main...HEAD --stat | tail -1
-git diff main...HEAD -- '*.py' | grep -cE '^\+\s*def test_'
+git diff develop...HEAD --stat | tail -1
+git diff develop...HEAD -- '*.py' | grep -cE '^\+\s*def test_'
 
 # Documentation files touched (warns if none — the diff may have merited doc updates)
-git diff main...HEAD --name-only -- 'docs/*' '*.md'
+git diff develop...HEAD --name-only -- 'docs/*' '*.md'
 
 # Classifier changed without the classifier docs being touched — if the
 # first grep matches and the second is empty, the reader docs probably
 # need an update (see 2c below)
-git diff main...HEAD --name-only -- 'divergulent/classify/*' 'divergulent/dep3.py'
-git diff main...HEAD --name-only -- 'docs/deterministic-rules.md' 'docs/workflow.md'
+git diff develop...HEAD --name-only -- 'divergulent/classify/*' 'divergulent/dep3.py'
+git diff develop...HEAD --name-only -- 'docs/deterministic-rules.md' 'docs/workflow.md'
 
 # New dependencies (supply-chain surface of the tool itself)
-git diff main...HEAD --name-only | grep -E 'requirements.*\.txt|pyproject\.toml|setup\.(py|cfg)'
+git diff develop...HEAD --name-only | grep -E 'requirements.*\.txt|pyproject\.toml|setup\.(py|cfg)'
 ```
 
 These report only — they do not block. Treat the output as
@@ -150,7 +150,7 @@ comments, new `# noqa` / `# type: ignore`, and unsafe-parse
 patterns. Take that report as input.
 
 Add the judgment-level review on the diff
-(`git diff main...HEAD`):
+(`git diff develop...HEAD`):
 
 - **Duplicated code:** Are there significant blocks of
   duplicated logic the mechanical scan can't see? Look
@@ -217,7 +217,7 @@ push) or advisory (can address later).
 
 **Brief for sub-agent:**
 
-Review the diff (`git diff main...HEAD`) for test coverage:
+Review the diff (`git diff develop...HEAD`) for test coverage:
 
 - Does every new public function or significant code path
   have unit test coverage?
@@ -249,7 +249,7 @@ Report findings as a bullet list grouped by file.
 **Brief for sub-agent:**
 
 Check that documentation matches the current code state.
-Read the diff (`git diff main...HEAD`) and verify:
+Read the diff (`git diff develop...HEAD`) and verify:
 
 <!-- shared-block: readme-discipline v1 -->
 README discipline (shared block; do not edit -- the canonical
@@ -272,11 +272,37 @@ copy lives in shakenfist/development at
 - CLI usage changes are reflected in `docs/usage.md`, and the
   README still briefly mentions any `.claude/skills/` if
   present.
-- `ARCHITECTURE.md` reflects any new or modified modules,
-  data-source adapters, the cache, the scoring model, or the
-  client/server split.
-- `AGENTS.md` reflects any new dependencies, build commands,
-  conventions, or the polite-API-usage rules.
+<!-- shared-block: llm-doc-discipline v1 -->
+AGENTS.md and ARCHITECTURE.md discipline (shared block; do not
+edit -- the canonical copy lives in shakenfist/development at
+`templates/shared-blocks/llm-doc-discipline.md`):
+
+- `AGENTS.md` is a working guide: the conventions, invariants and
+  gotchas an agent cannot infer by reading the code, plus curated
+  links into `docs/`. It is loaded into every session, so every
+  line costs context on every task.
+- `ARCHITECTURE.md` is a map: the component inventory, how data
+  moves between components, and why the shape is the way it is.
+  A deep dive on one subsystem belongs in `docs/`, where humans
+  benefit from it too.
+- One canonical home per fact. If `docs/` covers it, link to it
+  instead of restating it -- and the same rule applies between
+  `AGENTS.md` and `ARCHITECTURE.md`.
+- Neither file is a reference manual, a runbook, or a changelog.
+  CLI flags, configuration keys, wire protocols, step-by-step
+  procedures and plan history go to `docs/`.
+- Growth in either file is itself a finding: if the diff adds
+  content that belongs in `docs/`, flag it as blocking and move
+  it.
+<!-- shared-block-end -->
+
+**In this project:** `ARCHITECTURE.md`'s inventory covers the
+data-source adapters, the cache, the scoring model and the
+client/server split; `AGENTS.md` carries the polite-API-usage
+rules and the build commands. A change to the *shape* of the
+first set, or to the *conventions* in the second, belongs
+there. A change to how one adapter works belongs in `docs/`.
+
 - `docs/` content is in sync — in particular any description
   of how each data source is queried, what the staleness and
   divergence axes mean, and how the score is computed.
@@ -302,7 +328,32 @@ copy lives in shakenfist/development at
 - Plan files in `docs/plans/` are up to date — completed
   phases marked complete, deferred items listed, and the
   *Plan Status* table in `docs/plans/index.md` reflects
-  reality.
+  reality, with its status cells drawn from the shared
+  vocabulary in `PLAN-TEMPLATE.md`.
+
+<!-- shared-block: plan-phase-references v1 -->
+Plan phase references (shared block; do not edit -- the canonical
+copy lives in shakenfist/development at
+`templates/shared-blocks/plan-phase-references.md`):
+
+- Documentation outside plans directories describes the current
+  state of the software, not the history of how it was built. Do
+  not write "implemented in phase 5" or "since phase 3 of the
+  two-tier CI plan": a reader wants to know whether a feature
+  exists, not which phase of which plan delivered it.
+- If a documented behaviour is implemented, describe it plainly.
+  If it is planned but not yet implemented, link to the master
+  plan in `docs/plans/` instead of citing a phase number.
+- Reserve the word "phase" for plan documents. A procedural
+  document describing a live multi-stage process (a release
+  runbook, say) should call its stages "steps" or "stages", so
+  that a phase reference in `docs/` is always a plan smell.
+- The consistency audit greps `README.md` and `docs/` (excluding
+  plans directories) for "phase <number>". Append
+  `<!-- audit-ok: phase-reference -->` to a line only when the
+  reference is genuinely not about an implementation plan.
+<!-- shared-block-end -->
+
 - If a new data source was added, the docs state its
   trust level (authoritative vs heuristic vs editable) and
   any rate-limit / terms-of-use obligations.
@@ -319,7 +370,7 @@ found" is a valid answer.
 
 **Brief for sub-agent:**
 
-Security review of the diff (`git diff main...HEAD`). This
+Security review of the diff (`git diff develop...HEAD`). This
 requires careful judgment — read the actual code, not just
 the diff summary. Divergulent is a supply-chain *visibility*
 tool, so both classic vulnerabilities and trust/integrity

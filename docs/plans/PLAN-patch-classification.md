@@ -4,7 +4,7 @@ A master plan for classifying Debian's carried patches so a user can ask
 "so what *are* those patches?" and get an honest, explainable answer —
 and so the genuinely interesting residue (undocumented, behaviour-changing,
 or security-relevant patches) is surfaced for review rather than lost in
-the noise. Created from [PLAN-TEMPLATE.md](../../PLAN-TEMPLATE.md) in
+the noise. Created from [PLAN-TEMPLATE.md](https://github.com/shakenfist/divergulent/blob/develop/PLAN-TEMPLATE.md) in
 spirit; phases graduate to their own per-phase plans when picked up.
 
 ## Why

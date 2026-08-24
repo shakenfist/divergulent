@@ -111,7 +111,7 @@ freshness clock is the injectable `cli._utc_now` (so tests pin it).
 (and `cache verify` re-runs them). (1) **Signature**: the bundle is
 Sigstore-signed in CI (`tools/sign-bundle.sh` in `build-cache.yml`, keyless
 OIDC, emitting `<bundle>.sigstore.json`); `verify.verify_signature`
-verifies it against `EXPECTED_SIGNER_IDENTITY`/`ISSUER`. It **lazily
+verifies it against `EXPECTED_SIGNER_IDENTITIES`/`ISSUER`. It **lazily
 imports `sigstore`** and returns SKIPPED — not FAILED — when the optional
 `verify` extra (`divergulent[verify]`, `sigstore>=4.3,<5`) is absent, so
 the base install keeps its stdlib + python-debian footprint;
@@ -137,10 +137,15 @@ prerelease** (`contents: write`). That tag is deliberately a prerelease so
 it never shadows the software "latest" release; the client's
 `DEFAULT_CACHE_URL_TEMPLATE` points at
 `.../releases/download/cache/cache-<release>.json.gz`. Because signing
-stays in `build-cache.yml` on `main`, the Sigstore identity remains
-`EXPECTED_SIGNER_IDENTITY` (`build-cache.yml@refs/heads/main`) for
-scheduled and dispatched runs alike — but this must be confirmed against a
-real published signature (no end-to-end VERIFIED has run yet).
+stays in `build-cache.yml` on the default branch, the Sigstore identity is
+`build-cache.yml@refs/heads/develop` for scheduled and dispatched runs
+alike — but this must be confirmed against a real published signature (no
+end-to-end VERIFIED has run yet). `EXPECTED_SIGNER_IDENTITIES` is a tuple,
+not a string, and still carries the pre-rename `@refs/heads/main` entry:
+the certificate identity is a property of the signing *run*, so bundles
+published before the branch rename keep the old ref until the next
+scheduled build republishes them. Drop that entry once no published bundle
+predates the rename.
 
 `--classify` (Tier 2) classifies the whole machine via
 `divergulent.sources.apt_patches.AptSourcePatches`: it resolves each

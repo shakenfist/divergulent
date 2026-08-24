@@ -119,7 +119,7 @@ docs (PR C, depends on phase 1).
 ## Agent guidance
 
 This plan follows the execution model, effort/model rubric, and
-review checklist in [PLAN-TEMPLATE.md](../../PLAN-TEMPLATE.md) —
+review checklist in [PLAN-TEMPLATE.md](https://github.com/shakenfist/divergulent/blob/develop/PLAN-TEMPLATE.md) —
 refer to it for the full detail rather than duplicating it here.
 In summary:
 

@@ -13,6 +13,26 @@ repos:
         types_or: [sh, bash, shell]
         args: ['-x']
 
+  # The llm-context-lint-ci audit requires every audited project with
+  # agent context to run skillsaw here and in CI. This repo carries
+  # AGENTS.md, which is loaded into every agent session, so a smuggled
+  # instruction or a stray credential in it should be caught by the
+  # commit that introduces it rather than by the next morning's audit.
+  #
+  # The rev is renovate-managed via the pre-commit manager enabled in
+  # renovate.json; expect bumps to arrive as pull requests.
+  #
+  # Pinned by tag, like the actionlint and shellcheck hooks above and like
+  # the rest of the fleet. A git tag is mutable, so a SHA would be the
+  # stronger pin -- but a hook revision that reads differently here from
+  # every other repository is the kind of drift the consistency audits
+  # exist to stop, and renovate is what keeps these current either way.
+  # Change it fleet-wide in shakenfist/development or not at all.
+  - repo: https://github.com/stbenjam/skillsaw
+    rev: v0.18.0
+    hooks:
+      - id: skillsaw
+
   - repo: local
     hooks:
       - id: tox-flake8

@@ -6,13 +6,20 @@ permissions:
 on:
   push:
     branches:
-      - main
+      - develop
   pull_request:
     branches:
-      - main
+      - develop
+  # How pr-retest.yml re-runs these checks without a new commit.
+  workflow_dispatch:
 
 jobs:
-  lint:
+  # Named for what it now does rather than what it used to. This job absorbed
+  # the unit test run when the two tox steps became `pre-commit run`, so a
+  # failure reported under `lint` would be a test failure wearing the wrong
+  # label. There is no branch protection referencing the old name.
+  checks:
+    name: "Sanity checks"
     runs-on: [self-hosted, static]
 
     steps:
@@ -21,18 +28,62 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Install tox in a venv
+      # A venv because the runners enforce PEP 668 and refuse a bare
+      # install. tox as well as pre-commit: the flake8 and unit-test
+      # hooks are `language: system` and shell out to tox, so it has to
+      # be on PATH before pre-commit runs.
+      - name: Install tox and pre-commit in a venv
         run: |
           rm -rf test-venv
           python3 -m venv test-venv
           test-venv/bin/pip install --upgrade pip
-          test-venv/bin/pip install tox
+          test-venv/bin/pip install tox pre-commit
           echo "${GITHUB_WORKSPACE}/test-venv/bin" >> "${GITHUB_PATH}"
 
-      - name: Lint with flake8
+      # This is the whole gate, and running it here rather than naming
+      # each linter is what the llm-context-lint-ci audit asks for: a
+      # hook can be skipped with --no-verify or by a clone that never
+      # ran `pre-commit install`, and CI is where that stops mattering.
+      # actionlint, shellcheck, skillsaw, flake8 and the unit tests are
+      # all hooks, so this runs strictly more than the two tox
+      # invocations it replaces.
+      - name: Run pre-commit hooks
         run: |
-          tox -eflake8
+          pre-commit run --all-files --show-diff-on-failure
 
-      - name: Run unit tests
-        run: |
-          tox -epy3
+  # The automatic review, gated on the checks job passing: a job that is
+  # skipped because a dependency failed never starts the reusable
+  # workflow, so the needs list *is* the CI-passed gate.
+  #
+  # No event guard is needed even though this workflow also triggers on
+  # workflow_dispatch (which is how pr-retest.yml re-runs it). The
+  # reusable workflow's own job carries
+  # `if: github.event_name == 'pull_request' && ...`, so a dispatch run
+  # skips it cleanly rather than failing on a null pull request.
+  #
+  # The body lives once, in shakenfist/actions -- including the runner,
+  # the timeout, the fork restriction, the bot-commit check and the
+  # concurrency group. The permissions block has to be here rather than
+  # there, because a cross-repository reusable workflow cannot grant
+  # itself more token scope than its caller has, and for the same reason
+  # this job cannot set runs-on or timeout-minutes.
+  #
+  # Deliberately no `secrets: inherit`. Nothing in the reviewer chain
+  # reads a secret -- pr-auto-review.yml and review-pr-with-claude both
+  # authenticate with github.token, which comes from the permissions
+  # block above -- so inheriting would hand every secret this repository
+  # holds, the PyPI and signing credentials included, to a workflow in
+  # another repository for no benefit at all.
+  #
+  # Deliberately no `force` either: that is what leaves a pull request
+  # the bot has already reviewed alone, and makes an explicit human
+  # `@shakenfist-bot please re-review` the only way to get a second
+  # review.
+  automated_reviewer:
+    name: "Automated reviewer"
+    needs: [checks]
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    uses: shakenfist/actions/.github/workflows/pr-auto-review.yml@main

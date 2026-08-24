@@ -8,7 +8,7 @@ is no code to explore yet — so this plan is grounded in the
 design discussion that motivated the project rather than in
 an existing codebase. As code lands, future planning should
 explore it thoroughly and ground answers in what the code
-actually does, per [PLAN-TEMPLATE.md](../../PLAN-TEMPLATE.md).
+actually does, per [PLAN-TEMPLATE.md](https://github.com/shakenfist/divergulent/blob/develop/PLAN-TEMPLATE.md).
 
 Where a question touches external concepts, research as
 needed rather than guessing. Divergulent sits on top of a lot
@@ -199,7 +199,7 @@ decide on `--json`).
 
 This plan follows the execution model, effort/model guidance,
 and review checklists in
-[PLAN-TEMPLATE.md](../../PLAN-TEMPLATE.md) — refer to it
+[PLAN-TEMPLATE.md](https://github.com/shakenfist/divergulent/blob/develop/PLAN-TEMPLATE.md) — refer to it
 rather than duplicating it here. In summary:
 
 - All implementation is done by sub-agents; the management

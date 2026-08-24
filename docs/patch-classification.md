@@ -228,7 +228,7 @@ keyless (reusing `tools/sign-bundle.sh`) and publishes to the rolling
 `.github/workflows/build-classification.yml` — a daily schedule that publishes,
 like the cache; the human gate stays the export commit/push into the reviews
 repo). The **client** pulls it (`cache
-pull-classification`, signature-verified against `verify.CLASSIFICATION_SIGNER_IDENTITY`,
+pull-classification`, signature-verified against `verify.CLASSIFICATION_SIGNER_IDENTITIES`,
 no spot-check — a verdict has no live oracle), and `show` joins it by hashing each
 patch body it already fetched (`PatchDetail.fingerprint`, the same normalised-diff
 key; hashing ≠ classifying) to render the per-package breakdown + per-patch "why".

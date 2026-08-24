@@ -261,9 +261,10 @@ should be planned at high effort.
   deliberately does not do today. A batch tool run once, emitting a
   `generated-verified` observation — not a pipeline tier.
 - **User-facing "ancient and crufty" signal.** Graduated to its own
-  master plan, [PLAN-maintenance-health.md](PLAN-maintenance-health.md),
-  which splits it into a client-facing maintenance-health block and
-  a curation-facing review-freshness ordering. This plan's
+  master plan, `PLAN-maintenance-health.md` — drafted on a branch and
+  not yet merged, so it is deliberately not linked here — which splits
+  it into a client-facing maintenance-health block and a
+  curation-facing review-freshness ordering. This plan's
   generator-version stamps (autoconf 2.59 dates gatos's last real
   regeneration to ~2003–2006) are that plan's strongest input — the
   one fossil signal a rote packaging refresh cannot launder.

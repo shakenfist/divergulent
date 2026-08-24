@@ -218,7 +218,7 @@ crawl when designing phase 5.
 ## Agent guidance
 
 Follows the execution model, effort/model rubric, and review
-checklist in [PLAN-TEMPLATE.md](../../PLAN-TEMPLATE.md). Phases 1
+checklist in [PLAN-TEMPLATE.md](https://github.com/shakenfist/divergulent/blob/develop/PLAN-TEMPLATE.md). Phases 1
 and 4 are high-effort (archive enumeration, incremental crawl
 politeness, and trust-critical signing/verification); phases 2, 3,
 5 are medium. Tests stay offline: mocked HTTP for the builder, a

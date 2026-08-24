@@ -1,0 +1,99 @@
+# Triggers a re-run of the CI checks when an authorized user comments
+# "@shakenfist-bot please retest"
+#
+# This is useful after bot commits (which don't trigger CI) or when you
+# want to re-run checks without pushing a new commit.
+#
+# Template source: shakenfist/development/templates/ci-review-automation/
+#
+# The template dispatches functional-tests.yml. This project has no such
+# workflow: its CI gate is unit-tests.yml ("Sanity checks"), which runs
+# every pre-commit hook -- actionlint, shellcheck, skillsaw, flake8 and
+# the unit suite -- so that is what a retest re-runs. unit-tests.yml
+# carries a workflow_dispatch trigger for this, and `gh workflow run`
+# reads that trigger from the copy on the default branch, so the trigger
+# has to be on develop before this workflow can dispatch anything.
+
+name: PR Retest
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  trigger-retest:
+    name: "Trigger retest"
+    # Only run on PR comments (not issue comments)
+    # Never on a comment the bot itself posted. The automated review
+    # is model-generated text posted to the pull request, and a review
+    # quoting a trigger phrase would re-fire the lane -- contains()
+    # does not care that the phrase sits inside a quote.
+    if: |
+      github.event.issue.pull_request &&
+      github.event.comment.user.type != 'Bot' &&
+      contains(github.event.comment.body, '@shakenfist-bot please retest')
+    runs-on: [self-hosted, static]
+    # Just a few gh API calls, so anything beyond this is a hang.
+    timeout-minutes: 10
+    # Two retest requests in quick succession would otherwise dispatch two
+    # runs and post two confirmation comments. Milder than the duplicate
+    # review pr-re-review.yml guards against -- this lane runs on the
+    # plentiful static runner -- but the duplicate comments are still noise.
+    concurrency:
+      group: pr-retest-${{ github.event.issue.number }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Handle trigger
+        id: trigger
+        uses: shakenfist/actions/pr-bot-trigger@main
+        with:
+          trigger-phrase: 'please retest'
+          reaction: 'rocket'
+
+      - name: Trigger the CI checks
+        id: dispatch
+        if: steps.trigger.outputs.authorized == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_REF: ${{ steps.trigger.outputs.pr-ref }}
+        run: |
+          echo "Triggering the CI checks on branch: ${PR_REF}"
+
+          # Report a failed dispatch rather than claiming success.
+          # Fork pull requests no longer reach this step -- pr-bot-trigger
+          # refuses them and says why -- so what is left is a workflow
+          # file that is missing, renamed or disabled.
+          if gh workflow run unit-tests.yml \
+            --repo "${{ github.repository }}" \
+            --ref "${PR_REF}"; then
+            echo "dispatched=true" >> $GITHUB_OUTPUT
+            echo "CI checks triggered successfully"
+          else
+            echo "dispatched=false" >> $GITHUB_OUTPUT
+            echo "CI check dispatch failed"
+          fi
+
+      - name: Post confirmation
+        if: steps.trigger.outputs.authorized == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_REF: ${{ steps.trigger.outputs.pr-ref }}
+        run: |
+          if [ "${{ steps.dispatch.outputs.dispatched }}" = "true" ]; then
+            gh pr comment "${{ github.event.issue.number }}" \
+              --repo "${{ github.repository }}" \
+              --body "Triggered the CI checks on branch \`${PR_REF}\`.
+
+          [View workflow runs](https://github.com/${{ github.repository }}/actions/workflows/unit-tests.yml)"
+          else
+            gh pr comment "${{ github.event.issue.number }}" \
+              --repo "${{ github.repository }}" \
+              --body "Unable to trigger the CI checks on \`${PR_REF}\`. Check that \`unit-tests.yml\` exists on the default branch, carries a \`workflow_dispatch\` trigger, and is not disabled -- or re-run the failed workflow from the Actions tab instead."
+          fi
