@@ -296,15 +296,12 @@ edit -- the canonical copy lives in shakenfist/development at
   it.
 <!-- shared-block-end -->
 
-!!! note "In this project"
-
-    `ARCHITECTURE.md`'s inventory covers the data-source
-    adapters, the cache, the scoring model and the
-    client/server split; `AGENTS.md` carries the
-    polite-API-usage rules and the build commands. A change to
-    the *shape* of the first set, or to the *conventions* in
-    the second, belongs there. A change to how one adapter
-    works belongs in `docs/`.
+**In this project:** `ARCHITECTURE.md`'s inventory covers the
+data-source adapters, the cache, the scoring model and the
+client/server split; `AGENTS.md` carries the polite-API-usage
+rules and the build commands. A change to the *shape* of the
+first set, or to the *conventions* in the second, belongs
+there. A change to how one adapter works belongs in `docs/`.
 
 - `docs/` content is in sync — in particular any description
   of how each data source is queried, what the staleness and

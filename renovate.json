@@ -14,7 +14,7 @@
   },
   "packageRules": [
     {
-      "description": "Automatically merge minor and patch-level updates",
+      "description": "Minor, patch and digest updates are grouped for review; automerge is deliberately off. This project publishes signed bundles from scheduled workflows, so a dependency that lands without a human looking at it reaches a signing job unreviewed.",
       "matchUpdateTypes": [
         "minor",
         "patch",
