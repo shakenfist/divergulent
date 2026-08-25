@@ -48,12 +48,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0  # setuptools_scm needs full history
 
       - name: Checkout ledger data
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ vars.LEDGER_REPO || 'shakenfist/divergulent-reviews' }}
           token: ${{ secrets.LEDGER_REPO_TOKEN || github.token }}
