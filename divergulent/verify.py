@@ -38,13 +38,13 @@ SIGNATURE_SUFFIX = '.sigstore.json'
 # dedicated publish workflow, this ref changes with it.
 EXPECTED_SIGNER_ISSUER = 'https://token.actions.githubusercontent.com'
 EXPECTED_SIGNER_IDENTITY = (
-    'https://github.com/shakenfist/divergulent/.github/workflows/build-cache.yml@refs/heads/main')
+    'https://github.com/shakenfist/divergulent/.github/workflows/build-cache.yml@refs/heads/develop')
 
 # The classification bundle is published and signed by its own workflow, so it has
 # its own expected signer identity (the issuer is the same GitHub OIDC issuer).
 CLASSIFICATION_SIGNER_IDENTITY = (
     'https://github.com/shakenfist/divergulent/.github/workflows/'
-    'build-classification.yml@refs/heads/main')
+    'build-classification.yml@refs/heads/develop')
 
 # Default number of bundle entries to spot-check against the live origin. Small,
 # to stay a polite client; the live half is the unthrottled sources.debian.org.

@@ -137,10 +137,13 @@ prerelease** (`contents: write`). That tag is deliberately a prerelease so
 it never shadows the software "latest" release; the client's
 `DEFAULT_CACHE_URL_TEMPLATE` points at
 `.../releases/download/cache/cache-<release>.json.gz`. Because signing
-stays in `build-cache.yml` on `main`, the Sigstore identity remains
-`EXPECTED_SIGNER_IDENTITY` (`build-cache.yml@refs/heads/main`) for
-scheduled and dispatched runs alike — but this must be confirmed against a
-real published signature (no end-to-end VERIFIED has run yet).
+stays in `build-cache.yml`, the Sigstore identity is
+`EXPECTED_SIGNER_IDENTITY` for scheduled and dispatched runs alike. That
+constant pins the workflow ref, so it tracks the repository's **default
+branch** (`develop`): scheduled runs check out the default branch, and the
+OIDC certificate SAN names it. Renaming the default branch invalidates
+every published bundle for existing clients until the constant is updated
+to match — the same applies to `CLASSIFICATION_SIGNER_IDENTITY`.
 
 `--classify` (Tier 2) classifies the whole machine via
 `divergulent.sources.apt_patches.AptSourcePatches`: it resolves each
