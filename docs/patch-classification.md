@@ -209,9 +209,12 @@ ledger embeds irreproducible human + verified-LLM verdicts, so it is the **sourc
 of truth** and reaches CI as a **committed JSONL export** — never the sqlite
 (binary: unreviewable diffs, unmergeable, bloats git). The export is a *directory*
 of compact JSONL (null columns omitted), with the two big append-only tables
-(`decision`, `observation`) **sharded by calendar month** so no file crosses
-GitHub's 100 MB limit as the ledger grows without bound (append-only: supersessions
-keep old rows); the small tables are whole, and a `manifest.json` lists the shards.
+(`decision`, `observation`) **sharded by ISO week** (`observation-2026-W27.jsonl`)
+so no file crosses GitHub's 100 MB limit as the ledger grows without bound
+(append-only: supersessions keep old rows); the small tables are whole, and a
+`manifest.json` lists the shards. The bucket was the calendar month until
+2026-08, when one month's observations reached 51 MB — past GitHub's 50 MB push
+warning; the week keeps the largest shard near 20 MB at current volume.
 `export.py` serialises every table verbatim (ids preserved, so verdict precedence —
 which tie-breaks on `decision.id` — survives) and rebuilds a faithful sqlite via
 `ledger.create_schema`; the round-trip (`import(export(L)) == L`, byte-deterministic,

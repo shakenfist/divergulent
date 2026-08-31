@@ -15,19 +15,22 @@ because the ledger is append-only and grows without bound (every re-triage or
 re-review supersedes rows but keeps them), so any single file would eventually
 cross GitHub's 100 MB per-file limit.  The layout:
 
-  ledger/manifest.json              # {export_schema, shards, rows}
-  ledger/decision-<YYYY-MM>.jsonl   # the big append-only logs, sharded by the
-  ledger/observation-<YYYY-MM>.jsonl #   calendar month of the row's timestamp
-  ledger/review_queue.jsonl         # the small, bounded tables, whole
+  ledger/manifest.json                # {export_schema, shards, rows}
+  ledger/decision-<YYYY-Www>.jsonl    # the big append-only logs, sharded by the
+  ledger/observation-<YYYY-Www>.jsonl #   ISO week of the row's timestamp
+  ledger/review_queue.jsonl           # the small, bounded tables, whole
   ledger/rule.jsonl / note.jsonl / meta.jsonl
 
-Sharding the two big tables by month bounds every file: new work appends to the
-current month (clean diffs), and a supersession is a small edit to one old shard.
+Sharding the two big tables by week bounds every file: new work appends to the
+current week (clean diffs), and a supersession is a small edit to one old shard.
+The bucket was originally the calendar month, but observation traffic grew until
+2026-08 reached 51 MB -- past GitHub's 50 MB push warning and on trend for the
+100 MB hard limit -- so it is now the ISO week (``2026-W27``).
 Rows are **compact** -- null columns are omitted (import restores them from the
 schema defaults, all nullable → NULL), so a row carries only what it asserts.
 Raw LLM/verification evidence stays inline (it is ~25% of the bytes and a
-re-triage burst still fits within one month's file); it can be split to a
-content-addressed store later if a single month ever gets fat.
+re-triage burst still fits within one week's file); it can be split to a
+content-addressed store later if a single week ever gets fat.
 
 Round-trip is the trust anchor: ``import(export(L))`` reproduces ``L`` row for row
 (ids preserved, so verdict precedence -- which tie-breaks on ``decision.id`` -- is
@@ -37,6 +40,8 @@ docs/plans/PLAN-patch-classification-phase-05-bundle.md.
 from __future__ import annotations
 
 import argparse
+import datetime
+import functools
 import json
 import os
 import sqlite3
@@ -45,7 +50,10 @@ from typing import Iterator
 from divergulent.classify import ledger as ledger_mod
 
 # Bump when the export layout (not the ledger schema) changes shape.  v2 is the
-# sharded-directory format; v1 was a single ledger.jsonl.
+# sharded-directory format; v1 was a single ledger.jsonl.  Moving the shard bucket
+# from month to ISO week did NOT bump it: import derives a shard's table from its
+# name prefix and is otherwise blind to the suffix, so a v2 reader loads a weekly
+# export unchanged.
 EXPORT_SCHEMA_VERSION = 2
 
 MANIFEST_NAME = 'manifest.json'
@@ -57,7 +65,7 @@ _ALL_TABLES: tuple[str, ...] = (
     'meta', 'rule', 'decision', 'observation', 'review_queue', 'note')
 _SHARDED_TABLES: frozenset[str] = frozenset({'decision', 'observation'})
 
-# The timestamp column whose calendar month buckets a sharded row.
+# The timestamp column whose ISO week buckets a sharded row.
 _SHARD_COL: dict[str, str] = {'decision': 'decided_at', 'observation': 'observed_at'}
 _UNDATED = 'undated'
 
@@ -96,11 +104,31 @@ def _compact(row: dict) -> dict:
     return {key: value for key, value in row.items() if value is not None}
 
 
-def _month(timestamp) -> str:
-    """``'2026-07-03T…'`` -> ``'2026-07'``; a null/odd timestamp -> ``'undated'``."""
-    if isinstance(timestamp, str) and len(timestamp) >= 7 and timestamp[4] == '-':
-        return timestamp[:7]
-    return _UNDATED
+@functools.lru_cache(maxsize=None)
+def _week_of_day(day: str) -> str:
+    """``'2026-07-03'`` -> ``'2026-W27'``; an unparseable day -> ``'undated'``.
+
+    Cached because an export walks hundreds of thousands of rows but only a few
+    hundred distinct days, and this is the one part of the walk that parses.
+    """
+    try:
+        iso_year, iso_week, _ = datetime.date.fromisoformat(day).isocalendar()
+    except ValueError:
+        return _UNDATED
+    return '%04d-W%02d' % (iso_year, iso_week)
+
+
+def _week(timestamp) -> str:
+    """``'2026-07-03T…'`` -> ``'2026-W27'``; a null/odd timestamp -> ``'undated'``.
+
+    The year is the ISO week-numbering year, NOT the calendar year the timestamp
+    starts with: 2027-01-01 falls in 2026-W53, and naming that shard '2027-W53'
+    would both sort out of order and split one week across two files.  A bare
+    ``'2026-07'`` is undated rather than bucketed -- a week needs a day to land in.
+    """
+    if not isinstance(timestamp, str) or len(timestamp) < 10:
+        return _UNDATED
+    return _week_of_day(timestamp[:10])
 
 
 def _shard_name(table: str, suffix: str | None) -> str:
@@ -119,7 +147,7 @@ def _table_of(shard_filename: str) -> str:
 def export_shards(conn: sqlite3.Connection) -> Iterator[tuple[str, list[str]]]:
     """Yield ``(shard_filename, [json_line, ...])`` for the whole ledger.
 
-    Sharded tables split by the calendar month of their timestamp; whole tables
+    Sharded tables split by the ISO week of their timestamp; whole tables
     get one file.  Deterministic: fixed table order, id/key ordering within a
     table, shard names sorted, and compact key-sorted JSON per row.
     """
@@ -131,7 +159,7 @@ def export_shards(conn: sqlite3.Connection) -> Iterator[tuple[str, list[str]]]:
         query = 'SELECT * FROM %s ORDER BY %s' % (table, _ORDER_BY[table])
         for row in conn.execute(query):
             record = {col: row[idx] for idx, col in enumerate(columns)}
-            suffix = _month(record.get(_SHARD_COL[table])) if table in _SHARDED_TABLES else None
+            suffix = _week(record.get(_SHARD_COL[table])) if table in _SHARDED_TABLES else None
             shards.setdefault(_shard_name(table, suffix), []).append(_dumps(_compact(record)))
     for name in sorted(shards):
         yield name, shards[name]
@@ -157,7 +185,7 @@ def write_export(conn: sqlite3.Connection, dest_dir: str) -> dict:
     """Write the sharded export into ``dest_dir``; return the manifest.
 
     Clears any prior shard files + manifest first (the export is authoritative, so
-    a month that lost all its rows never lingers), writes each shard atomically,
+    a week that lost all its rows never lingers), writes each shard atomically,
     then a ``manifest.json`` listing them.
     """
     os.makedirs(dest_dir, exist_ok=True)

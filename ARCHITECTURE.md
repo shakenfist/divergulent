@@ -340,7 +340,7 @@ installed-package inventory never leaves the machine.
   human + verified-LLM verdicts, so it reaches CI as a **JSONL export directory**,
   never the sqlite (binary: unreviewable, unmergeable, bloats git). `write_export`
   serialises every table as compact JSONL (null columns omitted), the two big
-  append-only tables (`decision`, `observation`) **sharded by calendar month** — so
+  append-only tables (`decision`, `observation`) **sharded by ISO week** — so
   no file crosses GitHub's 100 MB limit as the append-only ledger grows — plus a
   `manifest.json`; everything stably ordered so two exports are byte-identical.
   `load_export` rebuilds a faithful sqlite (ids preserved, so the derived verdict —
