@@ -26,6 +26,20 @@ current week (clean diffs), and a supersession is a small edit to one old shard.
 The bucket was originally the calendar month, but observation traffic grew until
 2026-08 reached 51 MB -- past GitHub's 50 MB push warning and on trend for the
 100 MB hard limit -- so it is now the ISO week (``2026-W27``).
+
+Migrating a monthly export is a ONE-TIME whole-directory re-shard, and the
+operator driving ``export -> commit -> push`` is the review gate for it, so know
+what to expect: :func:`write_export` clears every ``*.jsonl`` before writing, so
+the first weekly export deletes every monthly shard and adds a weekly one, and a
+month's rows split across ~4-5 weeks means the new blobs genuinely differ (this
+is not a rename git can dedupe -- it adds a second full copy of the ledger's
+bytes to history, permanently).  Commit that as a standalone "re-shard the
+ledger export" commit with no verdict changes: it is a full-ledger churn diff
+that cannot be reviewed line by line, and mixing real verdicts into it hides
+them.  Every operator of the reviews repo must be on this code before the next
+export -- an older checkout exporting into the same directory rewrites it back
+to monthly names, producing the same churn in the opposite direction.
+
 Rows are **compact** -- null columns are omitted (import restores them from the
 schema defaults, all nullable → NULL), so a row carries only what it asserts.
 Raw LLM/verification evidence stays inline (it is ~25% of the bytes and a
@@ -58,8 +72,8 @@ EXPORT_SCHEMA_VERSION = 2
 
 MANIFEST_NAME = 'manifest.json'
 
-# Every table, in a FIXED order.  The two big append-only logs are sharded by
-# month; the rest (small, bounded) are written whole.  ``note`` is optional in
+# Every table, in a FIXED order.  The two big append-only logs are sharded by ISO
+# week; the rest (small, bounded) are written whole.  ``note`` is optional in
 # old ledgers; a missing table is simply skipped on export.
 _ALL_TABLES: tuple[str, ...] = (
     'meta', 'rule', 'decision', 'observation', 'review_queue', 'note')
@@ -104,12 +118,17 @@ def _compact(row: dict) -> dict:
     return {key: value for key, value in row.items() if value is not None}
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _week_of_day(day: str) -> str:
     """``'2026-07-03'`` -> ``'2026-W27'``; an unparseable day -> ``'undated'``.
 
     Cached because an export walks hundreds of thousands of rows but only a few
     hundred distinct days, and this is the one part of the walk that parses.
+
+    Only :func:`_week` calls this, and its ``isinstance`` guard means ``day`` is
+    always a ``str``; so the narrow ``except ValueError`` is deliberate -- a
+    non-string here is a programming error and should stay loud rather than be
+    quietly bucketed as ``undated``.
     """
     try:
         iso_year, iso_week, _ = datetime.date.fromisoformat(day).isocalendar()

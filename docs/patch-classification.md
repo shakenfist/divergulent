@@ -214,7 +214,17 @@ so no file crosses GitHub's 100 MB limit as the ledger grows without bound
 (append-only: supersessions keep old rows); the small tables are whole, and a
 `manifest.json` lists the shards. The bucket was the calendar month until
 2026-08, when one month's observations reached 51 MB — past GitHub's 50 MB push
-warning; the week keeps the largest shard near 20 MB at current volume.
+warning; the week keeps the largest shard near 20 MB at current volume. Moving
+that bucket is a **one-time whole-directory re-shard**: `write_export` clears
+every `*.jsonl` before writing, so the first weekly export deletes every monthly
+shard and adds a weekly one, and because a month's rows split across ~4-5 weeks
+the new blobs genuinely differ — git cannot dedupe it as a rename, so it adds a
+second full copy of the ledger's bytes to history for good. Commit it as a
+standalone "re-shard the ledger export" commit with no verdict changes: the diff
+is full-ledger churn that cannot be reviewed line by line, and real verdicts
+mixed into it are invisible. Every operator of the reviews repo must upgrade
+before their next export — an older checkout exporting into the same directory
+rewrites it back to monthly names and churns the whole directory again.
 `export.py` serialises every table verbatim (ids preserved, so verdict precedence —
 which tie-breaks on `decision.id` — survives) and rebuilds a faithful sqlite via
 `ledger.create_schema`; the round-trip (`import(export(L)) == L`, byte-deterministic,

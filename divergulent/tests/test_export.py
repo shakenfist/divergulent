@@ -58,7 +58,7 @@ class ExportFixture:
         ledger_mod.supersede_decisions(
             conn, decided_by='substantive', rule_version=1, superseded_at='2026-06-26T00:00:00Z')
 
-        # Observations across the axes and two months, plus a review item and a note.
+        # Observations across the axes and two ISO weeks, plus a review item and a note.
         ledger_mod.append_observation(
             conn, fingerprint='fp-llm', kind='security-risk', detail='high',
             evidence='{"raw_response": "..."}', observed_by='risk-gate', rule_version=2,
@@ -198,14 +198,87 @@ class DeterminismTestCase(ExportFixture, testtools.TestCase):
 
     def test_reexport_removes_a_stale_shard(self):
         # Re-exporting into a dir that holds an orphan shard must clear it, so the
-        # committed export never carries a file the ledger no longer backs.
+        # committed export never carries a file the ledger no longer backs.  Both
+        # bucket generations are planted: the monthly name is what the one-time
+        # month -> week re-shard has to sweep out of a real export directory.
         source, _ = self._seeded_ledger()
         export_dir = self._tmp('ledger')
         export.write_export(source, export_dir)
-        orphan = os.path.join(export_dir, 'decision-1999-W01.jsonl')
-        open(orphan, 'w').write('{"stale": true}\n')
+        orphans = [os.path.join(export_dir, name) for name in
+                   ('decision-1999-W01.jsonl', 'decision-1999-01.jsonl')]
+        for orphan in orphans:
+            open(orphan, 'w').write('{"stale": true}\n')
         export.write_export(source, export_dir)
-        self.assertFalse(os.path.exists(orphan))
+        for orphan in orphans:
+            self.assertFalse(os.path.exists(orphan))
+
+
+class LegacyMonthlyExportTestCase(ExportFixture, testtools.TestCase):
+    """A v2 export written before the week bucket must still import.
+
+    This is why EXPORT_SCHEMA_VERSION did not move when the bucket did, so assert
+    it end to end -- through load_export reading a manifest of monthly names --
+    rather than only at the _table_of helper.
+    """
+
+    def _monthly_export(self):
+        export_dir = self._tmp('legacy')
+        os.makedirs(export_dir)
+        shards = {
+            'decision-2026-06.jsonl': [
+                {'id': 1, 'fingerprint': 'fp-a', 'category': 'test', 'confidence': 'high',
+                 'decided_by': 'test-only', 'rule_version': 1, 'kind': 'heuristic',
+                 'decided_at': '2026-06-26T00:00:00Z', 'verified': 0}],
+            'decision-2026-07.jsonl': [
+                {'id': 2, 'fingerprint': 'fp-b', 'category': 'security', 'confidence': 'medium',
+                 'decided_by': 'llm-triage:claude', 'rule_version': 3, 'kind': 'llm',
+                 'evidence': '{"raw_response": "..."}', 'decided_at': '2026-07-04T00:00:00Z',
+                 'verified': 1}],
+            'observation-2026-06.jsonl': [
+                {'id': 1, 'fingerprint': 'fp-a', 'kind': 'security-risk', 'detail': 'high',
+                 'observed_by': 'risk-gate', 'rule_version': 2,
+                 'observed_at': '2026-06-26T00:03:00Z'}],
+            'meta.jsonl': [{'key': 'schema_version', 'value': '2'}],
+        }
+        for name, records in shards.items():
+            with open(os.path.join(export_dir, name), 'w', encoding='utf-8') as handle:
+                for record in records:
+                    handle.write(export._dumps(record) + '\n')
+        manifest = {'export_schema': 2, 'shards': sorted(shards), 'rows': 5}
+        with open(os.path.join(export_dir, export.MANIFEST_NAME), 'w', encoding='utf-8') as handle:
+            handle.write(export._dumps(manifest) + '\n')
+        return export_dir
+
+    def test_monthly_shards_import_into_the_right_tables(self):
+        rebuilt = export.load_export(self._monthly_export(), self._tmp('rebuilt.sqlite'))
+        self.addCleanup(rebuilt.close)
+        self.assertEqual(
+            [(1, 'fp-a', 'test'), (2, 'fp-b', 'security')],
+            [tuple(r) for r in rebuilt.execute(
+                'SELECT id, fingerprint, category FROM decision ORDER BY id')])
+        self.assertEqual(
+            [(1, 'fp-a', 'security-risk')],
+            [tuple(r) for r in rebuilt.execute(
+                'SELECT id, fingerprint, kind FROM observation ORDER BY id')])
+        # Null columns absent from the compact lines come back as NULL, and the
+        # verified flag survives -- a monthly export is loaded losslessly.
+        row = rebuilt.execute('SELECT * FROM decision WHERE id = 1').fetchone()
+        self.assertIsNone(row['evidence'])
+        self.assertIsNone(row['superseded_at'])
+        self.assertEqual(1, rebuilt.execute(
+            'SELECT verified FROM decision WHERE id = 2').fetchone()[0])
+
+    def test_a_monthly_export_re_exports_as_weekly(self):
+        # The migration path itself: import a monthly export, re-export, and the
+        # same rows now land in ISO-week shards with the monthly names gone.
+        rebuilt = export.load_export(self._monthly_export(), self._tmp('rebuilt.sqlite'))
+        self.addCleanup(rebuilt.close)
+        manifest = export.write_export(rebuilt, self._tmp('weekly'))
+        shards = set(manifest['shards'])
+        self.assertIn('decision-2026-W26.jsonl', shards)
+        self.assertIn('decision-2026-W27.jsonl', shards)
+        self.assertIn('observation-2026-W26.jsonl', shards)
+        self.assertEqual(set(), {n for n in shards if n.startswith('decision-2026-0')})
 
 
 class EmptyLedgerTestCase(ExportFixture, testtools.TestCase):
