@@ -67,7 +67,12 @@ distribution exactly with a 42,907-fingerprint derived queue. See
 
 The reserved llm/human seats are filled here. `triage.py` does the claim-blind LLM
 draft + an independent adversarial verification, routing each patch to
-`verified` or `needs_human`. The model-call boundary is
+`verified` or `needs_human`. A `security` draft is the one exception to that
+routing: it goes to `needs_human` unconditionally, even when the verifier agreed
+at high confidence, so no `kind='llm'`, `verified=True` decision can ever carry
+that category. This deliberately increases the human queue — the alternative is
+letting a model settle the one call whose cost of being wrong is highest. The
+model-call boundary is
 `call(system, user, *, model, schema=None) -> CallResult(text, usage)`: the
 **static rubric is the cacheable `system` prompt** and the per-patch diff is the
 `user` message, so the rubric is billed once per run and read from cache
@@ -282,8 +287,10 @@ single-user, and is never run in CI or by clients. Binding loopback is not on it
 own enough, because a page in the operator's browser can post to a local server
 across origins: every request must also carry a `Host` naming this app (so a
 rebound DNS name cannot read the queue), and every state-changing one must carry
-this app's `Origin` plus a per-process token in both a `SameSite=Strict` cookie
-and the form itself. The practical consequence for the operator is that a tab
+this app's `Origin` — scheme, loopback name **and the bound port exactly**, since
+a page on another local port is another server — plus a per-process token in both
+a `SameSite=Strict` cookie and the form itself. The practical consequence for the
+operator is that a tab
 left open across a restart submits into a **403 page** rather than a stale
 process — reload it and the verdict goes through. Handlers test offline through
 Flask's test client (injected fake `fetch`/`signer`, temp ledger; no socket). See

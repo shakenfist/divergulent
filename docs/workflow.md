@@ -168,9 +168,12 @@ fingerprint whose hand-written residue sits at or under the oversized
 cut reaches the LLM after all, shown the identical residue-first
 projection the risk gate reads; the still-unreviewable population —
 residue also past the cut, or no mark at all — keeps routing to a
-human with its honest reason. The injection tripwire still scans the
-*full* body regardless, and its skip outranks the unlock: a
-diff-region hit never reaches the model, marked or not. The verifier
+human with its honest reason. The injection tripwire screens a bounded
+head of the body (1 MiB) regardless — recording a `scan-truncated` note
+rather than an unearned clean result when it caps, and screening the
+residue-first projection as well when it did — and its skip outranks the
+unlock in *both* LLM tiers, triage and the security-risk gate: a
+diff-region hit never reaches a model, marked or not. The verifier
 always reads exactly the same projected text the drafter did, and an
 unmarked fingerprint's prompt stays byte-identical to what it was
 before that. Triage runs over a bounded, prioritised slice (risk
@@ -180,6 +183,14 @@ each decision's identity, so a model swap or prompt bump is cleanly
 supersedable. When triage notices clusters of identical verified
 verdicts it surfaces them as *candidate* deterministic rules — for
 human approval, never auto-applied.
+
+One category is never settled by this tier at all: a draft of
+**`security` always goes to a human**, however cleanly the verifier
+agreed with it. The LLM may propose that a patch is a security fix; only
+a person may finalise the call. Expect this to *grow* the review queue
+rather than reading the growth as a regression — a verified `security`
+draft that would once have settled itself now waits for a reviewer, and
+no verified LLM decision can carry that category again.
 
 ### 8. Human review
 
@@ -236,7 +247,7 @@ re-pull to see more of their patches explained.
 | Tier | Decides | Never does |
 | --- | --- | --- |
 | Deterministic | structural categories, size, reach, provable benignity, CVE-confirmed `security` | guess intent; pronounce malice |
-| LLM | draft categories for the residue; advisory risk scores | count unverified; see the author's claim |
+| LLM | draft categories for the residue; advisory risk scores | count unverified; see the author's claim; finalise a `security` call |
 | Human | final verdicts, rule approvals, notes | be bypassed: nothing outranks a signed human verdict |
 
 The published bundle preserves these boundaries: every entry says

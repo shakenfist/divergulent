@@ -219,12 +219,19 @@ not merely mention a word.
 | `decode-exec` | `eval(` over `base64`/`atob`, `exec(` over `decode` |
 | `embedded-private-key` | a `-----BEGIN ... PRIVATE KEY-----` block added to code |
 | `reverse-shell` | `/dev/tcp/`, `nc ... -e` |
-| `shell-out` (shell files only) | backtick command substitution — scoped to `.sh`/`.bash` files only |
+| `shell-out` (shell files only) | backtick command substitution, bounded to 200 characters a side and no newline between — scoped to `.sh`/`.bash` files only |
 
 Precision choices worth knowing:
 
 - `system(` / `popen(` require the trailing `(`, so the word
   "system" in an identifier or comment cannot fire.
+- The shell-file backtick pair is **bounded**: at most 200 characters
+  between the backticks on each side, and the pair may not cross a
+  newline. Unbounded `[^`]*` halves backtracked quadratically across
+  one long attacker-authored line. A real command substitution is short
+  and lives on one line, so the bound costs no recall — but it does
+  reject inputs the unbounded pattern flagged, which is why
+  `RULES_VERSION` moved to 2.
 - Bare `subprocess` use never fires — only the dangerous
   `shell=True` shape.
 - A bare `curl` never fires — the fetch *and* the pipe-to-shell must
@@ -424,7 +431,8 @@ The diff bodies we send to the LLM tier are attacker-authorable text: a
 patch is exactly where a supply-chain attacker has write access, so
 patch text aimed at the *classifier* rather than the *compiler* is a
 live concern. A tuned regex/Unicode scan looks for injection-shaped
-text in five separately-versioned families:
+text in five separately-versioned families, plus one pseudo-family that
+records the limits of the scan itself:
 
 | family | fires on |
 | --- | --- |
@@ -433,15 +441,39 @@ text in five separately-versioned families:
 | `invisible-tag-block` | the Unicode tag block (U+E0000–E007F), the invisible-instruction vector |
 | `zero-width` | a run of ≥ 4 zero-width characters (emoji ZWJ U+200D excluded) — hidden-text encoding |
 | `bidi-control` | bidi embedding/override controls (the Trojan Source vector) |
+| `scan-truncated` | *not a suspicion*: the region was longer than `MAX_SCAN_CHARS` and the tail was not read |
 
 The scan runs over the **diff region** (what the LLM reads, via
 `triage.diff_body`) and the **header region** separately. A
-**diff-region** hit makes triage **skip the LLM entirely** and route
-the patch to a human — feeding attacker instructions to the model they
-target is the thing we avoid — with a priority band below risk and
-above provenance (never crossing a risk tier). A header-region hit is
-recorded for provenance but does not divert triage (the model never
-reads the header). The review UI badges a hit.
+**diff-region** hit makes **both LLM tiers — the triage driver and the
+security-risk gate — skip the LLM entirely** and route the patch to a
+human: feeding attacker instructions to the model they target is the
+thing we avoid, and a gate that scored the payload anyway would let it
+steer its own risk band. Triage routes with a priority band below risk
+and above provenance (never crossing a risk tier); the risk gate
+records the same `elevated` disposition a response it could not parse
+earns, superseding any score read off the payload. A header-region hit
+is recorded for provenance but diverts neither tier (the model never
+reads the header). Both tiers ask the same helper
+(`injection_suspect_fingerprints`), so they cannot drift. The review UI
+badges a hit.
+
+**The scan is bounded.** Each region is screened to its first
+`MAX_SCAN_CHARS` (1 MiB) characters — every scanned byte is
+attacker-authored, and the recorder scans both regions of all ~60k
+fingerprints. A capped scan records a `scan-truncated` row saying what
+was and was not read, so it can never be mistaken for a clean result;
+that row **never routes a patch**, because an enormous diff is
+ordinarily a generated one and diverting every such patch would cry
+wolf while pulling away exactly the patches the residue projection
+exists to put in front of the model. The bound sits above the 400,000
+characters the triage tier will ever send, so a model shown a *prefix*
+of the body is shown only screened text. A fingerprint carrying a
+generated-content mark is not shown a prefix — `project_residue_first`
+reorders before the cap — so for those, *and only when the raw scan
+truncated*, the recorder screens the projection too. What is not
+claimed is exhaustiveness: the tail of an oversized patch that no
+projection hoists is unread, and says so.
 
 This is a **tripwire, not a shield**: the patterns are public, so a
 targeted attacker can iterate offline until a payload scores clean. What
@@ -518,7 +550,8 @@ below one — an unreviewed guess never beats an explainable rule.
 
 Every deterministic tier carries its own version constant
 (`RULES_VERSION`, `CONTENT_RULE_VERSION`, `CLAIM_RULE_VERSION`,
-`REVIEWABILITY_VERSION`, `REACH_VERSION`, `EXTERNAL_CVE_VERSION`), so
+`REVIEWABILITY_VERSION`, `REACH_VERSION`, `EXTERNAL_CVE_VERSION`,
+`INJECTION_RULES_VERSION`, `GENERATED_RULES_VERSION`), so
 changing a rule or threshold is a new identity: re-recording
 supersedes exactly the decisions the old version made, the audit
 trail keeps the old ones, and nothing is silently reclassified. The
