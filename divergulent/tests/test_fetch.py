@@ -36,8 +36,9 @@ class _Server:
 
         # Every header this sends is a literal name with a literal or
         # length-derived value, so no outside data reaches send_header()
-        # to smuggle a CR or LF through it. The marker has to sit on the
-        # line immediately above the class statement to be read.
+        # to smuggle a CR or LF through it. The marker is read on the
+        # class statement or the line immediately above it, so it stays
+        # last in this block; see PUSH-AUDIT.md section 2d.
         # audit-ok: header-sanitization -- fixture, literal headers only
         class Handler(http.server.BaseHTTPRequestHandler):
             protocol_version = 'HTTP/1.1'

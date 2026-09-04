@@ -21,7 +21,10 @@ The management session reviews all findings, fixes any
 issues, and confirms the push.
 
 These checks assume the default branch is `develop`; adjust the
-diff base below if the repository uses something else.
+diff base below if the repository uses something else. Run
+`git fetch` first, or read every `develop...HEAD` below as
+`origin/develop...HEAD` — a stale local `develop` silently
+widens the diff to unrelated history.
 
 ## Wave 1: Mechanical checks
 
@@ -32,8 +35,9 @@ pre-commit run --all-files
 tox          # or: pytest, if tox is not configured yet
 ```
 
-`pre-commit` runs the configured lint, unit tests, and type
-checking. `tox` runs the full test matrix.
+`pre-commit` runs the configured lint and the unit tests;
+there is no type checker configured in this project. `tox`
+runs the full test matrix.
 
 A defining concern for this project is that **tests must not
 hit live external services.** Confirm the suite passes with
@@ -107,8 +111,8 @@ Start with the mechanical sweep on the diff:
 # TODO / FIXME / HACK / XXX in changed files
 git diff develop...HEAD -- '*.py' | grep -nE '^\+.*\b(TODO|FIXME|HACK|XXX)\b'
 
-# New `# noqa`, `# type: ignore`, or `pragma: no cover`
-git diff develop...HEAD -- '*.py' | grep -nE '^\+.*(# noqa|# type: ignore|pragma: no cover)'
+# New `# noqa`, `# type: ignore`, `pragma: no cover` or `audit-ok:`
+git diff develop...HEAD -- '*.py' | grep -nE '^\+.*(# noqa|# type: ignore|pragma: no cover|audit-ok)'
 
 # Unsafe parsing of remote data (this tool parses a lot of it)
 git diff develop...HEAD -- '*.py' | grep -nE '^\+.*\b(yaml\.load\b|pickle\.load|eval\(|exec\()'
@@ -131,7 +135,9 @@ git diff develop...HEAD --name-only | grep -E 'requirements.*\.txt|pyproject\.to
 ```
 
 These report only — they do not block. Treat the output as
-input to the judgment agents below.
+input to the judgment agents below. An added `audit-ok` marker
+is read against its documented family: a marker whose family
+is not documented in this runbook is itself the finding.
 
 Then spawn the judgment agents. They are independent and
 can run in parallel.
@@ -206,12 +212,16 @@ canonical copy lives in shakenfist/development at
 <!-- shared-block-end -->
 
 **In this project:** `requires-python` is `>=3.11`, so
-`tomllib`, the walrus operator and `X | Y` in annotations are
-all available, while `datetime.UTC` (3.11) is fine but
-`itertools.batched` (3.12) and `Path.copy` (3.14) are not.
-Note that `renovate.json` carries no `constraints.python`
-today, so raising the floor means adding one rather than
-editing one.
+`tomllib`, structural pattern matching, the walrus operator
+and `X | Y` in annotations are all available, while
+`datetime.UTC` (3.11) is fine but `itertools.batched` (3.12)
+and `Path.copy` (3.14) are not. Note that `renovate.json`
+carries no `constraints.python` today, so raising the floor
+means adding one rather than editing one. There is no mypy
+here either — neither `pre-commit` nor `tox` runs a type
+checker — so read the typing bullet as "new code carries
+hints", and treat a mypy rollout as its own change rather
+than something this audit can expect to already be clean.
 
 <!-- shared-block: comment-proportion v1 -->
 Comment proportion (shared block; do not edit -- the canonical
@@ -424,11 +434,16 @@ copy lives in shakenfist/development at
   own change and its own review.
 <!-- shared-block-end -->
 
-**In this project:** the diagrams to watch are the pipeline
-and data-source flow pictures in `ARCHITECTURE.md` and
-`docs/workflow.md`. The recorded fixture layouts and sample
-CLI output elsewhere in `docs/` are not diagrams and stay in
-plain code fences.
+**In this project:** the one ASCII box-and-arrow diagram in
+the tree is the "Data flow (today)" block in
+`ARCHITECTURE.md`. It predates this rule, so it is in scope
+only for a diff that already touches it. The numbered stage
+list in `docs/workflow.md` is not a second one: it is three
+space-aligned columns with no edges, which the rule above
+calls a table, and mermaid-ifying it would destroy the
+alignment that carries its meaning. It stays in a plain code
+fence, as do the recorded fixture layouts and the sample CLI
+output elsewhere in `docs/`.
 
 <!-- shared-block: plan-phase-references v1 -->
 Plan phase references (shared block; do not edit -- the canonical
@@ -543,11 +558,40 @@ the canonical copy lives in shakenfist/development at
   reader to re-derive it.
 <!-- shared-block-end -->
 
-**In this project:** the joins that matter are the on-disk
-cache, whose keys are derived from source names and package
-names the tool did not choose, and any path built from a
-patch or `series` entry read out of a source package's
-`debian/patches`.
+**In this project:** two joins that look like candidates are
+not, and saying so here is meant to stop each auditor
+re-deriving them. `divergulent/cache.py` sha256-hashes every
+key to form the filename, so a source-derived key never
+reaches the path at all. `divergulent/sources/apt_patches.py`
+resolves each `debian/patches` `series` entry through
+`tar.getmember()` and reads it with `tar.extractfile()`, so no
+archive member name is ever joined onto a filesystem path —
+the extraction case the block calls the one most often missed
+does not arise. The joins that do want checking are
+`divergulent/classify/export.py`, which opens and removes
+shard filenames listed in a `manifest.json` it did not write,
+and `bundle.stored_path()`, which builds
+`cache-<release>.json.gz` from a codename that may have come
+out of `/etc/os-release`.
+
+**The `header-sanitization` marker:** the fleet consistency
+audit checks that every `http.server` request handler subclass
+also inherits occystrap's `SafeHeaderMixin`, listed *first* in
+the bases, so that CR and LF are stripped from header values
+before `send_header()` sees them (CWE-113,
+`py/http-response-splitting`). A subclass that genuinely does
+not need it — a test fixture serving only literal headers —
+instead carries `# audit-ok: header-sanitization -- <reason>`
+on the `class` statement or on the line immediately above it.
+The marker is read per class, from a view of the file in which
+string literals are blanked and comments survive, so it has to
+be a real comment and it has to be the last line of any
+comment block above the class; reflowing that block silently
+un-suppresses the check. `divergulent/tests/test_fetch.py`
+carries the project's only two. A marker on production code is
+a finding rather than a suppression: a real server wants the
+mixin, and therefore the occystrap dependency this project has
+so far had no reason to take.
 
 Report findings with severity (critical / high / medium /
 low / informational). For each finding, state the file,
