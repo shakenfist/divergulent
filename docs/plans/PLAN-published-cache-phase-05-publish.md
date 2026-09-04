@@ -5,7 +5,7 @@ Medium effort, but it makes the whole feature real: until a signed bundle
 is published at a stable URL, `cache pull` (with no `--cache-url`) has
 nothing to pull and every user falls back to the slow live path.
 
-**Status: implemented (real publish + VERIFIED pending a run).**
+**Status: complete.**
 `build-cache.yml` now runs on a schedule (daily incremental at 04:17,
 weekly `--refresh` Sunday) plus `workflow_dispatch` (with `refresh` and
 `publish` inputs), detects the release codename, builds
@@ -17,11 +17,42 @@ env for the weekly clean rebuild. The client's `DEFAULT_CACHE_URL_TEMPLATE`
 now points at `.../releases/download/cache/cache-<release>.json.gz`. Suite
 green; `pre-commit` (incl. actionlint/shellcheck) clean.
 
-Still pending a **real run** (cannot be validated offline): the first
-`workflow_dispatch` with `publish: true` to create the `cache` release and
-confirm the published URL resolves, and a real `cache pull` reporting
-**VERIFIED** to confirm `EXPECTED_SIGNER_IDENTITY` matches the actual
-certificate (a one-line correction if it differs).
+### The real run (confirmed 2026-09-04)
+
+Everything that could only be validated online is now confirmed against
+production:
+
+- The rolling `cache` prerelease exists and carries both assets —
+  `cache-trixie.json.gz` (755,908 bytes) and
+  `cache-trixie.json.gz.sigstore.json` — replaced in place, last updated
+  2026-09-03T11:54Z.
+- The schedule works unattended: `build-cache.yml` has run daily from a
+  `schedule:` trigger and succeeded on every run since 2026-08-22.
+- A real `divergulent cache pull` with no arguments downloads, verifies
+  and stores the published bundle:
+
+  ```
+  signature verified (signed by https://github.com/shakenfist/divergulent/
+      .github/workflows/build-cache.yml@refs/heads/develop)
+  spot-check passed (3 checked, 5 inconclusive)
+  stored cache-trixie.json.gz (755908 bytes, 41317 staleness,
+      37588 divergence entries, built 2026-09-03T11:52:49+00:00)
+  ```
+
+  That closes the phase-4 "never verified end-to-end" risk: the default
+  URL, the asset name and the expected signer identity all match what is
+  published. The identity is `@refs/heads/develop` rather than the
+  `@refs/heads/main` this plan anticipated, because the default branch was
+  renamed after the plan was written; `verify.py` accepts both
+  (`EXPECTED_SIGNER_IDENTITIES`), so bundles published either side of the
+  rename verify.
+
+**On reading the run durations.** The scheduled runs report wall-clock
+durations from 4 minutes to over 7 hours, which looks like the ~80 s
+incremental build regressing. It is not. On the 2026-09-03 run the *build
+step* took 66 s (11:52:35 → 11:53:41); the rest is time queued waiting for
+the self-hosted runner (scheduled 08:54, started 11:52). The daily-delta
+model holds — judge the build by its step time, not the run duration.
 
 ## Prompt
 

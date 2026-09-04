@@ -25,8 +25,12 @@ and private. Tracked in
 Blocking, because phases 1–4 are inert until something is published at the
 default URL.
 
-- [ ] Scheduled daily (incremental) + weekly (full `--refresh`) builds.
-- [ ] Signed bundle published to a stable URL; client constants reconciled.
+**Done (2026-09-04).** The published-cache plan is complete; a `cache pull`
+with no arguments downloads, signature-verifies and spot-checks the daily
+bundle.
+
+- [x] Scheduled daily (incremental) + weekly (full `--refresh`) builds.
+- [x] Signed bundle published to a stable URL; client constants reconciled.
 
 ### 2. Multi-release build matrix (Debian 11, 12, 13, testing, unstable)
 

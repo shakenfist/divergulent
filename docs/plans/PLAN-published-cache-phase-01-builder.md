@@ -6,10 +6,10 @@ incremental correctness. This is the de-risking phase — its real
 deliverable is *measured numbers* (bundle size, build time), not a
 finished product.
 
-**Status: measured and validated; one spot-check remaining.** The
-builder is complete and tested offline — `divergulent/bundle.py` (schema
-+ gzipped write/load), `divergulent/builder.py` (deb-src enumeration via
-`debian.deb822.Sources` + the recovered bulk Repology sweep),
+**Status: complete.** The builder is implemented and tested offline —
+`divergulent/bundle.py` (schema + gzipped write/load),
+`divergulent/builder.py` (deb-src enumeration via `debian.deb822.Sources`
++ the recovered bulk Repology sweep),
 `HttpClient(refresh=True)`, `cli.build_bundle` + the `divergulent cache
 build [--output --release --workers --refresh]` command, and
 `.github/workflows/build-cache.yml` (+ `tools/build-cache.sh`). Suite
@@ -47,13 +47,33 @@ Conclusions:
   epoch-stripped version, and sources.debian.org slower per request under
   concurrency than the assumed ~0.6 s).
 
-The **markedly-faster incremental re-run** success criterion is now met
-(~80 s vs ~95 min). The only criterion still open is a **hand-checked
-sample** (e.g. `bash`) confirmed against a live `divergulent show`,
-plus a glance at the bundle's `release`/`built_on` provenance and a
-staleness/divergence entry count near the archive size. Once that
-spot-check passes, phase 1 is complete and phase 2 (client consumption)
-can start.
+The **markedly-faster incremental re-run** success criterion is met
+(~80 s vs ~95 min).
+
+### Spot-check of the published bundle (2026-09-04)
+
+The last open criterion — a hand-checked sample against a live
+`divergulent show` — passes, against the bundle actually published that
+day (`cache-trixie.json.gz`, 755,908 bytes, built
+2026-09-03T11:52:49Z):
+
+| Check | Bundle | Live | Verdict |
+|-------|--------|------|---------|
+| `bash` staleness | `5.3.p15` | `divergulent show bash`: newest `5.3.p15` | match |
+| `bash` divergence | `3.0 (quilt)`, `patched`, `total 20`, version `5.2.37-2` | patches API: `format 3.0 (quilt)`, `count 20` | match |
+| Provenance | `release: trixie`, `built_on {arch: amd64, release: trixie}`, `schema`/`cache_schema` 1 | — | present |
+| Entry counts | 41,317 staleness, 37,588 divergence | ≈34k source packages in the archive | right order |
+
+One apparent discrepancy is worth recording so a future reader does not
+re-investigate it: `divergulent show bash` lists **19** patches while the
+bundle says **20**. That is by design, not drift. The patches API renders
+at most 60 entries and occasionally drops one it cannot display, so
+`_patch_count` (`divergulent/sources/debian_patches.py:196`) trusts the
+API's top-level `count` field — the true `debian/patches/series` length —
+over the rendered list, while `details()` can only classify the entries
+the API rendered. The live API confirms `count: 20` with 19 rendered
+entries for `bash 5.2.37-2`, so both numbers are correct for what they
+measure.
 
 Two scoping decisions taken during implementation:
 
