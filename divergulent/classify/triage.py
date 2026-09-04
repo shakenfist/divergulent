@@ -56,7 +56,14 @@ from divergulent.classify import generated as generated_mod
 # stale verdicts, exactly as the deterministic tiers key on their *_VERSION.
 # ---------------------------------------------------------------------------
 
-PROMPT_VERSION = 1
+# 2: a ``security`` draft is no longer finalisable by the LLM tier -- it always
+#    routes to ``needs_human``, so the same (model, prompt) pair now records
+#    ``verified=False`` where it once recorded ``verified=True``.  That is a
+#    routing-semantics change, and ``triage_record`` skips a fingerprint whose
+#    live decision already matches ``(decided_by, rule_version)``, so without the
+#    bump every verified ``security`` row already in a ledger would stay live and
+#    keep outranking the deterministic tiers, unreachable by any re-run.
+PROMPT_VERSION = 2
 
 # The verification prompt is versioned independently of the triage prompt: the
 # adversarial pass can be re-tuned without re-triaging, and the ledger keys on

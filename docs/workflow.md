@@ -189,8 +189,16 @@ One category is never settled by this tier at all: a draft of
 agreed with it. The LLM may propose that a patch is a security fix; only
 a person may finalise the call. Expect this to *grow* the review queue
 rather than reading the growth as a regression — a verified `security`
-draft that would once have settled itself now waits for a reviewer, and
-no verified LLM decision can carry that category again.
+draft that would once have settled itself now waits for a reviewer.
+
+This arrived with a triage prompt-version bump, which is what lets a
+re-run reach the rows the old routing wrote. A ledger built before it
+may still hold live `kind='llm'`, `verified=True`, `security` decisions
+at prompt version 1, and those keep outranking the deterministic tiers
+until they are superseded: `divergulent-classify ledger supersede
+llm-triage:<model> 1` retires that generation and re-queues its
+fingerprints. Until an operator runs it, the guarantee holds for rows
+written from version 2 onward, not retrospectively.
 
 ### 8. Human review
 

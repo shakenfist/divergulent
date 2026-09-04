@@ -69,10 +69,16 @@ The reserved llm/human seats are filled here. `triage.py` does the claim-blind L
 draft + an independent adversarial verification, routing each patch to
 `verified` or `needs_human`. A `security` draft is the one exception to that
 routing: it goes to `needs_human` unconditionally, even when the verifier agreed
-at high confidence, so no `kind='llm'`, `verified=True` decision can ever carry
-that category. This deliberately increases the human queue — the alternative is
-letting a model settle the one call whose cost of being wrong is highest. The
-model-call boundary is
+at high confidence, so no `kind='llm'`, `verified=True` decision **written at
+`PROMPT_VERSION` 2 or later** can carry that category. This deliberately
+increases the human queue — the alternative is letting a model settle the one
+call whose cost of being wrong is highest. The routing change arrived with the
+version bump because `record_triage_result` skips a fingerprint whose live
+decision already matches `(decided_by, rule_version)`: without it, verified
+`security` rows written under version 1 would stay live and unreachable by any
+re-run. Retiring that generation in an existing ledger is an operator step —
+`ledger supersede llm-triage:<model> 1` — which supersedes those decisions and
+re-queues their fingerprints. The model-call boundary is
 `call(system, user, *, model, schema=None) -> CallResult(text, usage)`: the
 **static rubric is the cacheable `system` prompt** and the per-patch diff is the
 `user` message, so the rubric is billed once per run and read from cache
