@@ -311,7 +311,7 @@ autoescaping with no `|safe`, and the client-side dependency separation.
 | H1 | `risk.py:455-500` | high | **fixed** — `8a6c349` |
 | H2 | `injection.py:86`, `rules.py:310`, `record.py:369-373` | high | **fixed** — `80fbdd7` |
 | H3 | `review_web.py:483,563,580` | high | **fixed** — `0395558` |
-| H4 | `build-classification.yml:43`, `build-cache.yml:26` | high, conditional | **open** — operator verification |
+| H4 | `build-classification.yml:43`, `build-cache.yml:26` | high, conditional | **closed** — not exploitable (ephemeral runners; fork PRs need approval) |
 | A1 | `review_web.py:513-521` → `review.py:894-898` | blocking (2a) | **fixed** — `2b4ca59` |
 | A2 | `apt_patches.py:264-268`, `test_apt_patches.py:41` | blocking (2b) | **fixed** — `69c1668` |
 | A3 | `ledger.py:97-108` | advisory, twice-reported | **fixed** — `9741764` |
@@ -350,11 +350,15 @@ which the `chat-template-marker` family's line anchors do not allow for, so that
 family cannot fire on diff content at all. Pre-existing, and closing it is a recall
 *increase* that deserves its own false-positive check.
 
-**H4 is the one finding still open**, and it is not answerable from the
-repository: whether a `pull_request` workflow sharing the signing job's
-self-hosted runner label can persist state depends on runner ephemerality and the
-fork-PR approval setting. The operator is checking. It is the only finding that
-would defeat the signing design outright rather than degrade it.
+**H4 is closed as not exploitable rather than fixed.** It was never answerable
+from the repository: whether a `pull_request` workflow sharing the signing job's
+self-hosted runner label can persist state *into* that job depends on runner
+ephemerality and the fork-PR approval setting. The operator confirmed both — the
+self-hosted runners are ephemeral, and a fork PR gets no CI at all without
+approval — so the persistence step the finding depended on does not exist, and
+there is nothing to change. The answer was worth getting: H4 was the only finding
+that would have defeated the signing design outright rather than degraded it,
+because a client would have verified a genuine signature over substituted bytes.
 
 **H1 — the security-risk gate bypasses the prompt-injection tripwire.**
 *Confirmed:* `risk.py` contains no reference to injection at all, while
@@ -387,8 +391,9 @@ need read nothing. Those verdicts flow to the export and thence to the published
 bundle, with only the operator's diff review in between.
 
 **H4 — the signing jobs share a runner label with `pull_request` workflows.**
-*Confirmed as a repository fact, unresolved as a risk:* `build-classification.yml`
-signs on `[self-hosted, static]`, which `unit-tests.yml`, `sample-output.yml` and
+*Confirmed as a repository fact, closed by the operator's answer:*
+`build-classification.yml` signs on `[self-hosted, static]`, which
+`unit-tests.yml`, `sample-output.yml` and
 `codeql-analysis.yml` also target on `pull_request` — and `unit-tests.yml` runs
 `tox` over the PR head. `build-cache.yml` shares `[self-hosted, debian-13, s]`
 with `secret-scan.yml` the same way. If those runners are not ephemeral, PR code
@@ -396,8 +401,9 @@ can persist state that later executes inside a job holding `id-token: write`, an
 a client would verify a genuine signature over substituted bytes. Whether this is
 exploitable depends on runner ephemerality and the fork-PR approval setting,
 neither of which is decidable from the repository — hence *operator verification*
-rather than *fix*. It is the only finding that would defeat the signing design
-outright, so it is the one to answer first.
+rather than *fix*. Both answers came back favourable: the runners are ephemeral,
+and fork PRs get no CI without approval, so neither half of the persistence step
+is available and the finding is closed as not exploitable.
 
 **A1 — a failed review submission can still land a verdict.** *Confirmed:*
 `record_review_verdict` appends the signed decision with `commit=False`
@@ -468,9 +474,9 @@ independent with respect to prompt injection. The docs should say so.
 ### What remains before this plan is Complete
 
 Per `plan-push-audit-phase`, findings are resolved or explicitly declined in
-writing. Nine are fixed on `patch-classification-audit-fixes`; eight are filed as
-issues #91–#98 and cited above. **H4 alone remains open**, awaiting the operator's
-answer on runner ephemerality and fork-PR approval, so C5 does not run yet.
+writing. **Nothing remains.** Nine findings are fixed on
+`patch-classification-audit-fixes`; eight are filed as issues #91–#98 and cited
+above; H4 is closed as not exploitable on the operator's answer. C5 may run.
 
 ## Back brief
 
