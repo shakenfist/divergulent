@@ -62,7 +62,7 @@ signed classification bundle from the committed ledger export every day
 at 04:31 UTC, and `divergulent cache pull-classification` fetches it.
 What continues is not construction but *review* — and it is a grind. Of
 the ~60,640 distinct carried patches, the deterministic tier settles the
-structurally-determined ones (29.2% at the phase-2 measurement, plus a
+structurally-determined ones (29.2% at the first corpus-wide measurement, plus a
 further ~15% once the `test-only` rule landed) and leaves roughly 43k
 fingerprints of substantive residue whose category is a question about
 intent. That residue is overwhelmingly still unreviewed. So the honest

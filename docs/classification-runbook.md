@@ -107,7 +107,7 @@ divergulent-classify bts               # → corpus/bts.sqlite
 
 Each pins the snapshot by date (`--date` overrides; `--url` points
 somewhere else). They are the inputs to the deterministic reach axis and
-the phase-6 CVE/bug cross-reference, and every one of them is **opt-in by
+the external CVE/bug cross-reference, and every one of them is **opt-in by
 presence**: `record` looks for the file and skips the corresponding pass
 if it is not there, so an operator who never runs them gets exactly the
 old behaviour.
