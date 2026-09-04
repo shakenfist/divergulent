@@ -207,6 +207,10 @@ def score_risk(patch_text: str, *, call, model: str = DEFAULT_RISK_MODEL,
     ``call`` is required so the function is pure given a fake; the test suite
     never touches the network.
 
+    ``max_diff_chars`` is CLAMPED to ``injection.MAX_SCAN_CHARS``: the model is
+    never shown text the injection tripwire did not screen, whatever the operator
+    passes.  A non-positive value means the screen bound here, not "no cap".
+
     ``mark_files`` is the per-file evidence of the fingerprint's live
     ``generated-content`` mark (``generated_marks(conn)[fp]['files']``), passed by
     the driver for a MARKED fingerprint and left ``None`` for every other one.
@@ -218,6 +222,16 @@ def score_risk(patch_text: str, *, call, model: str = DEFAULT_RISK_MODEL,
     call is byte-identical to before the mark existed -- ``mark_files=None`` does
     not even build a projection.
     """
+    # The screen bound is not negotiable by a flag. The tripwire guarantees that the
+    # first MAX_SCAN_CHARS of a body (and, for a marked one, of its projection) were
+    # looked at -- nothing past that. cap_diff treats a non-positive max as "no cap"
+    # and the CLI advertised "0 disables", so an operator could hand the model a
+    # multi-megabyte tail no scanner ever read, silently turning off the invariant
+    # both LLM tiers rely on. 0 now means the screen bound, and a larger value is
+    # clamped down to it; the default 40,000 is far below either way.
+    if max_diff_chars <= 0 or max_diff_chars > injection_mod.MAX_SCAN_CHARS:
+        max_diff_chars = injection_mod.MAX_SCAN_CHARS
+
     body = triage_mod.diff_body(patch_text)
     projection = None
     if mark_files:
@@ -680,8 +694,10 @@ def main(argv=None) -> int:
     parser.add_argument('--model', default=DEFAULT_RISK_MODEL,
                         help='model for the gate (default: %s)' % DEFAULT_RISK_MODEL)
     parser.add_argument('--max-diff-chars', type=int, default=RISK_MAX_DIFF_CHARS,
-                        help='cap the diff sent to the gate, head only (default: %d; 0 disables)'
-                             % RISK_MAX_DIFF_CHARS)
+                        help='cap the diff sent to the gate, head only (default: %d; 0 or any '
+                             'value above the injection screen bound of %d means that bound, so '
+                             'the model is never shown unscreened text)'
+                             % (RISK_MAX_DIFF_CHARS, injection_mod.MAX_SCAN_CHARS))
     parser.add_argument('--re-risk-marked', action='store_true',
                         help='instead of scoring un-scored patches, RE-score the marked ones whose '
                              'current score was read off a truncated generated head (supersedes, '

@@ -104,6 +104,39 @@ class ScoreRiskTestCase(testtools.TestCase):
         score = risk.score_risk(_patch(), call=_fake_call('no json at all'))
         self.assertEqual('elevated', score.level)  # recall-safe: never buried
 
+    def test_the_cap_cannot_be_raised_past_the_injection_screen_bound(self):
+        """No flag value hands the model text the tripwire never screened.
+
+        The screen guarantees only that the first MAX_SCAN_CHARS of a body were
+        looked at.  ``cap_diff`` reads a non-positive max as "no cap" and the CLI
+        used to advertise "0 disables", so ``--max-diff-chars 0`` would have sent
+        the whole multi-megabyte body -- unscreened tail included -- to the model
+        both LLM tiers skip a suspect to protect.
+        """
+        oversized = injection.MAX_SCAN_CHARS + 50_000
+        body = _DIFF + '+' + ('x' * oversized) + '\n'
+        patch = 'Description: x\nForwarded: no\n\n%s' % body
+
+        for requested in (0, -1, injection.MAX_SCAN_CHARS * 4):
+            recorder = []
+            score = risk.score_risk(
+                patch, call=_fake_call(_risk_json(), recorder=recorder),
+                max_diff_chars=requested)
+            _system, user, _model = recorder[0]
+            self.assertTrue(score.truncated, requested)
+            # The prompt carries the capped head plus cap_diff's own marker, never
+            # the tail past the screen bound.
+            self.assertLess(len(user), injection.MAX_SCAN_CHARS + 1000, requested)
+
+    def test_a_cap_below_the_screen_bound_is_left_alone(self):
+        # The clamp is a ceiling, not an override: the default still applies.
+        recorder = []
+        big = _DIFF + '\n'.join('+padding %d' % i for i in range(20000))
+        risk.score_risk('Description: x\nForwarded: no\n\n%s' % big,
+                        call=_fake_call(_risk_json(), recorder=recorder), max_diff_chars=5000)
+        _system, user, _model = recorder[0]
+        self.assertLess(len(user), 6000)
+
     def test_short_diff_is_not_truncated(self):
         score = risk.score_risk(_patch(), call=_fake_call(_risk_json()))
         self.assertFalse(score.truncated)
