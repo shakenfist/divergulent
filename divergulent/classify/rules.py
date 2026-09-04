@@ -43,9 +43,15 @@ from divergulent.classify.content import ContentProfile
 
 # ---------------------------------------------------------------------------
 # Version tag — phase-3 ledger keys on this to detect stale verdicts.
+#
+# 2: the ``shell-out`` backtick pair is bounded (200 chars a side, no newline).
+#    The pattern now REJECTS inputs version 1 flagged, so a live ``shell-out``
+#    row recorded at 1 may be one this version could never produce; the bump is
+#    what makes the next record pass supersede and re-record it deliberately
+#    rather than leave the two indistinguishable.
 # ---------------------------------------------------------------------------
 
-RULES_VERSION = 1
+RULES_VERSION = 2
 
 # ---------------------------------------------------------------------------
 # Result types
