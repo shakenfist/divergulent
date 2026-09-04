@@ -274,8 +274,173 @@ plans are checked too — a bonus, and any failure there is reported, not fixed.
 
 ## Audit findings
 
-*(C4 writes here. If the audit comes back clean, this section says so in one
-sentence and that is the whole record.)*
+Run 2026-09-04 over `d7c030e4..develop` — 85 files, 36,245 insertions, with
+`generated.py` and its tests excluded as another plan's work.
+
+**Wave 1 passed.** `pre-commit run --all-files` green; `tox` green; flake8 at 120
+columns over all of `divergulent/` and `tools/` clean (note `flake8wrap.sh -HEAD`
+lints only the last commit's files, so it was re-run over the whole tree); the
+suite passes **offline** — 1278 of 1279 tests inside a network namespace with only
+loopback up, confirming nothing reaches Repology, UDD, sources.debian.org, the
+Security Tracker, the BTS or an LLM API; no `requests` call without a timeout; the
+two `TODO`/`FIXME` hits are a docstring false positive and a deliberate
+lower-confidence deferral; the one `eval(` hit is `model.eval()` (PyTorch) in
+`tools/injection-screening/`.
+
+**Wave 2 ran all four judgment agents.** Every finding below marked *confirmed*
+was re-verified in the management session against the code — by reading it, by
+grep, or by measurement — rather than taken on the agent's word.
+
+What the audit did **not** find is worth stating first, because it is the part
+the whole plan rests on. The **signing and publish path is clean**: keyless
+Sigstore with no long-lived key, a fail-closed verifier with both identity and
+issuer pinned, CI a pure projection of the committed JSONL export with no path
+from an operator's local sqlite to the bundle, `workflow_dispatch` unable to
+publish unreviewed content, and the publish scripts refusing outright when a
+signature is absent. Also clean: claim-versus-content separation, ledger
+precedence and supersession, `record --reconcile`'s surgical scope, fingerprint
+versioning, external-verdict freshness and retraction, contradiction handling
+(a nudge, never malice, never a category), every one of ~25 shell-outs passing an
+argument list with the untrusted diff on stdin, no unsafe deserialisation, Jinja
+autoescaping with no `|safe`, and the client-side dependency separation.
+
+### Findings
+
+| # | Where | Severity | Disposition |
+|---|-------|----------|-------------|
+| H1 | `risk.py:455-500` | high | fix |
+| H2 | `injection.py:86`, `rules.py:310`, `record.py:369-373` | high | fix |
+| H3 | `review_web.py:483,563,580` | high | fix |
+| H4 | `build-classification.yml:43`, `build-cache.yml:26` | high, conditional | operator verification |
+| A1 | `review_web.py:513-521` → `review.py:894-898` | blocking (2a) | fix |
+| A2 | `apt_patches.py:264-268`, `test_apt_patches.py:41` | blocking (2b) | fix |
+| A3 | `ledger.py:97-108` | advisory, twice-reported | fix |
+| A4 | `triage.py:613-617` vs `:629-643` | medium | fix |
+| D1 | `docs/*` phase references | blocking (2c) | fix |
+| D2 | `ARCHITECTURE.md`, `AGENTS.md` | blocking (2c) | already tracked |
+| D3 | `report` verb undocumented | blocking (2c) | fix |
+| M1–M5, L1–L10 | various | medium/low | already tracked |
+
+**H1 — the security-risk gate bypasses the prompt-injection tripwire.**
+*Confirmed:* `risk.py` contains no reference to injection at all, while
+`triage_driver.py:462-471` checks injection suspects *first* and routes them to a
+human without an LLM call, on the stated principle that attacker-authored
+instructions are never fed to the model they target. `run_risk_gate` filters only
+scored and oversized items, so every injection-suspect diff in the corpus is sent
+to the model — and a payload that steers it to `none` both ships that value in the
+bundle and sinks the patch to the bottom of the human queue, since risk is the top
+priority band. The tripwire's fail-safe is inverted into a fail-open. The
+recall-safe disposition already exists (`_PARSE_FAILURE_LEVEL` → `elevated`).
+
+**H2 — quadratic backtracking on attacker-authored text.** *Confirmed by
+measurement:* `injection.py:86`'s `^\s*(Human|Assistant):\s` under `re.MULTILINE`
+costs O(n²) in a whitespace run — 0.36 s at 10k newlines, 1.43 s at 20k, 5.83 s at
+40k. `record.py:369-373` scans the whole diff region and the whole header region
+per fingerprint with no length cap anywhere on that path, so a patch of blank
+lines — the most innocuous-looking thing in the archive — stalls `record`.
+`rules.py:310`'s backtick pattern is the same shape. Anchoring to horizontal
+whitespace loses nothing, and the scan should be capped: a tripwire is a screen.
+
+**H3 — no CSRF protection on the review UI's signing endpoints.** *Confirmed:*
+`review_web.py` contains no CSRF token and no `Origin`, `Referer` or `Host` check
+— `require_loopback` constrains the bind address only, which a cross-origin form
+POST does not care about. The endpoints record `kind='human', verified=True`
+decisions that top precedence, the Sigstore token is cached after the first
+legitimate verdict so forged POSTs sign silently under the reviewer's real
+identity, and `resolve_fingerprint` accepts an unambiguous prefix, so an attacker
+need read nothing. Those verdicts flow to the export and thence to the published
+bundle, with only the operator's diff review in between.
+
+**H4 — the signing jobs share a runner label with `pull_request` workflows.**
+*Confirmed as a repository fact, unresolved as a risk:* `build-classification.yml`
+signs on `[self-hosted, static]`, which `unit-tests.yml`, `sample-output.yml` and
+`codeql-analysis.yml` also target on `pull_request` — and `unit-tests.yml` runs
+`tox` over the PR head. `build-cache.yml` shares `[self-hosted, debian-13, s]`
+with `secret-scan.yml` the same way. If those runners are not ephemeral, PR code
+can persist state that later executes inside a job holding `id-token: write`, and
+a client would verify a genuine signature over substituted bytes. Whether this is
+exploitable depends on runner ephemerality and the fork-PR approval setting,
+neither of which is decidable from the repository — hence *operator verification*
+rather than *fix*. It is the only finding that would defeat the signing design
+outright, so it is the one to answer first.
+
+**A1 — a failed review submission can still land a verdict.** *Confirmed:*
+`record_review_verdict` appends the signed decision with `commit=False`
+(`review.py:894`) and then calls `mark_reviewed`, which commits (`ledger.py:833`).
+`review_web.py:513-521` catches every exception and renders a 502, without a
+rollback, on a long-lived connection — so a failure *between* those two statements
+leaves the decision uncommitted where a later successful commit flushes it. The
+reviewer is told it failed and the verdict lands anyway. The adjacent comment
+("signs BEFORE it writes, so a signer failure leaves the ledger untouched") is
+true only for failures inside signing.
+
+**A2 — the series parser's adversarial cases are untested.** *Confirmed:*
+`apt_patches.py:264-268` skips blank and `#`-comment lines and strips trailing
+quilt options via `entry.split()[0]`, but every test series is built as bare patch
+names (`test_apt_patches.py:41`). Breaking any of that passes the whole suite —
+on the tool's front door.
+
+**A3 — a dead precedence helper that gets precedence wrong.** *Confirmed:*
+`ledger.py:97-108`'s `KIND_PRECEDENCE`/`kind_rank` have no production caller (only
+`test_ledger.py`), rank `heuristic < llm < human` with no `verified` folding, and
+carry a docstring claiming step 3c uses them. The real implementation,
+`verdict.decision_rank:64`, correctly places an *unverified* LLM draft below a
+heuristic. Both 2a and 2b reported this independently. Delete it.
+
+**A4 — a docstring promises a guard the code does not have.** *Confirmed, and
+narrower than reported:* `triage.py:613`'s conditional sentence is accurate — a
+`security` draft with a dangerous-construct flag or a claim mismatch does route to
+`needs_human`. But the sentences after it ("The LLM never finalises a security or
+malice call on its own... only ever a candidate for human confirmation") are
+unconditional and false: `security` is absent from the reasons list at
+`triage.py:629-643`, so a clean, verifier-confirmed security draft settles as a
+verified LLM verdict. Fix the code or fix the docstring — this plan's own text
+makes the same promise.
+
+**D1 — phase references in reader-facing docs.** *Confirmed by grep:*
+`workflow.md:127`, `status.md:60`, `deterministic-rules.md:104,311,347`, and
+`classification-runbook.md:110` — which step C3 introduced an hour earlier. The
+`plan-phase-references` block reserves "phase N" for plan documents, and the
+consistency audit greps for exactly this.
+
+**D2 — `ARCHITECTURE.md` and `AGENTS.md` grew into `docs/`'s territory.**
+*Confirmed by measurement:* this range added 277 lines to `ARCHITECTURE.md` (of
+476 total) and 80 to `AGENTS.md`, restating measured figures that already live in
+`docs/patch-classification.md` and `docs/deterministic-rules.md`. The
+`llm-doc-discipline` block calls growth in those files a finding in itself. The
+trim is a judgement-heavy restructure of a file this plan did not otherwise touch,
+so it is *tracked*, not folded into an audit-fix PR.
+
+**D3 — the `report` verb is undocumented.** *Confirmed:* it is in `cli.py`'s
+`_FORWARDING_VERBS` and appears in the runbook's cost table, but nothing
+reader-facing says what it prints or when to use it rather than `status`.
+
+**The blocking documentation check passed.** All eight `_CATEGORY_RULES`, the
+dangerous-construct tables, `content.py`'s file-typing precedence, the
+reviewability and reach thresholds, `risk.py`'s cull and `cross_reference.py`'s
+settle guards match `docs/deterministic-rules.md` rule by rule, including
+precedence and threshold values; no version constant's value is quoted anywhere
+it could go stale; and the CI cadences and ISO-week sharding read identically on
+all four pages that state them.
+
+**On the brief's question — can a steered patch reach a *settled* verdict?** Yes,
+and the honest reason is worth recording: the tripwire's patterns are public, and
+if a payload evades it, the draft and the verify pass share the same untrusted
+bytes and the same model. The verify step is independent of the author's claim and
+of the draft's reasoning, which is what it was built for, but it is not
+independent with respect to prompt injection. The docs should say so.
+
+### What remains before this plan is Complete
+
+Per `plan-push-audit-phase`, findings are resolved or explicitly declined in
+writing. H1, H2, H3, A1, A2, A3, A4, D1 and D3 are marked *fix* and land as their
+own pull request. H4 is an operator question about runner configuration. D2 and
+the medium/low list (M1–M5, L1–L10 in the agents' reports: unverified-by-default
+classification bundles, the discarded apt checksum, unbounded snapshot downloads
+and gzip, mixed provenance flattened into one client line, no per-fingerprint
+guard in `record_to_ledger`, and ten low-severity hardening items) are filed as
+issues and cited here. Step C5 does not run until each line above is fixed,
+filed, or declined with a reason.
 
 ## Back brief
 
