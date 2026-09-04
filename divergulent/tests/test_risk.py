@@ -455,9 +455,26 @@ class InjectionSuspectTestCase(testtools.TestCase):
         self.assertEqual('low', risk.risk_level_by_fingerprint(conn)[fps['bug-b.patch']])
 
     def test_the_check_is_the_shared_helper_not_a_reimplementation(self):
-        # One definition of "injection suspect" for the driver and the gate.
-        import inspect
-        self.assertIn('injection_suspect_fingerprints', inspect.getsource(risk.run_risk_gate))
+        """The gate skips whatever the SHARED helper says, not its own idea of a suspect.
+
+        One definition of "injection suspect" for the triage driver and the gate, so
+        the two cannot drift.  Asserted by making the helper disagree with the ledger:
+        it names a fingerprint carrying no injection observation at all, and withholds
+        one that does.  A gate reading the ledger itself would do the opposite of this.
+        """
+        conn, corpus_dir, index_path, fps = self._setup()
+        self._suspect(conn, fps['bug-b.patch'])   # a real hit the fake helper withholds
+        self.patch(injection, 'injection_suspect_fingerprints',
+                   lambda conn, region=None: {fps['bug-a.patch']})
+
+        recorder = []
+        stats = self._run(conn, corpus_dir, index_path, recorder=recorder)
+
+        self.assertEqual(1, stats.skipped_injection)
+        self.assertFalse(any('src/a.c' in user for _system, user, _model in recorder))
+        self.assertTrue(any('src/b.c' in user for _system, user, _model in recorder))
+        self.assertEqual(risk.RISK_INJECTION_OBSERVED_BY,
+                         self._live_risk(conn, fps['bug-a.patch'])['observed_by'])
 
 
 def _make_score(level, model='claude-opus-4-8'):
