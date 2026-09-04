@@ -112,7 +112,7 @@ Start with the mechanical sweep on the diff:
 git diff develop...HEAD -- '*.py' | grep -nE '^\+.*\b(TODO|FIXME|HACK|XXX)\b'
 
 # New `# noqa`, `# type: ignore`, `pragma: no cover` or `audit-ok:`
-git diff develop...HEAD -- '*.py' | grep -nE '^\+.*(# noqa|# type: ignore|pragma: no cover|audit-ok)'
+git diff develop...HEAD -- '*.py' | grep -nE '^\+.*(# noqa|# type: ignore|pragma: no cover|# audit-ok:)'
 
 # Unsafe parsing of remote data (this tool parses a lot of it)
 git diff develop...HEAD -- '*.py' | grep -nE '^\+.*\b(yaml\.load\b|pickle\.load|eval\(|exec\()'
@@ -443,7 +443,12 @@ space-aligned columns with no edges, which the rule above
 calls a table, and mermaid-ifying it would destroy the
 alignment that carries its meaning. It stays in a plain code
 fence, as do the recorded fixture layouts and the sample CLI
-output elsewhere in `docs/`.
+output elsewhere in `docs/`. Only half the block's rendering
+promise holds here: there is no `mkdocs.yml` in this tree and
+nothing publishes a docs site, so `docs/` is read on GitHub and
+mermaid is rendered by GitHub alone. That is still enough for
+the rule to bind — it is noted so nobody goes looking for the
+site.
 
 <!-- shared-block: plan-phase-references v1 -->
 Plan phase references (shared block; do not edit -- the canonical
@@ -567,12 +572,22 @@ resolves each `debian/patches` `series` entry through
 `tar.getmember()` and reads it with `tar.extractfile()`, so no
 archive member name is ever joined onto a filesystem path —
 the extraction case the block calls the one most often missed
-does not arise. The joins that do want checking are
-`divergulent/classify/export.py`, which opens and removes
-shard filenames listed in a `manifest.json` it did not write,
-and `bundle.stored_path()`, which builds
-`cache-<release>.json.gz` from a codename that may have come
-out of `/etc/os-release`.
+does not arise. The join that looks live is `load_export()` in
+`divergulent/classify/export.py`, which opens shard filenames
+out of a `manifest.json` it did not write. It is safe today:
+`_table_of()` raises for any stem that is not a known table
+name, so `../../etc/passwd.jsonl` never reaches the `open()`.
+That is an incidental guard in a naming helper rather than a
+path check, so re-read it whenever either function changes.
+(`write_export()`'s removal loop is not the same case: it is
+driven by `os.listdir()` of the destination, not by the
+manifest.) `bundle.stored_path()` builds
+`cache-<release>.json.gz` by interpolation, which does not
+constrain the result to `cache_dir` — but `release` is either
+the invoking user's own `--release` or the root-owned
+`/etc/os-release`, so an escaping codename crosses no trust
+boundary. Re-read that one if the release ever starts arriving
+from a bundle or off the network.
 
 **The `header-sanitization` marker:** the fleet consistency
 audit checks that every `http.server` request handler subclass
@@ -588,10 +603,16 @@ string literals are blanked and comments survive, so it has to
 be a real comment and it has to be the last line of any
 comment block above the class; reflowing that block silently
 un-suppresses the check. `divergulent/tests/test_fetch.py`
-carries the project's only two. A marker on production code is
-a finding rather than a suppression: a real server wants the
-mixin, and therefore the occystrap dependency this project has
-so far had no reason to take.
+carries the project's only two. The one production HTTP surface
+here is the Flask review UI in
+`divergulent/classify/review_web.py`, and it is outside this
+family in both directions: `SafeHeaderMixin` is an
+`http.server` mixin and does not apply to a WSGI app, and
+Werkzeug rejects CR and LF in header values itself. So a marker
+on production code would still be a finding rather than a
+suppression — a real `http.server` here would want the mixin,
+and therefore the occystrap dependency this project has so far
+had no reason to take.
 
 Report findings with severity (critical / high / medium /
 low / informational). For each finding, state the file,

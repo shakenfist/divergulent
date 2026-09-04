@@ -217,6 +217,15 @@ copy lives in shakenfist/development at
     audit to unrelated history, so fetch before starting, or
     read it as `origin/develop...HEAD`.
 
+    The two shared blocks in this file disagree about the
+    Execution table. The worked example in
+    `plan-file-conventions` predates the `Merged` column that
+    the block above requires, so copying that example produces
+    a table this block declares non-conformant. New plans here
+    write `| Phase | Plan | Status | Merged |`. Reconciling the
+    two is a change to shakenfist/development, not to this
+    file — neither block may be edited in place.
+
 ## Agent guidance
 
 ### Execution model
