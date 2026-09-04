@@ -296,9 +296,9 @@ rebound DNS name cannot read the queue), and every state-changing one must carry
 this app's `Origin` — scheme, loopback name **and the bound port exactly**, since
 a page on another local port is another server — plus a per-process token in both
 a `SameSite=Strict` cookie and the form itself. The practical consequence for the
-operator is that a tab
-left open across a restart submits into a **403 page** rather than a stale
-process — reload it and the verdict goes through. Handlers test offline through
-Flask's test client (injected fake `fetch`/`signer`, temp ledger; no socket). See
+operator is that a tab left open across a restart submits into a **403 page**
+rather than a stale process — reload it and the verdict goes through. Handlers
+test offline through Flask's test client (injected fake `fetch`/`signer`, temp
+ledger; no socket). See
 `docs/plans/PLAN-patch-classification-phase-04-review-web.md`.
 

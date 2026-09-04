@@ -132,7 +132,12 @@ FAMILIES: dict[str, list[re.Pattern]] = {
         # backtracks it: a run of blank lines -- the most innocuous-looking thing
         # in a Debian patch -- costs O(n^2) to reject (40k newlines took 5.8s).
         # A turn marker sits at the start of its line behind spaces or tabs, so
-        # the anchoring loses nothing.  The TRAILING ``\s`` is deliberately kept:
+        # the anchoring loses nothing RELATIVE TO ``^\s*`` -- which is the only
+        # claim made here.  Neither anchor matches a diff's ``+`` prefix, so on an
+        # ADDED line this family cannot fire at all; that is issue #98, a
+        # pre-existing recall gap whose fix is a recall INCREASE and so wants its
+        # own corpus false-positive check rather than a fold-in here.
+        # The TRAILING ``\s`` is deliberately kept:
         # it is unstarred, so it costs O(1), and dropping it would stop matching
         # a bare ``Human:`` on its own line -- a real transcript shape.
         re.compile(r'^[ \t]*(Human|Assistant):\s', re.MULTILINE),

@@ -520,6 +520,18 @@ def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, lim
     that text is superseded the first time this runs.  Exactly the triage driver's
     check, through the same helper, so the two consumers can never disagree.
 
+    That disposition is written for EVERY corpus suspect, whatever mode the run is
+    in -- it costs no LLM call, so ``limit`` does not bound it, and neither does
+    ``re_risk_marked``'s narrower selection.  Deliberate: a suspect is a suspect
+    whichever pass happens to notice it, and leaving one un-dispositioned because
+    the operator asked for a targeted re-risk would let a payload keep its stale
+    score.  Two consequences worth knowing.  A suspect that is ALSO oversized-and-
+    locked used to carry no risk row at all (its ``reviewability`` observation was
+    its whole disposition) and now carries the ``elevated`` one; and because the
+    summary counts each population separately, ``skipped_oversized`` and
+    ``skipped_injection`` can both count the same fingerprint, so those lines may
+    sum to more than the slice.
+
     ``re_risk_marked`` switches the run to the TARGETED re-risk population instead
     of the un-scored one: the marked fingerprints whose live score was read off a
     truncated generated head (:func:`rerisk_candidates`), re-scored through this
