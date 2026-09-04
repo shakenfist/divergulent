@@ -162,15 +162,9 @@ class ResolveSettledReviewItemsTestCase(LedgerFixture, testtools.TestCase):
         self.assertEqual({residue}, pending)
 
 
-class KindPrecedenceTestCase(testtools.TestCase):
-
-    def test_precedence_human_over_llm_over_heuristic(self):
-        self.assertEqual(('heuristic', 'llm', 'human'), ledger.KIND_PRECEDENCE)
-        self.assertGreater(ledger.kind_rank('human'), ledger.kind_rank('llm'))
-        self.assertGreater(ledger.kind_rank('llm'), ledger.kind_rank('heuristic'))
-
-    def test_kind_rank_rejects_unknown(self):
-        self.assertRaises(ValueError, ledger.kind_rank, 'oracle')
+class EnumsTestCase(testtools.TestCase):
+    """The kind/purity enums.  Precedence is ``verdict.decision_rank``'s job and
+    is tested in ``test_verdict.PrecedenceTestCase``."""
 
     def test_enums(self):
         self.assertEqual(frozenset({'heuristic', 'llm', 'human'}), ledger.KINDS)

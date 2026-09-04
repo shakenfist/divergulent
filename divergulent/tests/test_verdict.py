@@ -54,6 +54,12 @@ class VerdictFixture:
 
 class PrecedenceTestCase(VerdictFixture, testtools.TestCase):
 
+    def test_decision_rank_rejects_unknown_kind(self):
+        # A typo must fail loudly rather than silently sorting to the bottom of
+        # the precedence order.
+        self.assertRaises(ValueError, verdict_mod.decision_rank, 'oracle', False)
+        self.assertRaises(ValueError, verdict_mod.decision_rank, 'oracle', True)
+
     def test_human_beats_verified_llm_beats_heuristic(self):
         conn = self._ledger()
         # All three kinds live for one fingerprint; human must win.  The llm

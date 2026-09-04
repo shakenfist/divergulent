@@ -12,7 +12,8 @@ Two ideas govern the design:
    is never edited and never deleted — it can only be *superseded* (a
    ``superseded_at`` timestamp set on it).  The current verdict for a
    fingerprint is computed (in step 3c) from the live, non-superseded decisions
-   at ``human > llm > heuristic`` precedence; it is never stored.  Because the
+   at ``verdict.decision_rank`` precedence (``human`` > verified-``llm`` >
+   ``heuristic`` > unverified-``llm``); it is never stored.  Because the
    audit trail is complete, retiring or bumping a rule is a surgical redo:
    supersede exactly its decisions, recompute the view, and re-queue only the
    fingerprints left with no live decision.
@@ -74,14 +75,14 @@ files -- non-shipping, structurally determined; see ``rules._rule_test_only``).
 Every bump is a tracked migration, applied when the ledger is next rebuilt."""
 
 # ---------------------------------------------------------------------------
-# The decision kinds and rule purities, and the precedence that ranks them.
+# The decision kinds and rule purities.
 #
-# ``kind`` ranks WHO decided: a human overrides a (verified) LLM, which
-# overrides a heuristic.  The derived current-verdict view (step 3c) uses
-# ``KIND_PRECEDENCE`` to pick, per fingerprint, the highest-precedence live
-# decision; it is defined here so the registry and the view share one source of
-# truth.  Phase-2 decisions are all ``heuristic``; the ``llm`` and ``human``
-# seats are reserved now so phases 4+ slot in without a schema change.
+# ``kind`` records WHO decided.  Phase-2 decisions are all ``heuristic``; the
+# ``llm`` and ``human`` seats are reserved so phases 4+ slot in without a schema
+# change.  The PRECEDENCE that ranks kinds lives in ``verdict.decision_rank``,
+# not here: it folds the ``verified`` flag into the ranking (``human`` >
+# verified-``llm`` > ``heuristic`` > unverified-``llm``) so an unreviewed LLM
+# draft can never outrank a deterministic heuristic.
 # ---------------------------------------------------------------------------
 
 KINDS: frozenset[str] = frozenset({'heuristic', 'llm', 'human'})
@@ -91,24 +92,6 @@ PURITIES: frozenset[str] = frozenset({'pure', 'external'})
 """Valid ``purity`` values.  ``pure`` is a function of the diff alone (no clock,
 no network); ``external`` consults the world and so records an input snapshot +
 freshness (phase 6)."""
-
-# Precedence order, lowest-to-highest, for the derived view: human > llm >
-# heuristic.  Higher index == higher precedence.  Used by step 3c.
-KIND_PRECEDENCE: tuple[str, ...] = ('heuristic', 'llm', 'human')
-
-
-def kind_rank(kind: str) -> int:
-    """Precedence rank of a decision ``kind`` (higher wins).
-
-    ``human`` outranks ``llm`` outranks ``heuristic``.  Step 3c uses this to
-    pick the winning live decision per fingerprint.  Raises ``ValueError`` for
-    an unknown kind so a typo cannot silently sort to the bottom.
-    """
-    try:
-        return KIND_PRECEDENCE.index(kind)
-    except ValueError:
-        raise ValueError('unknown decision kind: %r' % kind)
-
 
 # ---------------------------------------------------------------------------
 # The rule registry.
