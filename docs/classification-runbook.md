@@ -93,6 +93,16 @@ so, do step 2 before spending anything.
 Run `status` at the start and end of every session. If you only remember
 one command from this document, that is the one.
 
+Its older sibling `divergulent-classify report` is also free, and is the
+one other read-only verb worth knowing. It prints the ledger's own
+markdown summary (`verdict.render_report`): the verdict, queue and
+superseded headline counts, then breakdowns **by deciding rule and by
+observation detail**. `status` has superseded it for orientation — what
+`report` still gives that `status` does not is that per-rule view, which
+is what you want when you are auditing which rule or which LLM pass
+produced today's ledger, rather than deciding where to spend the next
+hour.
+
 ## 1. Refresh the pinned snapshots (free)
 
 Three verbs pull external data into the corpus. All three are
@@ -170,13 +180,23 @@ What you need to know to drive it:
   invocation cannot sweep the corpus. Raise it to the size of the batch
   you are willing to pay for.
 - `--model` defaults to Opus (chosen in a bake-off: 100% recall / 0%
-  false-alarm at `≥elevated`, against Sonnet's 73%/3%).
+  false-alarm at `≥elevated`, against Sonnet's 73%/3%). Those figures come
+  from a small sample, and the labelling that drew it is not fully
+  independent of the gate being measured; confirming the recall and
+  false-alarm rate at `≥elevated`, and settling the default, is
+  [issue #90](https://github.com/shakenfist/divergulent/issues/90). Read
+  them as good enough to choose a default, not as a measured guarantee.
 - The deterministic cull scores provably-benign patches (empty,
   whitespace-only, comment-only, doc-only, translation/changelog-only)
   `none` with **no model call at all** — roughly 7% of the corpus.
 - Diffs are capped at `--max-diff-chars` (40,000, head only, truncation
   recorded) and `oversized` patches are skipped, so a giant diff can
-  neither overflow the context nor spike the bill.
+  neither overflow the context nor spike the bill — **except** those a
+  generated-content mark shows have a small hand-written residue, which
+  are scored on a residue-first projection of the diff rather than
+  skipped. A run's stats line reports both counts (`skipped_oversized`,
+  `unlocked_by_residue`), so a corpus with many marked generator outputs
+  spends slightly more than the raw oversized count suggests.
 - `--re-risk-marked` re-scores exactly those generated-content-marked
   fingerprints whose live score was read off a truncated generator head,
   superseding the old score.
@@ -229,9 +249,16 @@ them.
 - `review` drains the priority queue in the terminal, `--limit`
   defaulting to 10, and authenticates to Sigstore **once** per session.
 - `web` binds loopback only, port 8765 by default (`--host`/`--port`),
-  has no authentication and is single-user. It adds what a linear queue
-  cannot: review by category, cherry-pick by fingerprint or package, an
-  audit/spot-check view over already-settled patches for confirming a
+  and is single-user: there is no login. Loopback alone is not the whole
+  guard, because a page in your browser can post to a local server across
+  origins, so every request must carry a `Host` naming this app and every
+  state-changing one this app's exact `Origin` — scheme, loopback name and
+  bound port — plus a per-process token held in a `SameSite=Strict`
+  cookie. **The consequence to expect: a tab left open across a UI restart
+  submits into a 403 page.** Reload it and the verdict goes through;
+  nothing was recorded by the rejected submission. It adds what a linear
+  queue cannot: review by category, cherry-pick by fingerprint or package,
+  an audit/spot-check view over already-settled patches for confirming a
   deterministic rule is behaving, and signed reviewer notes. It needs the
   optional extras: `pip install divergulent[review]`, or
   `divergulent[review,verify]` to sign.
@@ -278,9 +305,9 @@ Two things to expect at the diff:
 - **A normal export diff is small.** If you see the entire directory
   churn, stop and find out why before pushing. The usual cause is a
   checkout running older code that re-shards the export back to monthly
-  filenames; `write_export` clears every `*.jsonl` before writing, so
-  every operator of the reviews repo must be on current code before
-  their next export.
+  filenames; `write_export` clears every `*.jsonl` and the manifest
+  before writing, so every operator of the reviews repo must be on
+  current code before their next export.
 - **A deliberate re-shard is its own commit.** It is full-ledger churn
   that cannot be reviewed line by line, so never mix real verdicts into
   it — they would be invisible.

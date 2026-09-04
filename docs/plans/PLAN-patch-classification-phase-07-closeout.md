@@ -212,22 +212,33 @@ for path in [pathlib.Path('docs/plans/PLAN-patch-classification.md'),
              pathlib.Path('docs/plans/index.md')]:
     col = None
     for n, line in enumerate(path.read_text().splitlines(), 1):
-        if not line.startswith('|') or set(line) <= set('|- :'):
+        if not line.startswith('|'):
+            col = None                             # a table ended: forget its layout
+            continue
+        if set(line) <= set('|- :'):
             continue
         cells = [c.strip() for c in line.strip('|').split('|')]
         if 'Status' in cells:                      # a header row: find the column
             col = cells.index('Status')
             continue
-        if col is not None and len(cells) > col and cells[col] not in TERMS:
+        if col is None:
+            continue
+        if len(cells) <= col:                      # a short row hides its status cell
+            bad.append('%s:%d: row has %d cells, no column %d'
+                       % (path, n, len(cells), col))
+        elif cells[col] not in TERMS:
             bad.append('%s:%d: status cell is %r' % (path, n, cells[col]))
 print('\n'.join(bad) or 'all status cells hold exactly one vocabulary term')
 sys.exit(1 if bad else 0)
 EOF
 ```
 
-(The script tracks the `Status` column position per file, so it works on both the
-five-column Execution table and `index.md`'s wider one. `index.md` rows for *other*
-plans are checked too — a bonus, and any failure there is reported, not fixed.)
+(The script tracks the `Status` column position per *table*, resetting it at each
+table boundary, so it works on both the six-column Execution table and `index.md`'s
+wider one, and a table added later cannot inherit an unrelated column index. A row
+too short to have that column is a failure, not a silent skip. `index.md` rows for
+*other* plans are checked too — a bonus, and any failure there is reported, not
+fixed.)
 
 ## Risks and mitigations
 
@@ -247,9 +258,10 @@ plans are checked too — a bonus, and any failure there is reported, not fixed.
   holds exactly one vocabulary term.
 - `docs/plans/index.md`'s patch-classification row reads `Complete`, and no `◐`
   remains in its `Phases` cell.
-- The Execution table has a `Merged` column, last, and every phase row names at
-  least one merge commit; the table is followed by a sentence saying the record was
-  reconstructed.
+- The Execution table has a `Merged` column, last, and every *delivery*-phase row
+  (1–6) names at least one merge commit; the table is followed by a sentence saying
+  the record was reconstructed. The closeout row cannot name the merge that lands
+  it, so it names the pull requests instead.
 - Two GitHub issues exist (E6's split, R4's validation), each linked from the phase
   plan it came from, and each quoting the specific unmeasured claim.
 - `docs/classification-runbook.md` exists, is linked from `docs/index.md`,
@@ -308,17 +320,17 @@ autoescaping with no `|safe`, and the client-side dependency separation.
 
 | # | Where | Severity | Disposition |
 |---|-------|----------|-------------|
-| H1 | `risk.py:455-500` | high | **fixed** — `8a6c349` |
-| H2 | `injection.py:86`, `rules.py:310`, `record.py:369-373` | high | **fixed** — `80fbdd7` |
-| H3 | `review_web.py:483,563,580` | high | **fixed** — `0395558` |
+| H1 | `risk.py:455-500` | high | **fixed in #99** — `8a6c349`, unmerged at the time of writing |
+| H2 | `injection.py:86`, `rules.py:310`, `record.py:369-373` | high | **fixed in #99** — `80fbdd7`, unmerged at the time of writing |
+| H3 | `review_web.py:483,563,580` | high | **fixed in #99** — `0395558`, unmerged at the time of writing |
 | H4 | `build-classification.yml:43`, `build-cache.yml:26` | high, conditional | **closed** — not exploitable (ephemeral runners; fork PRs need approval) |
-| A1 | `review_web.py:513-521` → `review.py:894-898` | blocking (2a) | **fixed** — `2b4ca59` |
-| A2 | `apt_patches.py:264-268`, `test_apt_patches.py:41` | blocking (2b) | **fixed** — `69c1668` |
-| A3 | `ledger.py:97-108` | advisory, twice-reported | **fixed** — `9741764` |
-| A4 | `triage.py:613-617` vs `:629-643` | medium | **fixed** — `8fc55d7` |
-| D1 | `docs/*` phase references | blocking (2c) | **fixed** — `244095a`, `933ceab` |
+| A1 | `review_web.py:513-521` → `review.py:894-898` | blocking (2a) | **fixed in #99** — `2b4ca59`, unmerged at the time of writing |
+| A2 | `apt_patches.py:264-268`, `test_apt_patches.py:41` | blocking (2b) | **fixed in #99** — `69c1668`, unmerged at the time of writing |
+| A3 | `ledger.py:97-108` | advisory, twice-reported | **fixed in #99** — `9741764`, unmerged at the time of writing |
+| A4 | `triage.py:613-617` vs `:629-643` | medium | **fixed in #99** — `8fc55d7`, unmerged at the time of writing |
+| D1 | `docs/*` phase references | blocking (2c) | **fixed** — `244095a` (in #99, unmerged), `dc2cebb` (this PR) |
 | D2 | `ARCHITECTURE.md`, `AGENTS.md` | blocking (2c) | tracked — #97 |
-| D3 | `report` verb undocumented | blocking (2c) | **fixed** — `244095a` |
+| D3 | `report` verb undocumented | blocking (2c) | **fixed in #99** — `244095a`, plus the runbook entry in this PR |
 | M1 | classification bundle unverified by default | medium | tracked — #91 |
 | M2 | apt checksum discarded | medium | tracked — #92 |
 | M3 | unbounded snapshot download and gzip | medium | tracked — #93 |
@@ -327,10 +339,14 @@ autoescaping with no `|safe`, and the client-side dependency separation.
 | L1–L10 | hardening backlog | low | tracked — #96 |
 | N1 | chat-marker patterns cannot fire on diff lines | informational | tracked — #98 |
 
-The nine *fixed* findings landed on `patch-classification-audit-fixes`, one commit
-per finding, as `plan-push-audit-phase` requires of audit findings. The suite went
-from 1,279 tests to 1,328, still passing inside a network namespace, and
-`pre-commit run --all-files` is green.
+The nine *fixed* findings are on `patch-classification-audit-fixes`, one commit
+per finding, as `plan-push-audit-phase` requires of audit findings. They are
+**PR #99, and unmerged as this is written** — the SHAs above name commits on
+that branch, not on `develop`. This plan file is the record of the audit, so it says
+where each fix lives rather than implying `develop` already carries it; #99 should
+land first, and until it does, the defects it fixes are still present in the
+shipped code. The suite went from 1,279 tests to 1,328, still passing inside a
+network namespace, and `pre-commit run --all-files` is green.
 
 Three of those fixes changed behaviour, and each is deliberate rather than
 incidental:
@@ -474,9 +490,12 @@ independent with respect to prompt injection. The docs should say so.
 ### What remains before this plan is Complete
 
 Per `plan-push-audit-phase`, findings are resolved or explicitly declined in
-writing. **Nothing remains.** Nine findings are fixed on
-`patch-classification-audit-fixes`; eight are filed as issues #91–#98 and cited
-above; H4 is closed as not exploitable on the operator's answer. C5 may run.
+writing. **Nothing remains unresolved.** Nine findings are fixed in PR #99 (on
+`patch-classification-audit-fixes`); eight are filed as issues #91–#98 and cited
+above; H4 is closed as not exploitable on the operator's answer. Resolved is not
+the same as merged: #99 is the fix for three security findings, so it is the PR to
+land first, and this closeout is written to be accurate whichever order the two
+merge in. C5 may run.
 
 ## Back brief
 

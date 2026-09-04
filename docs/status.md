@@ -62,14 +62,14 @@ signed classification bundle from the committed ledger export every day
 at 04:31 UTC, and `divergulent cache pull-classification` fetches it.
 What continues is not construction but *review* — and it is a grind. Of
 the ~60,640 distinct carried patches, the deterministic tier settles the
-structurally-determined ones (29.2% at the first corpus-wide measurement, plus a
-further ~15% once the `test-only` rule landed) and leaves roughly 43k
-fingerprints of substantive residue whose category is a question about
-intent. That residue is overwhelmingly still unreviewed. So the honest
-claim is that Debian's carried patches have been made *classifiable*, not
-that they are classified: the bundle carries only settled verdicts, and
-it **grows** as review proceeds, so clients re-pull to see more of their
-patches explained.
+structurally-determined ones (29.2% at the first corpus-wide
+measurement, plus a further ~15% once the `test-only` rule landed) and
+leaves roughly 43k fingerprints of substantive residue whose category is
+a question about intent. That residue is overwhelmingly still
+unreviewed. So the honest claim is that Debian's carried patches have
+been made *classifiable*, not that they are classified: the bundle
+carries only settled verdicts, and it **grows** as review proceeds, so
+clients re-pull to see more of their patches explained.
 
 The pipeline is documented end to end in [workflow.md](workflow.md); the
 recurring operator loop, its cadence and its costs are in
