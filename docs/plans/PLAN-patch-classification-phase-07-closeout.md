@@ -308,18 +308,53 @@ autoescaping with no `|safe`, and the client-side dependency separation.
 
 | # | Where | Severity | Disposition |
 |---|-------|----------|-------------|
-| H1 | `risk.py:455-500` | high | fix |
-| H2 | `injection.py:86`, `rules.py:310`, `record.py:369-373` | high | fix |
-| H3 | `review_web.py:483,563,580` | high | fix |
-| H4 | `build-classification.yml:43`, `build-cache.yml:26` | high, conditional | operator verification |
-| A1 | `review_web.py:513-521` → `review.py:894-898` | blocking (2a) | fix |
-| A2 | `apt_patches.py:264-268`, `test_apt_patches.py:41` | blocking (2b) | fix |
-| A3 | `ledger.py:97-108` | advisory, twice-reported | fix |
-| A4 | `triage.py:613-617` vs `:629-643` | medium | fix |
-| D1 | `docs/*` phase references | blocking (2c) | fix |
-| D2 | `ARCHITECTURE.md`, `AGENTS.md` | blocking (2c) | already tracked |
-| D3 | `report` verb undocumented | blocking (2c) | fix |
-| M1–M5, L1–L10 | various | medium/low | already tracked |
+| H1 | `risk.py:455-500` | high | **fixed** — `8a6c349` |
+| H2 | `injection.py:86`, `rules.py:310`, `record.py:369-373` | high | **fixed** — `80fbdd7` |
+| H3 | `review_web.py:483,563,580` | high | **fixed** — `0395558` |
+| H4 | `build-classification.yml:43`, `build-cache.yml:26` | high, conditional | **open** — operator verification |
+| A1 | `review_web.py:513-521` → `review.py:894-898` | blocking (2a) | **fixed** — `2b4ca59` |
+| A2 | `apt_patches.py:264-268`, `test_apt_patches.py:41` | blocking (2b) | **fixed** — `69c1668` |
+| A3 | `ledger.py:97-108` | advisory, twice-reported | **fixed** — `9741764` |
+| A4 | `triage.py:613-617` vs `:629-643` | medium | **fixed** — `8fc55d7` |
+| D1 | `docs/*` phase references | blocking (2c) | **fixed** — `244095a`, `933ceab` |
+| D2 | `ARCHITECTURE.md`, `AGENTS.md` | blocking (2c) | tracked — #97 |
+| D3 | `report` verb undocumented | blocking (2c) | **fixed** — `244095a` |
+| M1 | classification bundle unverified by default | medium | tracked — #91 |
+| M2 | apt checksum discarded | medium | tracked — #92 |
+| M3 | unbounded snapshot download and gzip | medium | tracked — #93 |
+| M4 | mixed provenance flattened at the client | medium | tracked — #94 |
+| M5 | `record_to_ledger` has no per-item guard | medium | tracked — #95 |
+| L1–L10 | hardening backlog | low | tracked — #96 |
+| N1 | chat-marker patterns cannot fire on diff lines | informational | tracked — #98 |
+
+The nine *fixed* findings landed on `patch-classification-audit-fixes`, one commit
+per finding, as `plan-push-audit-phase` requires of audit findings. The suite went
+from 1,279 tests to 1,328, still passing inside a network namespace, and
+`pre-commit run --all-files` is green.
+
+Three of those fixes changed behaviour, and each is deliberate rather than
+incidental:
+
+- **A4 sends every LLM-drafted `security` verdict to a human**, including the
+  cleanly-verified ones, which raises review volume with nothing offsetting it. The
+  alternative was to withdraw the promise; the promise is the better half.
+- **H1 supersedes an existing risk score on an injection suspect**, because that
+  score was read off attacker-authored text. This heals a corpus a payload has
+  already steered, on the first run.
+- **H3 makes a stale browser tab fail with a 403** after a UI restart, which is
+  documented where the loopback binding is.
+
+**N1 was found while fixing H2, not by the audit**, and is recorded because it
+bears on H2's own subject: on a raw unified diff every added line begins with `+`,
+which the `chat-template-marker` family's line anchors do not allow for, so that
+family cannot fire on diff content at all. Pre-existing, and closing it is a recall
+*increase* that deserves its own false-positive check.
+
+**H4 is the one finding still open**, and it is not answerable from the
+repository: whether a `pull_request` workflow sharing the signing job's
+self-hosted runner label can persist state depends on runner ephemerality and the
+fork-PR approval setting. The operator is checking. It is the only finding that
+would defeat the signing design outright rather than degrade it.
 
 **H1 — the security-risk gate bypasses the prompt-injection tripwire.**
 *Confirmed:* `risk.py` contains no reference to injection at all, while
@@ -433,14 +468,9 @@ independent with respect to prompt injection. The docs should say so.
 ### What remains before this plan is Complete
 
 Per `plan-push-audit-phase`, findings are resolved or explicitly declined in
-writing. H1, H2, H3, A1, A2, A3, A4, D1 and D3 are marked *fix* and land as their
-own pull request. H4 is an operator question about runner configuration. D2 and
-the medium/low list (M1–M5, L1–L10 in the agents' reports: unverified-by-default
-classification bundles, the discarded apt checksum, unbounded snapshot downloads
-and gzip, mixed provenance flattened into one client line, no per-fingerprint
-guard in `record_to_ledger`, and ten low-severity hardening items) are filed as
-issues and cited here. Step C5 does not run until each line above is fixed,
-filed, or declined with a reason.
+writing. Nine are fixed on `patch-classification-audit-fixes`; eight are filed as
+issues #91–#98 and cited above. **H4 alone remains open**, awaiting the operator's
+answer on runner ephemerality and fork-PR approval, so C5 does not run yet.
 
 ## Back brief
 
