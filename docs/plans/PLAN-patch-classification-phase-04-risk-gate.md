@@ -10,7 +10,9 @@ category pass and the human first. It does **not** replace the category taxonomy
 security-safe cull (R2), and the prioritisation wiring + CLI + docs (R3) are
 built and tested offline. **R4** (a larger hand-labelled validation to firm the
 threshold and the model default) remains, as the operator-budgeted step. Backed
-by the bake-off below.
+by the bake-off below. **Deferred to issue #90.** That issue carries R4:
+confirming the recall and false-alarm rate at the ≥elevated cut on a hand-checked
+label set, and settling the model default and the threshold.
 
 ## Why
 

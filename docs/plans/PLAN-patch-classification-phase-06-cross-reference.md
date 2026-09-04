@@ -30,7 +30,9 @@ UDD (`bugs ∪ archived_bugs`) and publishes a gzipped TSV to the `bts` prerelea
 out a client-side Postgres query; hosting it centrally is the fix). See
 [PLAN-patch-classification-phase-06-bts-hosting.md](PLAN-patch-classification-phase-06-bts-hosting.md).
 The confirmed:contradicted:unknown split awaits the operator's first
-record-with-snapshot run.
+record-with-snapshot run. **Deferred to issue #89.** That issue carries the
+measurement: the split reported from a first Security Tracker + BTS snapshot run,
+plus the freshness-TTL calibration the 30-day default is still guessing at.
 
 ## The thesis: verification, not trust — and disagreement is the signal
 
