@@ -1200,6 +1200,35 @@ class NotesWebTestCase(ReviewWebFixture, testtools.TestCase):
         self.assertEqual('reviewer@example.org', rows[0]['signed_by'])
         self.assertEqual('FAKE-SIG', rows[0]['signature'])
 
+    def test_a_note_that_failed_to_land_is_absent_from_the_ledger(self):
+        """The third handler with the same guarantee: signed, so it must be deliberate.
+
+        record_note signs before it writes, which makes a SIGNER failure harmless --
+        but the append itself commits, and a database busy at commit time fails after
+        the INSERT, leaving the signed note staged on this process-lifetime
+        connection for the next commit to flush.  The reviewer is shown a 502 saying
+        nothing was recorded, so nothing may be recorded.
+        """
+        signer, _seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+
+        def _fail_at_commit(*args, **kwargs):
+            conn.execute(
+                'INSERT INTO note (fingerprint, body, signed_by, signature, created_at) '
+                'VALUES (?, ?, ?, ?, ?)', (fp_hex, 'staged', 'r@example.org', 'S', WHEN))
+            raise sqlite3.OperationalError('database is locked')
+
+        self.patch(ledger_mod, 'append_note', _fail_at_commit)
+        resp = self._post(client, '/note/' + fp_hex, {'body': 'looks risky'})
+
+        self.assertEqual(502, resp.status_code)
+        self.assertEqual([], ledger_mod.notes_for(conn, fp_hex))
+        # The next successful commit on this connection must not carry it along.
+        ledger_mod.append_review_item(
+            conn, fingerprint=fp_hex, reason='later work', draft_category=None,
+            draft_confidence=None, enqueued_at=WHEN, priority=0)
+        self.assertEqual([], ledger_mod.notes_for(conn, fp_hex))
+
     def test_empty_note_is_a_noop(self):
         signer, _ = _recording_signer()
         client, conn, fp_hex = self._client(signer=signer)

@@ -795,8 +795,15 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
         try:
             review_mod.record_note(conn, resolved, body, signer=signer, now=clock())
         except Exception as exc:  # noqa: BLE001 -- a signing/auth failure is a page, not a 500
-            # record_note signs BEFORE it writes, so a signer failure leaves the
-            # ledger untouched; surface it as an actionable page.
+            # record_note signs BEFORE it writes, so a SIGNER failure leaves the
+            # ledger untouched -- but that reasoning covers only the signer. The
+            # append itself commits, and under SQLite a deferred transaction takes
+            # EXCLUSIVE only at commit time, so a busy database fails AFTER the
+            # INSERT and leaves the signed note staged on this process-lifetime
+            # connection for the next commit to flush. The reviewer would be shown
+            # this page and the note would land anyway. Roll back, as the verdict
+            # and re-queue handlers do.
+            conn.rollback()
             return render_template_string(ERROR_TEMPLATE, fingerprint=resolved, error=str(exc)), 502
         return redirect(url_for('review', fingerprint=resolved))
 
