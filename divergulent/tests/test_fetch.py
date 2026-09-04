@@ -34,6 +34,12 @@ class _Server:
         self._close_after = close_after
         server_self = self
 
+        # Every header this sends is a literal name with a literal or
+        # length-derived value, so no outside data reaches send_header()
+        # to smuggle a CR or LF through it. The marker is read on the
+        # class statement or the line immediately above it, so it stays
+        # last in this block; see PUSH-AUDIT.md section 2d.
+        # audit-ok: header-sanitization -- fixture, literal headers only
         class Handler(http.server.BaseHTTPRequestHandler):
             protocol_version = 'HTTP/1.1'
 
@@ -161,6 +167,9 @@ class KeepAliveFetcherTestCase(testtools.TestCase):
         self.assertEqual(3, len(server.request_lines))
 
     def test_non_2xx_raises(self):
+        # Serves a single literal Content-Length header, so there is no
+        # header value for a CR or LF to reach.
+        # audit-ok: header-sanitization -- fixture, literal headers only
         class ErrorHandler(http.server.BaseHTTPRequestHandler):
             protocol_version = 'HTTP/1.1'
 

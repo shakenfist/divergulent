@@ -21,7 +21,10 @@ The management session reviews all findings, fixes any
 issues, and confirms the push.
 
 These checks assume the default branch is `develop`; adjust the
-diff base below if the repository uses something else.
+diff base below if the repository uses something else. Run
+`git fetch` first, or read every `develop...HEAD` below as
+`origin/develop...HEAD` — a stale local `develop` silently
+widens the diff to unrelated history.
 
 ## Wave 1: Mechanical checks
 
@@ -32,8 +35,9 @@ pre-commit run --all-files
 tox          # or: pytest, if tox is not configured yet
 ```
 
-`pre-commit` runs the configured lint, unit tests, and type
-checking. `tox` runs the full test matrix.
+`pre-commit` runs the configured lint and the unit tests;
+there is no type checker configured in this project. `tox`
+runs the full test matrix.
 
 A defining concern for this project is that **tests must not
 hit live external services.** Confirm the suite passes with
@@ -107,8 +111,8 @@ Start with the mechanical sweep on the diff:
 # TODO / FIXME / HACK / XXX in changed files
 git diff develop...HEAD -- '*.py' | grep -nE '^\+.*\b(TODO|FIXME|HACK|XXX)\b'
 
-# New `# noqa`, `# type: ignore`, or `pragma: no cover`
-git diff develop...HEAD -- '*.py' | grep -nE '^\+.*(# noqa|# type: ignore|pragma: no cover)'
+# New `# noqa`, `# type: ignore`, `pragma: no cover` or `audit-ok:`
+git diff develop...HEAD -- '*.py' | grep -nE '^\+.*(# noqa|# type: ignore|pragma: no cover|# audit-ok:)'
 
 # Unsafe parsing of remote data (this tool parses a lot of it)
 git diff develop...HEAD -- '*.py' | grep -nE '^\+.*\b(yaml\.load\b|pickle\.load|eval\(|exec\()'
@@ -131,7 +135,9 @@ git diff develop...HEAD --name-only | grep -E 'requirements.*\.txt|pyproject\.to
 ```
 
 These report only — they do not block. Treat the output as
-input to the judgment agents below.
+input to the judgment agents below. An added `audit-ok` marker
+is read against its documented family: a marker whose family
+is not documented in this runbook is itself the finding.
 
 Then spawn the judgment agents. They are independent and
 can run in parallel.
@@ -181,6 +187,41 @@ Add the judgment-level review on the diff
   TODO / noqa / type:ignore the sweep flagged, say blocking
   or advisory and why. Skip ones inside test modules unless
   they disable coverage on production code.
+
+<!-- shared-block: python-version-discipline v1 -->
+Python version and typing (shared block; do not edit -- the
+canonical copy lives in shakenfist/development at
+`templates/shared-blocks/python-version-discipline.md`):
+
+- No syntax or standard library API newer than the floor in
+  `requires-python`. Structural pattern matching, `X | Y` unions in
+  annotations evaluated at runtime, `tomllib`, and
+  `datetime.UTC` each raise on an interpreter the package still
+  claims to support, and none of them fail in CI when CI runs only
+  the newest version. This is the finding to look for first: it is
+  a real break on a real user's machine, not a style point.
+- New and modified code carries type hints, and mypy is expected to
+  be clean over it. A project part way through a staged rollout is
+  held to the new code, not to the whole tree.
+- Prefer the walrus operator and f-strings where they make the code
+  read better, subject to the floor above.
+- Raising the floor in `requires-python` is a supported-platforms
+  decision, not a convenience: it drops users. If it is genuinely
+  right, the platforms table, `requires-python` and
+  `constraints.python` in `renovate.json` all move together.
+<!-- shared-block-end -->
+
+**In this project:** `requires-python` is `>=3.11`, so
+`tomllib`, structural pattern matching, the walrus operator
+and `X | Y` in annotations are all available, while
+`datetime.UTC` (3.11) is fine but `itertools.batched` (3.12)
+and `Path.copy` (3.14) are not. Note that `renovate.json`
+carries no `constraints.python` today, so raising the floor
+means adding one rather than editing one. There is no mypy
+here either — neither `pre-commit` nor `tox` runs a type
+checker — so read the typing bullet as "new code carries
+hints", and treat a mypy rollout as its own change rather
+than something this audit can expect to already be clean.
 
 <!-- shared-block: comment-proportion v1 -->
 Comment proportion (shared block; do not edit -- the canonical
@@ -236,6 +277,38 @@ Review the diff (`git diff develop...HEAD`) for test coverage:
   rather than behaviour (fragile tests)?
 - Are there new modules or functions with zero coverage that
   should have at least basic tests?
+
+<!-- shared-block: functional-test-coverage v1 -->
+Functional test coverage (shared block; do not edit -- the
+canonical copy lives in shakenfist/development at
+`templates/shared-blocks/functional-test-coverage.md`):
+
+- The standard is "do we run the code to do the real thing, and
+  does it work as intended". Every subcommand exposed on the command
+  line, and every endpoint exposed by an API, should have a test
+  that exercises it for real rather than against a mock of itself.
+- For a change that adds or alters user-visible behaviour, the
+  question to answer is which functional test would have failed
+  before it and passes after. If there is none, that is the finding,
+  and it is a finding about this change rather than a note for
+  later.
+- Unit tests are held to no coverage percentage, but a branch that
+  is reachable from outside the process and has no test is worth
+  naming. Error paths and argument validation are where this bites:
+  they are the code most often written once and never run again.
+- Mocking the system under test proves nothing. Mock the boundary --
+  the network, the clock, the hypervisor -- and let the code being
+  tested actually run.
+- Where a gap is real but out of scope for the change in hand, say
+  so plainly and record it, rather than silently widening the
+  change or silently leaving it unsaid.
+<!-- shared-block-end -->
+
+**In this project:** the surfaces that owe a functional test
+are the `divergulent` and `divergulent-classify` subcommands.
+Exercising one for real means running it end to end against
+recorded fixtures with the network boundary mocked -- not
+mocking the classifier and asserting it was called.
 
 Report findings as a bullet list grouped by file.
 
@@ -331,6 +404,52 @@ there. A change to how one adapter works belongs in `docs/`.
   reality, with its status cells drawn from the shared
   vocabulary in `PLAN-TEMPLATE.md`.
 
+<!-- shared-block: diagram-discipline v1 -->
+Diagram discipline (shared block; do not edit -- the canonical
+copy lives in shakenfist/development at
+`templates/shared-blocks/diagram-discipline.md`):
+
+- A diagram of *structure or flow* -- components and the arrows
+  between them, an ordered exchange of messages, a state machine
+  -- is written as a fenced `mermaid` block, not drawn in ASCII.
+  GitHub renders those natively and the mkdocs sites render them
+  through `pymdownx.superfences`, so the same source is a picture
+  in both places.
+- Not every box of characters is a diagram. These stay as plain
+  code fences, because mermaid cannot express them and would lose
+  what they show: directory and file trees; memory maps, address
+  space layouts and register or bit-field diagrams, where column
+  alignment carries the meaning; wire-format and on-disk byte
+  layouts; captured terminal output; and tables. The test is
+  whether the picture is nodes and edges. Something that is a
+  table with lines drawn on it is a table.
+- Pick the diagram type that matches the claim: `flowchart` for
+  components and data flow, `sequenceDiagram` for an ordered
+  exchange between parties, `stateDiagram-v2` for a state
+  machine, `erDiagram` for data relationships. A sequence drawn
+  as a flowchart has thrown away the ordering it existed to show.
+- A new ASCII box-and-arrow diagram in the diff is a finding.
+  Converting one the diff already touches is in scope; converting
+  every other diagram in the file is not, because a sweep is its
+  own change and its own review.
+<!-- shared-block-end -->
+
+**In this project:** the one ASCII box-and-arrow diagram in
+the tree is the "Data flow (today)" block in
+`ARCHITECTURE.md`. It predates this rule, so it is in scope
+only for a diff that already touches it. The numbered stage
+list in `docs/workflow.md` is not a second one: it is three
+space-aligned columns with no edges, which the rule above
+calls a table, and mermaid-ifying it would destroy the
+alignment that carries its meaning. It stays in a plain code
+fence, as do the recorded fixture layouts and the sample CLI
+output elsewhere in `docs/`. Only half the block's rendering
+promise holds here: there is no `mkdocs.yml` in this tree and
+nothing publishes a docs site, so `docs/` is read on GitHub and
+mermaid is rendered by GitHub alone. That is still enough for
+the rule to bind — it is noted so nobody goes looking for the
+site.
+
 <!-- shared-block: plan-phase-references v1 -->
 Plan phase references (shared block; do not edit -- the canonical
 copy lives in shakenfist/development at
@@ -416,6 +535,84 @@ Check for:
   versions? (Ironic, but a divergence-auditing tool that is
   itself an unaudited dependency sprawl undermines its own
   thesis.)
+
+<!-- shared-block: path-traversal-review v1 -->
+Path construction from outside data (shared block; do not edit --
+the canonical copy lives in shakenfist/development at
+`templates/shared-blocks/path-traversal-review.md`):
+
+- Treat as a candidate any filesystem path built from a value the
+  process did not choose: a request parameter, an image name, tag or
+  digest, a layer path, an archive member name, a filename out of a
+  configuration file or a database row.
+- The question is not whether the value looks dangerous but whether
+  the resulting path is *proved* to stay inside its intended base
+  directory. Resolve the joined path with `os.path.realpath()` and
+  verify it still starts with the base; a check on the untrusted
+  component alone is defeated by symlinks and by encodings the
+  check did not anticipate.
+- Prefer a helper that cannot be forgotten at a call site --
+  `safe_path_join()` in occystrap, or the framework's own
+  (`send_from_directory` in Flask) -- over an inline guard repeated
+  at each join.
+- Archive extraction is the case most often missed: a member name
+  inside a tarball or zip is attacker-controlled in exactly the same
+  way as a request parameter.
+- Where a bare join is correct because every component is
+  process-chosen, say so in a comment rather than leaving the
+  reader to re-derive it.
+<!-- shared-block-end -->
+
+**In this project:** two joins that look like candidates are
+not, and saying so here is meant to stop each auditor
+re-deriving them. `divergulent/cache.py` sha256-hashes every
+key to form the filename, so a source-derived key never
+reaches the path at all. `divergulent/sources/apt_patches.py`
+resolves each `debian/patches` `series` entry through
+`tar.getmember()` and reads it with `tar.extractfile()`, so no
+archive member name is ever joined onto a filesystem path —
+the extraction case the block calls the one most often missed
+does not arise. The join that looks live is `load_export()` in
+`divergulent/classify/export.py`, which opens shard filenames
+out of a `manifest.json` it did not write. It is safe today:
+`_table_of()` raises for any stem that is not a known table
+name, so `../../etc/passwd.jsonl` never reaches the `open()`.
+That is an incidental guard in a naming helper rather than a
+path check, so re-read it whenever either function changes.
+(`write_export()`'s removal loop is not the same case: it is
+driven by `os.listdir()` of the destination, not by the
+manifest.) `bundle.stored_path()` builds
+`cache-<release>.json.gz` by interpolation, which does not
+constrain the result to `cache_dir` — but `release` is either
+the invoking user's own `--release` or the root-owned
+`/etc/os-release`, so an escaping codename crosses no trust
+boundary. Re-read that one if the release ever starts arriving
+from a bundle or off the network.
+
+**The `header-sanitization` marker:** the fleet consistency
+audit checks that every `http.server` request handler subclass
+also inherits occystrap's `SafeHeaderMixin`, listed *first* in
+the bases, so that CR and LF are stripped from header values
+before `send_header()` sees them (CWE-113,
+`py/http-response-splitting`). A subclass that genuinely does
+not need it — a test fixture serving only literal headers —
+instead carries `# audit-ok: header-sanitization -- <reason>`
+on the `class` statement or on the line immediately above it.
+The marker is read per class, from a view of the file in which
+string literals are blanked and comments survive, so it has to
+be a real comment and it has to be the last line of any
+comment block above the class; reflowing that block silently
+un-suppresses the check. `divergulent/tests/test_fetch.py`
+carries the project's only two. The one production HTTP surface
+here is the Flask review UI in
+`divergulent/classify/review_web.py`, and it is outside this
+family in both directions: `SafeHeaderMixin` is an
+`http.server` mixin and does not apply to a WSGI app, and
+Werkzeug rejects CR and LF in header values itself. So a marker
+on production code would still be a finding rather than a
+suppression — a real `http.server` here would want the mixin,
+and therefore the occystrap dependency this project has so far
+had no reason to take.
 
 Report findings with severity (critical / high / medium /
 low / informational). For each finding, state the file,
