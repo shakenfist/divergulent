@@ -306,8 +306,12 @@ _DANGEROUS_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 # danger but an ordinary backtick character elsewhere, so scoping it to shell
 # is what stops it crying wolf on JS template literals / Lisp quasiquote.
 # Require a space inside the backticks to skip a bare pair or inline-code.
+# Both halves are BOUNDED and never cross a line: an unbounded ``[^`]*`` pair
+# backtracks quadratically across a long line whose backtick is never closed --
+# and the line is attacker-authored.  A command substitution worth flagging is
+# nowhere near 200 characters a side, so the bound costs no recall.
 _SHELL_DANGEROUS_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ('shell-out', re.compile(r'`[^`]* [^`]*`')),
+    ('shell-out', re.compile(r'`[^`\n]{0,200} [^`\n]{0,200}`')),
 )
 
 
