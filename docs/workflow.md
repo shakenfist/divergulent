@@ -118,7 +118,7 @@ exactly the fingerprints it had settled, and nothing else.
 
 The same recording pass also attaches cheap deterministic **axes**
 that ride alongside the category: reviewability (size), reach
-(install base), the phase-6 CVE/bug cross-reference, and — as of
+(install base), the external CVE/bug cross-reference, and — as of
 part of [its plan](plans/PLAN-generated-marking.md) — a
 generated-content mark for files that claim to be build-system
 generator output. The mark is

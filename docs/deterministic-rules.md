@@ -13,9 +13,9 @@ precedence order), and each supporting axis in its own module under
 they come from the June 2026 measurement of the Debian trixie corpus
 — 60,640 distinct patch fingerprints (61,572 carried-patch
 occurrences) — recorded in
-[the phase-2](plans/PLAN-patch-classification-phase-02-findings.md)
+[the deterministic-classification findings](plans/PLAN-patch-classification-phase-02-findings.md)
 and
-[phase-3 findings](plans/PLAN-patch-classification-phase-03-findings.md).
+[the ledger-build findings](plans/PLAN-patch-classification-phase-03-findings.md).
 They are indicative, not live: rerunning against a newer corpus will
 shift them somewhat.
 
@@ -101,7 +101,7 @@ Eight rules, applied first-match-wins. The first rule that matches
 supplies the category, the confidence, and a human-readable signal;
 the rule's id is recorded as the decision's provenance.
 
-Measured over the trixie corpus (phase-3 ledger build; `test-only`
+Measured over the trixie corpus (the initial ledger build; `test-only`
 had not yet been added — see below):
 
 | # | rule id | category | fingerprints settled | share |
@@ -175,7 +175,7 @@ This rule has a story the others don't: it was added *after* the
 first full corpus run, when operating the LLM triage tier showed
 ~15% of the residue touched only test files — the one deterministic
 pattern the residue still contained
-([phase-4 findings](plans/PLAN-patch-classification-phase-04-findings.md)).
+([the LLM-triage operating findings](plans/PLAN-patch-classification-phase-04-findings.md)).
 It was rolled out with the non-destructive `ledger record` pass,
 which superseded exactly the affected fingerprints' decisions and
 nothing else. It is the working example of how a new rule enters the
@@ -308,8 +308,8 @@ format-string bugs via malicious `msgstr`), so the
 mark-never-verdict posture is load-bearing here. The corroboration
 recall cost is 591 changed lines corpus-wide (0.03% of corroborated
 `.po` changed lines — header-only edits, `msgstr` continuation
-strings, comment/flag lines, obsolete `#~` entries; phase-5
-findings): a missed mark is honest, a false mark is not.
+strings, comment/flag lines, obsolete `#~` entries; measured over the
+reviews corpus): a missed mark is honest, a false mark is not.
 
 Banner versions are captured **added-lines-preferred**: the first
 hit on an added line wins, then context, then a removed line —
@@ -344,7 +344,7 @@ The version-2 record run (translations family): all 442 v1 marks
 superseded and re-recorded, **685 fingerprints** now live — 243
 newly marked by the translations family, 7 catalogue carriers
 already marked by autotools signals. The unlocked population grew
-24 → 34; the phase-5 motivating case, acetoneiso's
+24 → 34; the translations-family motivating case, acetoneiso's
 `translate.patch`, reads `translations/100` and was re-scored
 `none` residue-first (its previous `elevated` was a failed-call
 degradation on a 2.2M-token prompt).

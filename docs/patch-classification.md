@@ -86,7 +86,7 @@ on the subscription path, ~100× less input. `anthropic_call` sends the rubric a
 a 1h-cached `cache_control` block. The driver sums each call's usage into a **Cost
 & cache** report section (tokens, cache-hit ratio, reported + at-rates cost per
 run and per patch). See
-`docs/plans/PLAN-patch-classification-phase-04-triage-backend.md`. Step 4c bumped the ledger to **schema v2**: a
+`docs/plans/PLAN-patch-classification-phase-04-triage-backend.md`. The ledger schema is now **v2**, adding a
 `verified` flag on `decision`, reserved `signature`/`signed_by` columns for
 signed human ManualDecisions (4e), and a `review_queue` worklist table. The
 precedence is now `human > verified-llm > heuristic > unverified-llm`
@@ -141,7 +141,7 @@ first; it is opt-in on a pinned snapshot and recorded only when a bucket changes
 `docs/plans/PLAN-patch-classification-phase-04-risk-gate.md`,
 `docs/plans/PLAN-patch-classification-phase-04-reviewability-axis.md` and
 `docs/plans/PLAN-patch-classification-phase-04-reach-axis.md`. `cross_reference.py`
-adds the phase-6 **external** tier (`purity='external'`): it verifies the CVE/bug
+adds the **external** tier (`purity='external'`): it verifies the CVE/bug
 references a patch *claims* against Debian's own bulk-pinned records — the Security
 Tracker (`security_tracker.py` → `corpus/security_tracker.sqlite`) and the BTS
 (`bts.py` → `corpus/bts.sqlite`, a gzipped `bug→source,status` TSV built weekly from
@@ -195,7 +195,13 @@ to pre-exist; the one-time corpus/`build` steps stay
 longhand, as they create the root's contents). It guards the forgetful operator: a missing ledger or a not-a-root cwd is a
 clear error not a crash, and a **stale published cache** is loudly flagged before
 data-consuming verbs. `status` is the one-screen orientation (residue, categories,
-risk distribution, pending review, cache age). The old `python -m
+risk distribution, pending review, cache age); `report` prints the ledger's own
+markdown summary (`verdict.render_report`) — verdict/queue/superseded headline
+counts, then breakdowns by category, by deciding rule, and by observation detail.
+`report` predates `status` and `status` has superseded it for day-to-day
+orientation; what `report` still gives that `status` does not is the per-rule and
+per-observation-detail breakdown, useful for auditing which rule or LLM pass
+produced today's ledger. The old `python -m
 divergulent.classify.<x>` forms still work. See
 `docs/plans/PLAN-curation-cli-ergonomics.md`.
 
@@ -272,7 +278,14 @@ identity + signature, indicated by a worklist count badge, and never enters the
 published bundle. Flask + Jinja2 (autoescaping) are behind the optional **`review`
 extra** — `pip install divergulent[review]`, or `[review,verify]` to sign — off
 the default scan/report install; it binds **loopback only**, has no auth, is
-single-user, and is never run in CI or by clients. Handlers test offline through
+single-user, and is never run in CI or by clients. Binding loopback is not on its
+own enough, because a page in the operator's browser can post to a local server
+across origins: every request must also carry a `Host` naming this app (so a
+rebound DNS name cannot read the queue), and every state-changing one must carry
+this app's `Origin` plus a per-process token in both a `SameSite=Strict` cookie
+and the form itself. The practical consequence for the operator is that a tab
+left open across a restart submits into a **403 page** rather than a stale
+process — reload it and the verdict goes through. Handlers test offline through
 Flask's test client (injected fake `fetch`/`signer`, temp ledger; no socket). See
 `docs/plans/PLAN-patch-classification-phase-04-review-web.md`.
 
