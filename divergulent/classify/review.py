@@ -865,6 +865,15 @@ def record_review_verdict(conn: sqlite3.Connection, item: sqlite3.Row,
     the queue ``item`` reviewed.  On ``'defer'`` the item is left pending and
     NOTHING is recorded.
 
+    ALL-OR-NOTHING for any failure, not just a signing one.  The two writes are one
+    verdict: the decision is appended uncommitted and ``mark_reviewed`` commits both
+    together, so a failure between them (a locked database, say) would otherwise
+    leave the signed decision sitting in the connection's transaction, to be flushed
+    by whatever commits next -- and the caller, having been told the submission
+    failed, would never know.  Any exception rolls the pair back and re-raises, so a
+    caller that reports a failure is telling the truth: a human verdict outranks
+    every rule, and it must land only when it was deliberate.
+
     ``signer``/``now`` are injected so this is pure given a fake signer; ``now`` is
     the caller-supplied ISO-8601 timestamp (this module never reads a clock).
     """
@@ -890,12 +899,19 @@ def record_review_verdict(conn: sqlite3.Connection, item: sqlite3.Row,
         'queue_reason': context.reason,
     }, sort_keys=True)
 
-    decision_id = ledger_mod.append_decision(
-        conn, fingerprint=fingerprint, category=category, confidence='high',
-        decided_by=DECIDED_BY, rule_version=REVIEW_RULE_VERSION, kind='human',
-        verified=True, signature=signature, signed_by=signed_by,
-        evidence=evidence, decided_at=now, commit=False)
-    ledger_mod.mark_reviewed(conn, item_id=item['id'], reviewed_at=now)
+    try:
+        decision_id = ledger_mod.append_decision(
+            conn, fingerprint=fingerprint, category=category, confidence='high',
+            decided_by=DECIDED_BY, rule_version=REVIEW_RULE_VERSION, kind='human',
+            verified=True, signature=signature, signed_by=signed_by,
+            evidence=evidence, decided_at=now, commit=False)
+        ledger_mod.mark_reviewed(conn, item_id=item['id'], reviewed_at=now)
+    except Exception:
+        # Discard the half-written verdict rather than leaving it staged on a
+        # connection that outlives this call (the web UI's is process-lifetime).
+        # Re-raised so the caller still reports the failure it was going to.
+        conn.rollback()
+        raise
 
     return ReviewOutcome(fingerprint, True, False, category, decision_id)
 
