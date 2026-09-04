@@ -29,6 +29,7 @@ from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import popcon as popcon_mod
 from divergulent.classify import reach as reach_mod
 from divergulent.classify import record
+from divergulent.classify import rules as rules_mod
 from divergulent.classify import triage as triage_mod
 from divergulent.classify.corpus import body_sha256
 from divergulent.classify.fingerprint import fingerprint
@@ -236,7 +237,10 @@ class RecordToLedgerTestCase(testtools.TestCase):
         self.assertEqual('substantive', decision['decided_by'])
 
         self.assertEqual(1, stats.observations_appended)
-        self.assertEqual(0, stats.observations_skipped)
+        # ``observations_skipped`` counts FINGERPRINTS whose live scan set was already
+        # right -- as the injection counter beside it does -- so the three carrying no
+        # flag at all (empty desired == empty live) are skips, not silence.
+        self.assertEqual(3, stats.observations_skipped)
         # The dangerous-construct flag (a reviewability observation also rides
         # alongside; select the flag specifically).
         flags = [o for o in ledger_mod.observations_for(conn, _fp(TROJAN))
@@ -291,7 +295,8 @@ class IdempotencyTestCase(testtools.TestCase):
         self.assertEqual(0, second.decisions_appended)
         self.assertEqual(4, second.decisions_skipped)
         self.assertEqual(0, second.observations_appended)
-        self.assertEqual(1, second.observations_skipped)
+        self.assertEqual(4, second.observations_skipped)   # every fingerprint's set was right
+        self.assertEqual(0, second.observations_superseded)
         self.assertEqual(0, second.reviewability_appended)
         self.assertEqual(4, second.reviewability_skipped)
 
@@ -594,3 +599,60 @@ class ProjectionScreenedTestCase(testtools.TestCase):
                    if obs['kind'] == injection_mod.INJECTION_KIND and obs['superseded_at'] is None}
         self.assertEqual({injection_mod.SCAN_TRUNCATED_FAMILY + '/' + injection_mod.DIFF_REGION}, details)
         self.assertNotIn(fp_hex, injection_mod.injection_suspect_fingerprints(conn))
+
+
+class ScanVersionBumpTestCase(testtools.TestCase):
+    """A RULES_VERSION bump supersedes the previous generation of scan rows.
+
+    The version bump is how this project makes a rule-semantics change auditable,
+    and that only works if the recorder actually retires what the old version
+    wrote.  An exists-then-append loop keyed on the CURRENT version cannot: it
+    stacks a second live row beside the first when the flag still fires, and
+    leaves the old row live forever when the tightened pattern no longer produces
+    it -- which is precisely the case the bump exists for.
+    """
+
+    def _run(self, corpus_dir, index_path, conn, *, now):
+        return record.record_to_ledger(conn, corpus_dir, index_path, now=now)
+
+    def _setup(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        index_path = _build_synthetic_corpus(tmp.name)
+        conn = ledger_mod.create_ledger(os.path.join(tmp.name, 'ledger.sqlite'))
+        self.addCleanup(conn.close)
+        return conn, tmp.name, index_path
+
+    def _scan_rows(self, conn, live_only=True):
+        return [o for o in ledger_mod.observations_for(conn, _fp(TROJAN))
+                if o['observed_by'] == 'dangerous-construct-scan'
+                and (o['superseded_at'] is None or not live_only)]
+
+    def test_a_bump_supersedes_rather_than_stacking_a_second_row(self):
+        conn, corpus_dir, index_path = self._setup()
+        self._run(corpus_dir, index_path, conn, now=WHEN)
+        self.assertEqual([RULES_VERSION], [r['rule_version'] for r in self._scan_rows(conn)])
+
+        self.patch(record, 'RULES_VERSION', RULES_VERSION + 1)
+        stats = self._run(corpus_dir, index_path, conn, now=LATER)
+
+        self.assertEqual(1, stats.observations_superseded)
+        live = self._scan_rows(conn)
+        # Exactly one live row, at the new version -- not two generations side by side.
+        self.assertEqual([RULES_VERSION + 1], [r['rule_version'] for r in live])
+        self.assertEqual(2, len(self._scan_rows(conn, live_only=False)))  # v1 kept as history
+
+    def test_a_flag_the_new_version_no_longer_finds_is_retired(self):
+        """The case the bump exists for: a pattern that now rejects what it flagged."""
+        conn, corpus_dir, index_path = self._setup()
+        self._run(corpus_dir, index_path, conn, now=WHEN)
+        self.assertEqual(1, len(self._scan_rows(conn)))
+
+        # A tightened scan that finds nothing, arriving with its version bump.
+        self.patch(record, 'RULES_VERSION', RULES_VERSION + 1)
+        self.patch(rules_mod, 'scan_dangerous_constructs', lambda *a, **k: [])
+        stats = self._run(corpus_dir, index_path, conn, now=LATER)
+
+        self.assertEqual(1, stats.observations_superseded)
+        self.assertEqual([], self._scan_rows(conn))                # nothing live
+        self.assertEqual(1, len(self._scan_rows(conn, live_only=False)))  # history intact

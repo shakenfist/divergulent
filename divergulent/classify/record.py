@@ -53,6 +53,12 @@ from divergulent.classify.rules import RULES_VERSION
 # dangerous-construct flags are recorded under this id at ``RULES_VERSION``.
 _SCAN_RULE_ID = 'dangerous-construct-scan'
 
+# The kind those flags carry (``rules.Flag.kind``).  Named here because the
+# desired-vs-live reconcile has to supersede the fingerprint's live rows BEFORE
+# it knows what this run's flags are -- including the case where the scan now
+# finds nothing and the whole live set must be retired.
+_SCAN_KIND = 'dangerous-construct'
+
 # The observation source for the prompt-injection tripwire.  All
 # ``llm-injection-suspect`` flags are recorded under this id at
 # ``injection.INJECTION_RULES_VERSION``.
@@ -74,8 +80,14 @@ class RecordStats:
     decisions_appended: int = 0
     decisions_skipped: int = 0
     decisions_superseded: int = 0
+    # The dangerous-construct scan.  ``observations_appended`` counts rows newly
+    # written (one per firing pattern); ``observations_skipped`` counts fingerprints
+    # whose live set was already exactly right; ``observations_superseded`` counts
+    # stale rows retired when the set changed (a version bump, or a body whose flags
+    # the tightened patterns no longer produce).
     observations_appended: int = 0
     observations_skipped: int = 0
+    observations_superseded: int = 0
     reviewability_appended: int = 0
     reviewability_skipped: int = 0
     reach_appended: int = 0
@@ -232,9 +244,11 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
       ``rule_version=RULES_VERSION``, ``observed_at=now``.
 
     Idempotent: a decision is skipped when a LIVE decision already exists for
-    ``(fingerprint, decided_by, rule_version)``; an observation is skipped when a
-    LIVE observation already exists for ``(fingerprint, observed_by,
-    rule_version, detail, evidence)``.  A second run therefore appends nothing.
+    ``(fingerprint, decided_by, rule_version)``; the deterministic observation
+    blocks each compare the fingerprint's DESIRED set against its LIVE one and
+    skip when they match.  A second run therefore appends nothing -- and, unlike
+    an exists-then-append loop, a run at a NEW ``rule_version`` supersedes the
+    previous generation instead of stacking a second one beside it.
 
     ``reconcile`` (the ``ledger record`` path, default off so ``build``'s
     behaviour is unchanged): when the WINNING rule for a fingerprint has changed
@@ -318,13 +332,25 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
                 evidence=' | '.join(verdict.signals), decided_at=now, commit=False)
             stats.decisions_appended += 1
 
-        for flag in verdict.flags:
-            if ledger_mod.live_observation_exists(
-                    conn, fingerprint=record.fingerprint, observed_by=_SCAN_RULE_ID,
-                    rule_version=RULES_VERSION, detail=flag.detail,
-                    evidence=flag.evidence):
-                stats.observations_skipped += 1
-            else:
+        # Desired-vs-live over the WHOLE set, the same shape the injection block
+        # below uses, and for the same reason: an exists-then-append loop keyed on
+        # the current RULES_VERSION can only ever ADD. It cannot retire a row the
+        # scan no longer produces, so a version bump -- the mechanism this project
+        # uses to make a rule change auditable -- left the old generation live
+        # beside the new one, and a flag the tightened pattern now rejects lived
+        # forever. The body is fingerprint-stable and the scan is pure, so an
+        # unchanged set still skips and the ~60k clean fingerprints see no churn.
+        desired_scan = {(flag.detail, flag.evidence, RULES_VERSION) for flag in verdict.flags}
+        live_scan = {(obs['detail'], obs['evidence'], obs['rule_version'])
+                     for obs in ledger_mod.observations_for(conn, record.fingerprint)
+                     if obs['observed_by'] == _SCAN_RULE_ID and obs['superseded_at'] is None}
+        if desired_scan == live_scan:
+            stats.observations_skipped += 1
+        else:
+            stats.observations_superseded += ledger_mod.supersede_observations_for_fingerprint(
+                conn, fingerprint=record.fingerprint, kind=_SCAN_KIND,
+                observed_by=_SCAN_RULE_ID, superseded_at=now, commit=False)
+            for flag in verdict.flags:
                 ledger_mod.append_observation(
                     conn, fingerprint=record.fingerprint, kind=flag.kind,
                     detail=flag.detail, evidence=flag.evidence,

@@ -46,9 +46,10 @@ from divergulent.classify.content import ContentProfile
 #
 # 2: the ``shell-out`` backtick pair is bounded (200 chars a side, no newline).
 #    The pattern now REJECTS inputs version 1 flagged, so a live ``shell-out``
-#    row recorded at 1 may be one this version could never produce; the bump is
-#    what makes the next record pass supersede and re-record it deliberately
-#    rather than leave the two indistinguishable.
+#    row recorded at 1 may be one this version could never produce.  The next
+#    record pass supersedes and re-records it: ``record.py`` reconciles the
+#    fingerprint's whole desired-vs-live scan set, and the version is part of
+#    that set, so the old generation is retired rather than left beside the new.
 # ---------------------------------------------------------------------------
 
 RULES_VERSION = 2
