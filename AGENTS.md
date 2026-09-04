@@ -139,13 +139,13 @@ it never shadows the software "latest" release; the client's
 `.../releases/download/cache/cache-<release>.json.gz`. Because signing
 stays in `build-cache.yml` on the default branch, the Sigstore identity is
 `build-cache.yml@refs/heads/develop` for scheduled and dispatched runs
-alike — but this must be confirmed against a real published signature (no
-end-to-end VERIFIED has run yet). `EXPECTED_SIGNER_IDENTITIES` is a tuple,
-not a string, and still carries the pre-rename `@refs/heads/main` entry:
-the certificate identity is a property of the signing *run*, so bundles
-published before the branch rename keep the old ref until the next
-scheduled build republishes them. Drop that entry once no published bundle
-predates the rename.
+alike — confirmed against a real published signature by a VERIFIED `cache
+pull` on 2026-09-04. `EXPECTED_SIGNER_IDENTITIES` is a tuple, not a
+string, and still carries the pre-rename `@refs/heads/main` entry because
+the certificate identity is a property of the signing *run*. Both rolling
+prereleases were republished after the rename, so nothing *published*
+needs that entry any more, but a client holding a *stored* pre-rename
+bundle still does — keep it through a release cycle before dropping it.
 
 `--classify` (Tier 2) classifies the whole machine via
 `divergulent.sources.apt_patches.AptSourcePatches`: it resolves each

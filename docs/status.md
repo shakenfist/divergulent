@@ -18,21 +18,22 @@ assessment).
 
 ## The published precomputed cache
 
-A **published precomputed cache** is in progress
-([plans/PLAN-published-cache.md](plans/PLAN-published-cache.md)):
+A **published precomputed cache** works today
+([plans/PLAN-published-cache.md](plans/PLAN-published-cache.md), complete):
 the slow half of a cold run (staleness + divergence) is a function of the
-Debian release, not of your machine, so it can be computed once centrally
-and downloaded as a small signed bundle. Two pieces exist now: a central
-builder (`divergulent cache build`, run in CI) that sweeps the whole
-archive into a ~0.73 MB gzipped bundle; client consumption — the
-`--bundle PATH` flag and `cache pull` resolve covered packages from a
-bundle (downloaded and stored locally, used automatically, with a live
-fallback); trust — the bundle is Sigstore-signed in CI, verified on the
-client (with the optional `verify` extra) and always spot-checked against
-live origins; and publishing — a scheduled CI job builds, signs and
-publishes the bundle daily to a stable URL, so `cache pull` just works.
-Growing the published cache to a Debian 11/12/13/testing/unstable matrix
-is tracked in the road-to-1.0 plan.
+Debian release, not of your machine, so it is computed once centrally and
+downloaded as a small signed bundle. Install divergulent, run `cache pull`
+with no arguments, and runs are fast from then on. The pieces: a central
+builder (`divergulent cache build`) that sweeps the whole archive into a
+~0.73 MB gzipped bundle; client consumption — the `--bundle PATH` flag and
+`cache pull` resolve covered packages from a bundle (downloaded and stored
+locally, used automatically, with a live fallback); trust — the bundle is
+Sigstore-signed in CI, verified on the client (with the optional `verify`
+extra) and always spot-checked against live origins; and publishing — a
+scheduled CI job builds, signs and publishes the bundle daily to a stable
+URL. The cache currently covers **trixie only**; growing it to a Debian
+11/12/13/testing/unstable matrix is the remaining work, tracked in the
+road-to-1.0 plan.
 
 ## The patch-classification pipeline
 

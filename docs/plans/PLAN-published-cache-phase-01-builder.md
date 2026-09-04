@@ -62,20 +62,35 @@ day (`cache-trixie.json.gz`, 755,908 bytes, built
 | `bash` staleness | `5.3.p15` | `divergulent show bash`: newest `5.3.p15` | match |
 | `bash` divergence | `3.0 (quilt)`, `patched`, `total 20`, version `5.2.37-2` | patches API: `format 3.0 (quilt)`, `count 20` | match |
 | Provenance | `release: trixie`, `built_on {arch: amd64, release: trixie}`, `schema`/`cache_schema` 1 | — | present |
-| Entry counts | 41,317 staleness, 37,588 divergence | ≈34k source packages in the archive | right order |
+| Staleness entries | 41,317 | the whole `debian_unstable` Repology project set | expected to exceed the trixie source count |
+| Divergence entries | 37,588 | 37,588 sources from `enumerate_archive` over the trixie deb-src indices | exact |
+
+The two counts are drawn from different populations and should not be
+compared to one baseline. Staleness comes from
+`builder.build_staleness_map`, which sweeps Repology's `debian_unstable`
+repo — a superset of trixie, so a count above the trixie source count is
+correct, not duplication. Divergence has exactly one entry per source name
+returned by `enumerate_archive`, and the build log's progress meter for
+that run reads `[…/37588]`, so the two match exactly. (The ≈34k figure in
+the timing bullet above was the pre-build estimate; the real enumeration
+is 37,588.)
 
 One apparent discrepancy is worth recording so a future reader does not
 re-investigate it: `divergulent show bash` lists **19** patches while the
 bundle says **20**. That is by design, not drift. The patches API renders
 at most 60 entries and occasionally drops one it cannot display, so
-`_patch_count` (`divergulent/sources/debian_patches.py:196`) trusts the
+`_patch_count` (in `divergulent/sources/debian_patches.py`) trusts the
 API's top-level `count` field — the true `debian/patches/series` length —
 over the rendered list, while `details()` can only classify the entries
 the API rendered. The live API confirms `count: 20` with 19 rendered
 entries for `bash 5.2.37-2`, so both numbers are correct for what they
-measure.
+measure. The invariant is covered offline by
+`test_count_field_used_when_above_rendered` and its siblings in
+`divergulent/tests/test_debian_patches.py`, which use a different bash
+version as their example — the numbers there and here differ for that
+reason, not because they disagree.
 
-Two scoping decisions taken during implementation:
+### Scoping decisions taken during implementation
 
 - **`RepologyBulkSource` (the client-side consumer of the map) is
   deferred to phase 2**, where the master plan actually consumes it.

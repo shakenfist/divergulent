@@ -75,11 +75,13 @@ This graduates to its own `PLAN-cache-matrix.md` when picked up.
 
 ### 3. Trust hardening
 
-- [ ] **A real end-to-end VERIFIED.** Signing/verification has only been
-      exercised with mocks and the malformed→FAILED path. Do a genuine
-      sign → publish → `cache pull` → VERIFIED cycle and pin the exact
-      signer identity the real certificate carries (closes the phase-4
-      risk that `EXPECTED_SIGNER_IDENTITY` is a guess).
+- [x] **A real end-to-end VERIFIED.** Done 2026-09-04: a `cache pull`
+      against the published bundle reported `signature verified`, and the
+      certificate identity the real run carries is
+      `build-cache.yml@refs/heads/develop`, which
+      `EXPECTED_SIGNER_IDENTITIES` already accepts — so the phase-4 "the
+      expected identity is a guess" risk is closed. See
+      [PLAN-published-cache-phase-05-publish.md](PLAN-published-cache-phase-05-publish.md).
 - [ ] **Decide the default trust level.** Today, with no `verify` extra, a
       bundle that passes the spot-check is stored even unsigned. Confirm
       spot-check-as-the-floor is the intended 1.0 default, or nudge harder

@@ -5,7 +5,7 @@ High effort: a trust-critical phase. Sigstore signing in CI, an opt-in
 in-process verifier on the client, and an always-on "no cry wolf"
 spot-check of the bundle against live origins.
 
-**Status: implemented (CI signing pending a real run).** `divergulent/
+**Status: complete.** `divergulent/
 verify.py` adds `verify_signature` (lazy `sigstore` import, SKIPPED when
 the `verify` extra is absent) and `spot_check` (immutable-divergence
 exact match vs live, inconclusive on UNKNOWN); the `verify` extra is
@@ -16,8 +16,12 @@ re-checks a stored or given bundle. `build-cache.yml` signs the bundle
 (`tools/sign-bundle.sh`, `id-token: write`). Tests are offline (sigstore
 objects injected; SKIPPED path real; spot-check with fake live sources;
 the real-`sigstore` FAILED path was confirmed manually). Suite green;
-`pre-commit` clean. The signed-CI-run end-to-end (a real VERIFIED) needs
-a `workflow_dispatch`, like the phase-1 measurement.
+`pre-commit` clean. The signed-CI-run end-to-end ran on 2026-09-04: a real
+`cache pull` against the published bundle reported VERIFIED, and the
+certificate identity is `@refs/heads/develop` — which
+`EXPECTED_SIGNER_IDENTITIES` already accepts, so the "the expected
+identity is a guess" risk is closed. See
+[PLAN-published-cache-phase-05-publish.md](PLAN-published-cache-phase-05-publish.md).
 
 The sigstore API was verified empirically against **sigstore 4.3.0**:
 `Verifier.production().verify_artifact(input_, bundle, policy)`,

@@ -199,9 +199,9 @@ delivery phases (4–5).
 | Phase | Plan | Status |
 |-------|------|--------|
 | 1. Central builder + CI run: whole-archive sweep, emit bundle, **measure size/timing** | PLAN-published-cache-phase-01-builder.md | Complete (~0.73 MB; ~95 min cold, ~80 s incremental; spot-check passed) |
-| 2. Bundle schema + bundle-backed sources + live fallback | PLAN-published-cache-phase-02-consume.md | Implemented (`--bundle`, bundle-backed sources + per-entry live fallback) |
-| 3. `cache pull`: download, validate, store, configurable URL | PLAN-published-cache-phase-03-pull.md | Implemented (`cache pull`, auto-discovery, freshness contract) |
-| 4. Signing + client verification + spot-verify | PLAN-published-cache-phase-04-signing.md | Implemented (CI signing, opt-in `verify` extra, always-on spot-check) |
+| 2. Bundle schema + bundle-backed sources + live fallback | PLAN-published-cache-phase-02-consume.md | Complete (`--bundle`, bundle-backed sources + per-entry live fallback) |
+| 3. `cache pull`: download, validate, store, configurable URL | PLAN-published-cache-phase-03-pull.md | Complete (`cache pull`, auto-discovery, freshness contract) |
+| 4. Signing + client verification + spot-verify | PLAN-published-cache-phase-04-signing.md | Complete (CI signing, opt-in `verify` extra, always-on spot-check) |
 | 5. Scheduled daily publish to GitHub Releases | PLAN-published-cache-phase-05-publish.md | Complete (scheduled build/sign/publish to a rolling `cache` prerelease; real `cache pull` verifies) |
 
 **Plan complete (2026-09-04).** All five phases are done and confirmed

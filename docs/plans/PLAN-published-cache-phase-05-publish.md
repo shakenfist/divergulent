@@ -28,15 +28,14 @@ production:
   2026-09-03T11:54Z.
 - The schedule works unattended: `build-cache.yml` has run daily from a
   `schedule:` trigger and succeeded on every run since 2026-08-22.
-- A real `divergulent cache pull` with no arguments downloads, verifies
-  and stores the published bundle:
+- A real `divergulent cache pull` downloads, verifies and stores the
+  published bundle. Verbatim output, from a run with the spot-check sample
+  raised to 40 (long lines are the tool's, unwrapped):
 
   ```
-  signature verified (signed by https://github.com/shakenfist/divergulent/
-      .github/workflows/build-cache.yml@refs/heads/develop)
-  spot-check passed (3 checked, 5 inconclusive)
-  stored cache-trixie.json.gz (755908 bytes, 41317 staleness,
-      37588 divergence entries, built 2026-09-03T11:52:49+00:00)
+  divergulent: signature verified (signed by https://github.com/shakenfist/divergulent/.github/workflows/build-cache.yml@refs/heads/develop).
+  divergulent: spot-check passed (40 checked, 0 inconclusive).
+  divergulent: stored /home/mikal/.cache/divergulent/cache-trixie.json.gz (755908 bytes, 41317 staleness, 37588 divergence entries, built 2026-09-03T11:52:49.218230+00:00)
   ```
 
   That closes the phase-4 "never verified end-to-end" risk: the default
@@ -47,12 +46,31 @@ production:
   (`EXPECTED_SIGNER_IDENTITIES`), so bundles published either side of the
   rename verify.
 
+  A first pull at the default sample of 8 returned "3 checked, 5
+  inconclusive", which is a weak base to close a phase on: per
+  `verify.spot_check`, an entry is inconclusive when *either* side declines
+  — the bundle entry is UNKNOWN, or the live `summary()` will not resolve —
+  and neither refuses a bundle. Re-running at 40 settled it: 40 definite
+  bundle claims were each contradicted by nothing live, and the inconclusive
+  share went to zero. So 5-in-8 was sampling luck on a small sample, not a
+  bundle-quality signal.
+
 **On reading the run durations.** The scheduled runs report wall-clock
 durations from 4 minutes to over 7 hours, which looks like the ~80 s
-incremental build regressing. It is not. On the 2026-09-03 run the *build
-step* took 66 s (11:52:35 → 11:53:41); the rest is time queued waiting for
-the self-hosted runner (scheduled 08:54, started 11:52). The daily-delta
-model holds — judge the build by its step time, not the run duration.
+incremental build regressing. It is not — the duration is dominated by two
+queues, neither of which is ours. All times UTC, from the 2026-09-03 run
+(id 33735871813):
+
+| Event | Time | Gap |
+|-------|------|-----|
+| `cron: '17 4 * * *'` fires | 04:17 | — |
+| GitHub creates the run (`created_at`) | 08:54 | 4h37m of GitHub's own scheduled-dispatch delay |
+| The self-hosted runner picks up the job | 11:52 | 2h58m queued for the runner |
+| The *build step* runs | 11:52:35 → 11:53:41 | 66 s |
+
+So the cron time and the run's `created_at` are different things and
+neither is when the build ran. The daily-delta model holds — judge the
+build by its step time, not the run duration.
 
 ## Prompt
 
