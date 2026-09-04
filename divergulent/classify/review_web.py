@@ -122,6 +122,14 @@ def origin_is_local(value: str | None, port: int) -> bool:
     An ``Origin`` is scheme + authority; the UI is served over plain HTTP on
     loopback, so anything else -- another scheme, another host, another port, or the
     literal ``null`` a sandboxed iframe sends -- is not us.
+
+    The PORT is required EXACTLY, unlike :func:`host_is_local`, which tolerates an
+    absent one because a client may legitimately omit it from ``Host``.  An origin
+    has no such licence: a browser writes the port whenever it is not the scheme's
+    default, so an absent one means 80 and nothing else.  Delegating the
+    port-optional rule here would let a page served from ``http://localhost:80``
+    pass as this app on 8765 -- which is what the paragraph above promises it does
+    not.
     """
     if not value:
         return False
@@ -131,7 +139,10 @@ def origin_is_local(value: str | None, port: int) -> bool:
         return False  # unparseable is certainly not us
     if parsed.scheme != 'http':
         return False
-    return host_is_local(parsed.netloc, port)
+    host, origin_port = _split_authority(parsed.netloc)
+    if host.lower() not in LOOPBACK_HOSTS:
+        return False
+    return (origin_port or '80') == str(port)
 
 
 def guard_request(*, method: str, host: str | None, origin: str | None,

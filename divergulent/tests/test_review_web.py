@@ -145,9 +145,13 @@ class ReviewWebFixture:
         client.set_cookie(review_web.CSRF_COOKIE, self.csrf)
         return client, conn, fp_hex
 
-    def _post(self, client, path, data=None, *, token=True, origin='http://localhost',
-              headers=None):
+    def _post(self, client, path, data=None, *, token=True,
+              origin='http://localhost:%d' % review_web.DEFAULT_PORT, headers=None):
         """POST the way the UI's own forms do: same-origin, with the CSRF token.
+
+        The origin carries the PORT, as a browser's does for anything but the scheme's
+        default -- the guard requires it exactly, so a port-less origin is a different
+        server rather than a lenient spelling of this one.
 
         ``token=False`` omits the hidden field, ``origin=None`` omits the header, and
         ``headers`` adds or overrides one (a foreign ``Host``, say) -- the three knobs
@@ -672,8 +676,10 @@ class CsrfGuardTestCase(ReviewWebFixture, testtools.TestCase):
         token = re.search(r'name="csrf_token" value="([^"]+)"',
                           page.get_data(as_text=True)).group(1)
 
-        resp = client.post('/review/' + fp_hex, headers={'Origin': 'http://localhost'},
-                           data={'choice': 'accept', review_web.CSRF_FIELD: token})
+        resp = client.post(
+            '/review/' + fp_hex,
+            headers={'Origin': 'http://localhost:%d' % review_web.DEFAULT_PORT},
+            data={'choice': 'accept', review_web.CSRF_FIELD: token})
 
         self.assertEqual(302, resp.status_code)
         self.assertIn('record_bytes', seen)
@@ -705,8 +711,25 @@ class RequestGuardTestCase(testtools.TestCase):
         self.assertIsNone(self._guard())
 
     def test_every_loopback_name_passes_on_the_bound_port(self):
-        for host in ('127.0.0.1', 'localhost', '127.0.0.1:8765', 'localhost:8765', '[::1]:8765'):
+        for host in ('127.0.0.1:8765', 'localhost:8765', '[::1]:8765'):
             self.assertIsNone(self._guard(host=host, origin='http://' + host), host)
+
+    def test_a_port_less_host_is_tolerated_but_a_port_less_origin_is_not(self):
+        """The two headers get different port rules, deliberately.
+
+        A client may legitimately omit the port from ``Host`` (the test client does),
+        and the name it sends is still not attacker-chosen, so the loopback name alone
+        carries the anti-rebinding weight there.  An ``Origin`` has no such licence: a
+        browser writes the port whenever it is not the scheme's default, so a
+        port-less origin means 80 -- a DIFFERENT server, which must not pass as this
+        one just because it is also on loopback.
+        """
+        for host in ('127.0.0.1', 'localhost'):
+            self.assertIsNone(self._guard(method='GET', host=host, origin=None), host)
+            self.assertIn('not this review UI',
+                          self._guard(host=host, origin='http://' + host), host)
+        self.assertFalse(review_web.origin_is_local('http://localhost', 8765))
+        self.assertTrue(review_web.origin_is_local('http://localhost', 80))
 
     def test_a_foreign_host_is_refused_even_on_a_safe_method(self):
         self.assertIn('DNS rebinding', self._guard(method='GET', host='evil.example'))
