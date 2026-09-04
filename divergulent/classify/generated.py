@@ -927,19 +927,30 @@ def evidence_for(scan: GeneratedScan) -> str:
     skip depends on.
     """
     return json.dumps(
-        {'files': [
-            {'path': entry.path,
-             'family': entry.family,
-             'signals': list(entry.signals),
-             'generator': entry.generator,
-             'version': entry.version,
-             'added': entry.added,
-             'removed': entry.removed}
-            for entry in scan.files],
+        {'files': mark_files_for(scan),
          'generated_changed': scan.generated_changed,
          'residue_changed': scan.residue_changed,
          'total_changed': scan.total_changed},
         sort_keys=True)
+
+
+def mark_files_for(scan: GeneratedScan) -> list[dict]:
+    """The mark's per-file evidence list, in DIFF order, as :func:`evidence_for` writes it.
+
+    The ``files`` value ``generated_marks`` hands back on the read side, built directly
+    from a fresh scan -- so a caller holding a scan (the recorder) can drive
+    :func:`project_residue_first` without a JSON round-trip through the ledger, and there
+    is exactly one definition of the shape both sides use.
+    """
+    return [
+        {'path': entry.path,
+         'family': entry.family,
+         'signals': list(entry.signals),
+         'generator': entry.generator,
+         'version': entry.version,
+         'added': entry.added,
+         'removed': entry.removed}
+        for entry in scan.files]
 
 
 def generated_marks(conn) -> dict[str, dict]:

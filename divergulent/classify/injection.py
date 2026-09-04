@@ -58,18 +58,35 @@ INJECTION_KIND = 'llm-injection-suspect'
 # Folds the family set + tuning into the observation's ``rule_version``; bumping
 # it (e.g. retiring a family) supersedes prior observations and re-scans, exactly
 # like every other deterministic rule.
-INJECTION_RULES_VERSION = 1
+#
+# 2: the chat-marker anchor narrowed to horizontal whitespace, which moves the
+#    match start and so changes the evidence snippet; :data:`SCAN_TRUNCATED_FAMILY`
+#    joined the set; and the recorder now screens the residue-first projection of
+#    an oversized MARKED patch, which can add a diff-region hit version 1 never
+#    looked for.  A row at 1 is therefore not comparable with one this version
+#    would write.
+INJECTION_RULES_VERSION = 2
 
 # Every scanned character is attacker-authored, and ``record.py`` scans BOTH
 # regions of EVERY fingerprint in the corpus -- long before any of the triage
 # tier's size caps apply -- so an unbounded scan hands whoever wrote the patch
 # the recorder's wall clock.  Being a tripwire rather than a shield, the scan is
 # a SCREEN: a bounded head of a region is as informative as the whole of a 10 MB
-# patch, and this bound sits comfortably above the 400,000 characters
-# ``triage_driver.MAX_DIFF_CHARS_FOR_LLM`` will ever hand a model, so everything
-# the model can be shown on the ordinary path has been screened.  Both callers
-# inherit the cap through :func:`scan_text`, and truncation is recorded rather
-# than silent (:data:`SCAN_TRUNCATED_FAMILY`).
+# patch.  Callers inherit the cap through :func:`scan_text`, and truncation is
+# recorded rather than silent (:data:`SCAN_TRUNCATED_FAMILY`).
+#
+# The bound sits above the 400,000 characters
+# ``triage_driver.MAX_DIFF_CHARS_FOR_LLM`` will ever hand a model, so a model
+# shown a PREFIX of the diff body is shown only screened text.  That covers the
+# ordinary path but NOT a fingerprint carrying a generated-content mark, whose
+# body ``generated.project_residue_first`` reorders before the cap: residue from
+# anywhere in a multi-megabyte diff is hoisted into the head the model reads.
+# The recorder closes that by screening the projection as well, and only where
+# it can differ -- when the raw scan truncated (below the cap the projection is a
+# permutation of already-screened text).  So the invariant the tiers rely on is:
+# every character the model can be shown has been through this scanner.  What is
+# NOT claimed is exhaustiveness -- the tail of an oversized patch that no
+# projection hoists is unread, and says so.
 MAX_SCAN_CHARS = 1_048_576
 
 # The pseudo-family a truncated scan records: not a suspicion about the patch,

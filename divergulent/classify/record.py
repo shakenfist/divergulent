@@ -356,6 +356,12 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
                 observed_at=now, commit=False)
             stats.reviewability_appended += 1
 
+        # The generated-content scan is computed HERE, above the tripwire, because the
+        # tripwire's screen needs the mark: the residue-first projection it drives is
+        # what an oversized marked patch actually shows a model. Its OBSERVATION is
+        # still written below, with the rest of its block.
+        generated_scan = generated_mod.scan(record.body)
+
         # The deterministic prompt-injection tripwire -- its own rule identity.
         # Scans the LLM-visible diff body and, separately, the author-controlled
         # header for injection-shaped text; each firing family/region becomes an
@@ -369,7 +375,31 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
         diff_region = triage_mod.diff_body(record.body)
         header_region = (record.body[:len(record.body) - len(diff_region)]
                          if diff_region else record.body)
-        injection_flags = (injection_mod.scan_injection(diff_region, region=injection_mod.DIFF_REGION)
+        diff_flags = injection_mod.scan_injection(diff_region, region=injection_mod.DIFF_REGION)
+
+        # The screen reads a PREFIX of each region, and both LLM tiers read a prefix
+        # of the diff body too -- a shorter one -- so a prefix screen ordinarily
+        # covers everything the model can be shown. A MARKED fingerprint breaks that
+        # ordering: ``project_residue_first`` REORDERS the body before the cap, so
+        # hand-written residue from anywhere in a multi-megabyte diff is hoisted into
+        # the head the model reads. When the raw scan was TRUNCATED, that hoisted text
+        # may never have been looked at -- and the residue-unlocked population is
+        # exactly the oversized one. So the projection is screened too, in that case
+        # only: below the cap the projection is a permutation of already-screened text
+        # (its segments are verbatim; the preamble and notes are ours), so re-scanning
+        # it could not find anything the raw scan missed. Hits ride the same
+        # diff-region detail -- one ledger fact, one skip, no second decision point --
+        # and a family the raw scan already found is not duplicated.
+        if len(diff_region) > injection_mod.MAX_SCAN_CHARS and generated_scan.files:
+            projected = generated_mod.project_residue_first(
+                diff_region, generated_mod.mark_files_for(generated_scan)).text
+            seen = {flag.detail for flag in diff_flags}
+            diff_flags += [
+                flag for flag in injection_mod.scan_injection(
+                    projected, region=injection_mod.DIFF_REGION)
+                if flag.detail not in seen]
+
+        injection_flags = (diff_flags
                            + injection_mod.scan_injection(header_region, region=injection_mod.HEADER_REGION))
         desired_injection = {(flag.detail, flag.evidence, injection_mod.INJECTION_RULES_VERSION)
                              for flag in injection_flags}
@@ -404,7 +434,6 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
         # because a tightened rule un-marked its files (retraction supersedes the prior row
         # and appends nothing). NEVER a verdict -- nothing downstream may map this mark to
         # a category.
-        generated_scan = generated_mod.scan(record.body)
         desired_generated = set() if not generated_scan.files else {
             (generated_mod.detail_for(generated_scan), generated_mod.evidence_for(generated_scan),
              generated_mod.GENERATED_RULES_VERSION)}
