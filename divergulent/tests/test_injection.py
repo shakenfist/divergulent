@@ -20,9 +20,9 @@ the pre-fix chat-marker anchor cost 5.8s on 40k newlines and grew quadratically
 tightened patterns are asserted to still catch what they caught before.
 """
 import os
-import time
 import sqlite3
 import tempfile
+import time
 
 import testtools
 
@@ -278,6 +278,40 @@ class RecordIntegrationTestCase(testtools.TestCase):
         summary = injection.injection_by_fingerprint(self.conn)
         self.assertEqual('instruction-phrase', summary[self._fp('diff-hit.patch')])
         self.assertNotIn(self._fp('clean.patch'), summary)
+
+    def _append_injection(self, name, detail):
+        """Append one live ``llm-injection-suspect`` row, as the recorder would."""
+        ledger_mod.append_observation(
+            self.conn, fingerprint=self._fp(name), kind=injection.INJECTION_KIND,
+            detail=detail, evidence='screened the first N of M characters',
+            observed_by='injection-scan', rule_version=injection.INJECTION_RULES_VERSION,
+            observed_at=WHEN)
+
+    def test_a_truncation_note_alone_never_reaches_the_skip_set(self):
+        """The pure predicate is not enough: the ledger-layer filters must honour it.
+
+        ``is_suspect_family`` is load-bearing for both security-routing helpers, and
+        each reaches it through ``family_of`` on a ``'<family>/<region>'`` detail.  A
+        fingerprint whose only live injection row is the limits note must be absent
+        from both, or a capped scan would divert every oversized patch from the model
+        -- the population the residue projection exists to get in FRONT of it.
+        """
+        self._append_injection('clean.patch', injection.SCAN_TRUNCATED_FAMILY + '/diff')
+
+        self.assertNotIn(self._fp('clean.patch'), injection.injection_suspect_fingerprints(self.conn))
+        self.assertNotIn(self._fp('clean.patch'), injection.injection_by_fingerprint(self.conn))
+        # The row IS live -- it is filtered, not missing: the audit trail still has it.
+        self.assertEqual(1, len(self._injection_obs('clean.patch')))
+        # And the suspect fingerprint alongside it is unaffected.
+        self.assertIn(self._fp('diff-hit.patch'), injection.injection_suspect_fingerprints(self.conn))
+
+    def test_a_truncation_note_beside_a_real_hit_does_not_pollute_the_badge(self):
+        self._append_injection('diff-hit.patch', injection.SCAN_TRUNCATED_FAMILY + '/diff')
+
+        self.assertIn(self._fp('diff-hit.patch'), injection.injection_suspect_fingerprints(self.conn))
+        self.assertEqual(
+            'instruction-phrase',
+            injection.injection_by_fingerprint(self.conn)[self._fp('diff-hit.patch')])
 
     def test_stats_count_the_hits(self):
         self.assertEqual(2, self.stats.injection_appended)
