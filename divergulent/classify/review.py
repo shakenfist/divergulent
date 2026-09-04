@@ -1127,19 +1127,36 @@ def requeue_one(conn: sqlite3.Connection, fingerprint: str, *, now,
     pending item carrying ``reason``.  Does NOT commit or rebuild the verdict
     cache; the CLI does both once.  ``now`` is caller-supplied (this module never
     reads a clock).
-    """
-    superseded = ledger_mod.supersede_decisions_for_fingerprint(
-        conn, fingerprint=fingerprint, kind='human', superseded_at=now, commit=False)
-    reopened = ledger_mod.reopen_review_items(conn, fingerprint=fingerprint, commit=False)
 
-    created = False
-    if reopened == 0 and not ledger_mod.pending_review_item_exists(conn, fingerprint=fingerprint):
-        ledger_mod.append_review_item(
-            conn, fingerprint=fingerprint,
-            reason=reason or 'manually re-queued for human review',
-            draft_category=None, draft_confidence=None,
-            enqueued_at=now, priority=0, commit=False)
-        created = True
+    ALL-OR-NOTHING, for the same reason :func:`record_review_verdict` is: the two
+    or three writes are one re-queue, all left uncommitted for the caller, so a
+    failure part-way -- a locked database, say -- would otherwise leave the earlier
+    ones staged on a connection that outlives this call (the web UI's is
+    process-lifetime), to be flushed by whatever commits next.  That is the worse
+    half of the pair: the supersede lands without the re-open, so a human verdict is
+    silently retracted and the patch is not queued for anyone to replace it, while
+    the operator was told the re-queue crashed.  Any exception rolls the set back
+    and re-raises, so a caller that reports a failure is telling the truth.
+    """
+    try:
+        superseded = ledger_mod.supersede_decisions_for_fingerprint(
+            conn, fingerprint=fingerprint, kind='human', superseded_at=now, commit=False)
+        reopened = ledger_mod.reopen_review_items(conn, fingerprint=fingerprint, commit=False)
+
+        created = False
+        if reopened == 0 and not ledger_mod.pending_review_item_exists(conn, fingerprint=fingerprint):
+            ledger_mod.append_review_item(
+                conn, fingerprint=fingerprint,
+                reason=reason or 'manually re-queued for human review',
+                draft_category=None, draft_confidence=None,
+                enqueued_at=now, priority=0, commit=False)
+            created = True
+    except Exception:
+        # Discard the half-written re-queue rather than leaving it staged on a
+        # connection that outlives this call.  Re-raised so the caller still
+        # reports the failure it was going to.
+        conn.rollback()
+        raise
 
     return RequeueOutcome(fingerprint, superseded, reopened, created)
 

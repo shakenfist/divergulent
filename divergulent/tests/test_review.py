@@ -1236,6 +1236,36 @@ class RequeueTestCase(ReviewFixture, testtools.TestCase):
                             if r['kind'] == 'human' and r['superseded_at'] is not None]
         self.assertEqual(1, len(superseded_human))
 
+    def test_a_failure_part_way_leaves_the_live_verdict_standing(self):
+        """The supersede and the re-open are ONE re-queue, all or nothing.
+
+        ``requeue_one`` leaves every write uncommitted for the caller to commit, so a
+        failure after the supersede -- a locked database here -- would otherwise leave
+        the human verdict retracted on this long-lived connection, to be flushed by
+        whatever commits next, with nothing queued to replace it.  The operator is
+        told the re-queue failed; the verdict must therefore still stand.
+        """
+        conn, corpus_dir, index_path, fp_hex = self._setup(draft_category='bugfix')
+        self._review_it(conn, corpus_dir, index_path)
+        self.patch(ledger_mod, 'reopen_review_items', _locked_ledger)
+
+        self.assertRaises(
+            sqlite3.OperationalError, review.requeue_one, conn, fp_hex, now='2026-06-15T00:00:00Z')
+
+        live_human = [r for r in ledger_mod.decisions_for(conn, fp_hex)
+                      if r['kind'] == 'human' and r['superseded_at'] is None]
+        self.assertEqual(1, len(live_human))
+        # The next successful commit on this connection must not carry the supersede.
+        ledger_mod.append_note(conn, fingerprint=fp_hex, body='a later note',
+                               signed_by='rev@example.org', signature='S', created_at=WHEN)
+        # And it is absent from the file, not merely from this connection's view.
+        other = ledger_mod.open_ledger(os.path.join(corpus_dir, 'ledger.sqlite'))
+        self.addCleanup(other.close)
+        self.assertEqual(
+            1, len([r for r in ledger_mod.decisions_for(other, fp_hex)
+                    if r['kind'] == 'human' and r['superseded_at'] is None]))
+        self.assertEqual([], ledger_mod.pending_review_items(other))
+
     def test_requeue_already_pending_is_a_noop_reopen(self):
         # Without reviewing first, the fixture's item is still pending.
         conn, _corpus, _index, fp_hex = self._setup()

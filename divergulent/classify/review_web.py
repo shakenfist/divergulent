@@ -755,8 +755,18 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
         # any) and re-opens the item for review.  Mirror the CLI: commit, then
         # rebuild so the superseded fingerprint drops back to pending immediately.
         now = clock()
-        review_mod.requeue_one(conn, resolved, now=now)
-        conn.commit()
+        try:
+            review_mod.requeue_one(conn, resolved, now=now)
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001 -- a ledger failure is a page, not a 500
+            # Same guarantee the verdict submission makes, for the same reason: the
+            # re-queue's writes are uncommitted until the commit above, and this
+            # connection lives for the life of the process.  requeue_one rolls its
+            # own set back; this is the handler's own guarantee, and it holds for
+            # anything else the try block grows.
+            conn.rollback()
+            return render_template_string(
+                ERROR_TEMPLATE, fingerprint=resolved, error=str(exc)), 502
         verdict_mod.rebuild_current_verdict(conn)
         return redirect(url_for('audit'))
 

@@ -62,7 +62,7 @@ def _recording_signer(signature='FAKE-SIG', signed_by='reviewer@example.org'):
 
 
 def _locked_ledger(*args, **kwargs):
-    """A ledger write that fails: the shape of a locked database mid-verdict."""
+    """A ledger write that fails: the shape of a locked database mid-request."""
     raise sqlite3.OperationalError('database is locked')
 
 
@@ -541,6 +541,26 @@ class RequeueTestCase(ReviewWebFixture, testtools.TestCase):
         self.assertEqual('human', verdict_mod.current_verdict(conn)[fp_hex].kind)
         self._post(client, '/requeue/' + fp_hex)
         self.assertNotEqual('human', verdict_mod.current_verdict(conn)[fp_hex].kind)
+
+    def test_a_failed_requeue_is_reported_and_lands_nothing(self):
+        """A re-queue that crashes must leave the live verdict standing.
+
+        ``requeue_one`` leaves its writes uncommitted, and this connection lives for
+        the life of the process, so a failure part-way would otherwise stage the
+        supersede for the next commit to flush -- retracting a human verdict the
+        operator was told had not been re-queued.  The page says 502, the verdict
+        stands, and a later successful write does not carry the supersede along.
+        """
+        signer, _seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        self._post(client, '/review/' + fp_hex, {'choice': 'accept'})
+        self.patch(ledger_mod, 'reopen_review_items', _locked_ledger)
+
+        resp = self._post(client, '/requeue/' + fp_hex)
+
+        self.assertEqual(502, resp.status_code)
+        self.assertIn('database is locked', resp.get_data(as_text=True))
+        self.assertEqual('human', verdict_mod.current_verdict(conn)[fp_hex].kind)
 
     def test_requeue_refused_on_readonly_instance(self):
         client, _conn, fp_hex = self._client(signer=None)
