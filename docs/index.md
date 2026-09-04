@@ -21,7 +21,8 @@ and worked examples over API reference.
   bundles, bundle verification, and the optional patch-classification
   bundle.
 - [Status](status.md) — what works today, the published precomputed
-  cache, and the patch-classification pipeline in flight.
+  cache, and how much of the carried-patch residue the classification
+  pipeline has actually settled.
 - [Development](development.md) — tests, the CI workflows, and how
   releases are published.
 - [The processing workflow](workflow.md) — how a carried patch travels
@@ -35,6 +36,10 @@ and worked examples over API reference.
 - [Patch classification](patch-classification.md) — the curation-side
   pipeline: the corpus crawl, deterministic classification, the
   append-only decision ledger, LLM and human triage, and publishing.
+- [The classification runbook](classification-runbook.md) — for whoever
+  operates that pipeline: the recurring command sequence, what it
+  costs, what CI already does on a schedule, and what to check when the
+  published bundle looks wrong.
 - [Plans](plans/index.md) — the planning documents that drove each
   phase of the work, kept for the historical record. The documents
   above describe the system as it is; the plans describe how it got

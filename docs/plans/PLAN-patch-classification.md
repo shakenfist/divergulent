@@ -186,21 +186,51 @@ provenance ledger (rule id/version, evidence, supersession/redo).
 
 ## Execution
 
-| Phase | Plan | Status |
-|-------|------|--------|
-| 1. Fingerprint & dedup | [PLAN-patch-classification-phase-01-fingerprint.md](PLAN-patch-classification-phase-01-fingerprint.md) · [findings](PLAN-patch-classification-phase-01-findings.md) | **Done** — ≈61.5k patches → 60,640 distinct (dedup 1.02x; no shortcut) |
-| 2. Deterministic signal extractors | [PLAN-patch-classification-phase-02-extractors.md](PLAN-patch-classification-phase-02-extractors.md) · [findings](PLAN-patch-classification-phase-02-findings.md) | **Done** — 29.2% settle deterministically; 70.8% (~43k) substantive residue → phase 4 |
-| 3. Rule engine, registry & ledger | [PLAN-patch-classification-phase-03-ledger.md](PLAN-patch-classification-phase-03-ledger.md) · [findings](PLAN-patch-classification-phase-03-findings.md) | **Done** — append-only ledger reproduces the distribution with provenance; queue = 42,907 residue, derived |
-| 4. LLM triage tier | [PLAN-patch-classification-phase-04-llm-triage.md](PLAN-patch-classification-phase-04-llm-triage.md) · [findings](PLAN-patch-classification-phase-04-findings.md) | **Implemented; operating** — claim-blind triage + adversarial verify + ledger precedence + signed human review built. Operating it showed the residue is irreducibly *semantic*: the one deterministic win was a new `test-only` rule (→ `test` category, peels ~15%), applied via the non-destructive `ledger record`. Tooling hardened (per-file original context, Sigstore once-per-session + token refresh, review pager/package-names/`requeue`/`history`, `build` wipe-guard). The triage + review grind is the operator's ongoing budgeted step |
-| 5. Classification bundle & client display | [PLAN-patch-classification-phase-05-bundle.md](PLAN-patch-classification-phase-05-bundle.md) | **Done** — signed fingerprint→verdict bundle (gzipped JSON, like the divergence cache) built by CI from a *committed JSONL export* of the ledger (never the sqlite); `cache pull-classification` + `show` render it, the client hashing patch bodies and running no classifier. Ledger data repo wired (public `shakenfist/divergulent-reviews`, PR #35); first signed classification bundle published live |
-| 6. BTS / upstream cross-reference | [PLAN-patch-classification-phase-06-cross-reference.md](PLAN-patch-classification-phase-06-cross-reference.md) · [findings](PLAN-patch-classification-phase-06-findings.md) | **Implemented (E1–E5)** — the `external` rule tier: verifies author-declared CVE/bug claims against Debian's own records (Security Tracker + BTS), bulk-pinned snapshots with recorded freshness (the reserved `input_snapshot`/`input_fresh_until` columns), settling `security` on strong corroboration and only *flagging* contradictions. Real corpus: ~10% of patches carry a bug/CVE reference (1.44% a CVE) — a scalpel, not a broom. Verdict split awaits the first operator snapshot run |
+| Phase | Plan | Outcome | Status | Merged |
+|-------|------|---------|--------|--------|
+| 1. Fingerprint & dedup | [PLAN-patch-classification-phase-01-fingerprint.md](PLAN-patch-classification-phase-01-fingerprint.md) · [findings](PLAN-patch-classification-phase-01-findings.md) | ≈61.5k patches → 60,640 distinct (dedup 1.02x; no shortcut) | Complete | `f53ce737` (#22) |
+| 2. Deterministic signal extractors | [PLAN-patch-classification-phase-02-extractors.md](PLAN-patch-classification-phase-02-extractors.md) · [findings](PLAN-patch-classification-phase-02-findings.md) | 29.2% settle deterministically; 70.8% (~43k) substantive residue → phase 4 | Complete | `b57a512e` (#23) |
+| 3. Rule engine, registry & ledger | [PLAN-patch-classification-phase-03-ledger.md](PLAN-patch-classification-phase-03-ledger.md) · [findings](PLAN-patch-classification-phase-03-findings.md) | append-only ledger reproduces the distribution with provenance; queue = 42,907 residue, derived | Complete | `98233b03` (#24) |
+| 4. LLM triage tier | [PLAN-patch-classification-phase-04-llm-triage.md](PLAN-patch-classification-phase-04-llm-triage.md) · [findings](PLAN-patch-classification-phase-04-findings.md) | claim-blind triage + adversarial verify + ledger precedence + signed human review built. Operating it showed the residue is irreducibly *semantic*: the one deterministic win was a new `test-only` rule (→ `test` category, peels ~15%), applied via the non-destructive `ledger record`. Tooling hardened (per-file original context, Sigstore once-per-session + token refresh, review pager/package-names/`requeue`/`history`, `build` wipe-guard). The triage + review grind is the operator's ongoing budgeted step. R4's validation of the risk-gate threshold is deferred to issue #90 | Complete | `8828cb16` (#25), `201bc2ee` (#26), `228affb3` (#27), `b02976f3` (#28), `a21033a2` (#29), `af8b1b9b` (#30), `e56fd08d` (#31), `f51da19a` (#32), `d680ef3f` (#33), `fe1fea74` (#44), `d9d5ad6c` (#58), `fae9f258` (#48), `dd2abb51` (#50) |
+| 5. Classification bundle & client display | [PLAN-patch-classification-phase-05-bundle.md](PLAN-patch-classification-phase-05-bundle.md) | signed fingerprint→verdict bundle (gzipped JSON, like the divergence cache) built by CI from a *committed JSONL export* of the ledger (never the sqlite); `cache pull-classification` + `show` render it, the client hashing patch bodies and running no classifier. Ledger data repo wired (public `shakenfist/divergulent-reviews`, PR #35); first signed classification bundle published live | Complete | `4c655626` (#34), `3cff4ea3` (#35), `2be2b108` (#61), `d311fafe` (#85) |
+| 6. BTS / upstream cross-reference | [PLAN-patch-classification-phase-06-cross-reference.md](PLAN-patch-classification-phase-06-cross-reference.md) · [findings](PLAN-patch-classification-phase-06-findings.md) | the `external` rule tier: verifies author-declared CVE/bug claims against Debian's own records (Security Tracker + BTS), bulk-pinned snapshots with recorded freshness (the reserved `input_snapshot`/`input_fresh_until` columns), settling `security` on strong corroboration and only *flagging* contradictions. Real corpus: ~10% of patches carry a bug/CVE reference (1.44% a CVE) — a scalpel, not a broom. Verdict split awaits the first operator snapshot run, deferred to issue #89 | Complete | `53e0deaa` (#42), `f5d0a7a8` (#43) |
+| 7. Pre-push audit + closeout | [PLAN-patch-classification-phase-07-closeout.md](PLAN-patch-classification-phase-07-closeout.md) | ran `PUSH-AUDIT.md` over the accumulated diff of phases 1–6 (`d7c030e4..develop`, 85 files, 36,245 insertions), moved the two deferred measurements (phase 6 E6's verdict split → issue #89, phase 4 R4's risk-gate validation → issue #90) out of the plan files and into the issue tracker, wrote the operator runbook, and marks this plan `Complete` | Complete | #102, on top of #99 (a closeout row cannot name the merge that lands it) |
+
+**Plan complete (2026-09-04).** All six phases are implemented and shipping: the
+corpus is fingerprinted, ~29% of distinct patches settle on deterministic rules
+with a further ~15% from `test-only`, the append-only ledger carries rule, version
+and evidence for every verdict, the LLM tier runs claim-blind with adversarial
+verification behind a security-risk gate, the external tier verifies declared CVE
+and bug claims against Debian's own records, and a signed fingerprint→verdict bundle
+is rebuilt daily from the committed export. What continues is review, not
+construction: roughly 43k fingerprints of substantive residue remain overwhelmingly
+unreviewed, and the bundle grows as that work proceeds. The honest claim is that
+Debian's carried patches have been made *classifiable*, not that they are
+classified. Two measurements were moved to issues #89 and #90; the pre-push audit's
+findings are fixed or filed at #91–#98.
+
+The audit itself came back wave-1 clean — `pre-commit`, `tox`, and the full suite
+passing inside a network namespace with only loopback up — with the signing and
+publish path clean and four high findings, of which three were fixed and one (the
+signing jobs sharing a runner label with `pull_request` workflows) closed as not
+exploitable once the operator confirmed the self-hosted runners are ephemeral and
+fork PRs get no CI without approval.
+
+The `Merged` record was reconstructed after the fact from `gh pr list --state
+merged` and `git rev-list`, so it is a reading of history rather than something
+recorded as the work landed. Two of those merges are not phases: `d7c030e4`
+(#20) carried the master plan itself plus the patches-API count fix, and
+`f5d8a81a` (#45) and `9c91e835` (#66) carried the documentation for the
+pipeline.
 
 ## Success criteria
 
-**All six phases are implemented; every success criterion below is met.** The
-remaining work is operational, not architectural: the ongoing human-review grind
-(phase 4, which enriches an already-shipping bundle rather than gating it) and the
-first operator record-with-snapshot run that populates phase 6's verdict split.
+**All six delivery phases are implemented; every success criterion below is met**,
+and the seventh, administrative phase — the whole-plan pre-push audit and this
+closeout — has run, so the plan is `Complete`. The work that continues is
+operational, not architectural: the ongoing human-review grind (phase 4, which
+enriches an already-shipping bundle rather than gating it) and the first operator
+record-with-snapshot run that populates phase 6's verdict split (issue #89).
 
 - ✅ **"60k carried patches" is replaced by a distinct count with a small
   review residue.** Phase 1 measured **N ≈ 60,640** distinct (dedup is only 1.02x —
@@ -241,16 +271,100 @@ first operator record-with-snapshot run that populates phase 6's verdict split.
 
 ## Open questions
 
-- The **distinct-patch count** — measure in phase 1 before committing to
-  scale assumptions.
-- **Category enum** — validate against what users find useful.
-- **Where the ledger lives** — a private repo first; a shared, community
-  classification ledger later (like the published cache) so no one
-  re-classifies the same Debian-wide patch.
+Every question below is dispositioned at close-out; the two that are still
+genuinely open are carried into *Future work* rather than left here to rot.
+
+- The **distinct-patch count** — **answered by phase 1, and it falsified the
+  premise**: ≈61,572 carried patches → **60,640 distinct**, dedup only 1.02x, with
+  99.2% of distinct patches appearing in exactly one package. There is no dedup
+  shortcut, so the leverage had to come from category rules.
+- **Category enum** — **still open**, carried to *Future work*. The enum shipped
+  and grew a `test` category out of phase 4's one deterministic win, but it has
+  never been validated against what a user actually wants to see.
+- **Where the ledger lives** — **answered by phase 5**: the ledger's committed
+  JSONL export lives in the public `shakenfist/divergulent-reviews`, sharded by ISO
+  week, and CI builds the signed bundle from that export and never from a local
+  sqlite. The *shared, community* half of the question — third parties
+  **contributing** verdicts rather than only consuming them — is still open and is
+  carried to *Future work*.
 - **LLM provider/model/prompt versioning, cost budget, and evidence
-  storage.**
-- **How much content analysis is "enough"** — we flag suspicion, not malice;
-  set the bar so the residue stays trustworthy and small.
+  storage** — **answered in practice by phase 4**: an LLM rule version is model id
+  + prompt version, every response is stored as evidence in the append-only ledger
+  because it is not reproducible, and spend is bounded by running the model only on
+  the residue, in risk order. What is left is the gate's threshold, which is issue
+  #90 — a measurement, not an open design question.
+- **How much content analysis is "enough"** — **answered as a discipline rather
+  than a number**: content analysis raises the bar and surfaces candidates, never
+  pronounces malice, and every widening is checked for false positives before it
+  ships (the code-aware content check that took rule v1 → v2, the tuned injection
+  tripwire). The two live calibrations are issue #90's threshold and issue #98's
+  proposed recall increase.
+
+## Future work
+
+- **Measure phase 6's cross-reference verdict split — issue #89.** The
+  confirmed:contradicted:unknown split, the `external decisions
+  appended/skipped/superseded` counts, and the freshness-TTL calibration all wait
+  on an operator Security-Tracker + BTS snapshot run. The tier ships and records
+  its own stats lines; it is the headline number that is unmeasured, not the code.
+- **Validate and tune the risk gate's threshold (R4) — issue #90.** Re-run the
+  bake-off at larger N on a hand-checked label set, confirm recall and false-alarm
+  rate at ≥elevated, and finalise the model default. The choice governs a
+  ~$245–$1.2k spend range, and the labelling circularity the phase-4 risk-gate plan
+  flagged has to be handled in how the sample is drawn.
+- **The ongoing human review of the substantive residue.** Roughly 43k fingerprints
+  are still overwhelmingly unreviewed, and the published bundle grows as they are
+  worked. This is a budgeted operational loop rather than plan work: the commands,
+  the cadence, what is automated and which steps cost LLM budget are in
+  [the classification runbook](../classification-runbook.md).
+- **The pre-push audit's tracked findings — issues #91–#98.** Recorded in
+  [phase 7](PLAN-patch-classification-phase-07-closeout.md)'s *Audit findings* and
+  deliberately filed rather than fixed inside this plan: #91 the classification
+  bundle is unverified on a default install; #92 the corpus download discards the
+  checksum apt already provides; #93 the snapshot fetchers have no size or
+  decompression bound; #94 the client flattens mixed-provenance signals into one
+  line; #95 `record_to_ledger` loses a whole run on one bad patch; #96 a ten-item
+  low-severity hardening backlog; #97 `ARCHITECTURE.md` and `AGENTS.md` need
+  trimming back to their remit; #98 the chat-marker injection patterns cannot fire
+  on diff lines at all.
+- **Validate the category enum against real readers — issue #100** (carried from
+  *Open questions*). It needs someone reading per-package breakdowns and saying
+  which categories changed their mind about a package, rather than a code change.
+  The enum is versioned, so revising it is a tracked migration rather than silent
+  drift.
+- **A path for contributed classification verdicts — issue #101** (carried from
+  *Open questions*). Publishing the export and the signed bundle already means
+  nobody re-classifies a Debian-wide patch in order to *read* a verdict, but there
+  is no path for a third party to *contribute* one — no submission format, no trust
+  model for a stranger's signed verdict, and no precedence rule placing it relative
+  to `human`. With one reviewer and ~43k fingerprints of residue, contribution is
+  the only mechanism that changes the arithmetic; it needs contributors before it
+  needs a design.
+
+## Bugs fixed during this work
+
+- **Three rounds of fixes surfaced by first using the phase-4 outputs** — PRs #26,
+  #27 and #28. These are the defects that only appear once a human is actually
+  working the review queue and the ledger is accumulating real decisions: review
+  and ledger correctness, then the fit and polish the queue needed to be usable at
+  volume. Summarised rather than enumerated; the PRs and
+  [the phase-4 findings](PLAN-patch-classification-phase-04-findings.md) carry the
+  detail.
+- **Nine more found and fixed by the phase-7 pre-push audit**, one commit per
+  finding, in [PR #99](https://github.com/shakenfist/divergulent/pull/99) — which
+  is a separate pull request, so until it merges these are fixed *on that branch*
+  and not yet on the default one: the security-risk gate bypassed
+  the prompt-injection tripwire, so attacker-authored text reached the model it
+  targets and a steered verdict could sink its own patch in the human queue; two
+  quadratic scanners a patch of blank lines could stall; the review UI's signing
+  endpoints had no cross-origin guard; a failed review submission could still land
+  its verdict, because nothing rolled back the uncommitted decision; the series
+  parser's adversarial cases were untested; a dead precedence helper ranked kinds
+  wrongly and invited reuse; a cleanly-verified LLM `security` draft could settle
+  without a human ever seeing it, against the promise this plan makes; and the
+  reader-facing documentation defects. Three of those fixes change behaviour on
+  purpose — [phase 7](PLAN-patch-classification-phase-07-closeout.md)'s *Audit
+  findings* says which and why.
 
 ## Relationship to other plans
 

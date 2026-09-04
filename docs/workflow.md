@@ -52,6 +52,12 @@ Stages, in order, with who decides what:
 10. export + bundle   committed JSONL + published signed map   deterministic
 ```
 
+The stages below explain what each one decides and why. They are not a
+sequence anyone types: several are one-time builds, and the recurring
+loop is a much shorter list of verbs, with its own cadence and its own
+costs. That loop is
+[the classification runbook](classification-runbook.md).
+
 ### 1. Corpus build
 
 `divergulent-classify` builds a resumable, content-addressed corpus
@@ -220,16 +226,18 @@ unverified guess never outranks an explainable rule.
 
 ### 10. Export and publish
 
-The ledger's committed source of truth is a deterministic sharded
-JSONL export (reviewable diffs, no binary sqlite in git). From it, CI
-builds the lean **classification bundle** — a gzipped
+The ledger's committed source of truth is a deterministic JSONL export,
+sharded by ISO week (reviewable diffs, no binary sqlite in git). From
+it, CI builds the lean **classification bundle** — a gzipped
 fingerprint → verdict map carrying category, the three axes, a short
 reason, and the deciding rule, with no raw LLM evidence — signs it
-with Sigstore, and publishes it to a rolling release — daily, on the
-divergence cache's cadence; the human publish gate is the export
-commit itself, so the schedule only automates the projection. The
-bundle *grows* as review settles more of the residue; clients simply
-re-pull to see more of their patches explained.
+with Sigstore, and publishes it to a rolling release, daily at 04:31
+UTC (`.github/workflows/build-classification.yml`). The human publish
+gate is the export commit itself, so the schedule only automates the
+projection. The bundle *grows* as review settles more of the residue;
+clients simply re-pull to see more of their patches explained. What the
+operator actually types to reach this point — `export`, then commit and
+push — is in [the classification runbook](classification-runbook.md).
 
 ## Where the boundaries are
 

@@ -199,6 +199,11 @@ risk distribution, pending review, cache age). The old `python -m
 divergulent.classify.<x>` forms still work. See
 `docs/plans/PLAN-curation-cli-ergonomics.md`.
 
+This page describes how the pipeline is *built*; for the recurring operator loop —
+which verb to run in what order, how often, what each one costs, and what CI
+already does on a schedule — see
+[the classification runbook](classification-runbook.md).
+
 
 ## Publishing the bundle
 
