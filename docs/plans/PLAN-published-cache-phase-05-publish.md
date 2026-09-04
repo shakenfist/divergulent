@@ -55,6 +55,13 @@ production:
   share went to zero. So 5-in-8 was sampling luck on a small sample, not a
   bundle-quality signal.
 
+  It does leave an open question about the *default*, which phase 4 had
+  already flagged as "confirm 8 is polite enough": the spot-check is the
+  only integrity check a base install gets, and this one observation has
+  it making ~3 definite comparisons. Whether that is enough to catch a
+  tampered bundle is tracked in
+  [PLAN-release-1.0.md](PLAN-release-1.0.md) §3.
+
 **On reading the run durations.** The scheduled runs report wall-clock
 durations from 4 minutes to over 7 hours, which looks like the ~80 s
 incremental build regressing. It is not — the duration is dominated by two

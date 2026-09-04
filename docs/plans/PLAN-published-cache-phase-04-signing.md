@@ -5,12 +5,12 @@ High effort: a trust-critical phase. Sigstore signing in CI, an opt-in
 in-process verifier on the client, and an always-on "no cry wolf"
 spot-check of the bundle against live origins.
 
-**Status: complete.** `divergulent/
-verify.py` adds `verify_signature` (lazy `sigstore` import, SKIPPED when
-the `verify` extra is absent) and `spot_check` (immutable-divergence
-exact match vs live, inconclusive on UNKNOWN); the `verify` extra is
-declared (`sigstore>=4.3,<5`). `cache pull` downloads the `.sigstore.json`,
-runs both checks and stores both files verbatim only on success, with
+**Status: complete.** `divergulent/verify.py` adds `verify_signature`
+(lazy `sigstore` import, SKIPPED when the `verify` extra is absent) and
+`spot_check` (immutable-divergence exact match vs live, inconclusive on
+UNKNOWN); the `verify` extra is declared (`sigstore>=4.3,<5`). `cache
+pull` downloads the `.sigstore.json`, runs both checks and stores both
+files verbatim only on success, with
 `--spot-check N` / `--require-signature` / `--insecure`; `cache verify`
 re-checks a stored or given bundle. `build-cache.yml` signs the bundle
 (`tools/sign-bundle.sh`, `id-token: write`). Tests are offline (sigstore
@@ -117,7 +117,10 @@ install is unchanged (stdlib + python-debian); `sigstore` is opt-in.
   'https://github.com/shakenfist/divergulent/.github/workflows/build-cache.yml@refs/heads/main'`.
   This must match exactly what the signing workflow produces; if phase 5
   moves signing into a dedicated publish workflow, the identity changes —
-  finalise it there. Keep it overridable for testing.
+  finalise it there. Keep it overridable for testing. *As shipped:* the
+  constant is the plural `EXPECTED_SIGNER_IDENTITIES` tuple, because the
+  default branch was renamed after this was written and the certificate
+  identity is a property of the signing *run*.
 
 - **Spot-check against live origins (always on, stdlib).**
   `spot_check(bundle, repology, patches, sample, rng)`:
@@ -194,16 +197,19 @@ install is unchanged (stdlib + python-debian); `sigstore` is opt-in.
 
 ## Open questions
 
-- **Self-hosted runner OIDC** — *largely answered*: `release.yml` already
-  does keyless Sigstore signing (`gitsign`, `attest-build-provenance`) on
-  self-hosted runners with `id-token: write`, so the `debian-13` runner
-  should mint a token for `sigstore sign`. Confirm on first run; if the
-  specific runner differs, fall back to a GitHub-hosted signing job.
+- **Self-hosted runner OIDC** — *answered 2026-09-04*: the `debian-13`
+  runner mints the token and the scheduled build produces a signature that
+  a real `cache pull` verifies, so no GitHub-hosted signing job is needed.
+  (Original note: `release.yml` already does keyless Sigstore signing —
+  `gitsign`, `attest-build-provenance` — on self-hosted runners with
+  `id-token: write`.)
 - **`sigstore-python` API + version** — pin a version and code against its
   actual verify API (it changes between releases).
-- **Expected identity finalisation** — the workflow ref baked into the
-  client must match the signing workflow; revisit when phase 5 decides
-  whether signing lives in `build-cache.yml` or a publish workflow.
+- **Expected identity finalisation** — *answered 2026-09-04*: phase 5 kept
+  signing in `build-cache.yml`, so the real certificate identity is
+  `build-cache.yml@refs/heads/develop` and the shipped constant is the
+  plural `EXPECTED_SIGNER_IDENTITIES` tuple (develop plus the pre-rename
+  `main`), not the singular constant the design decision above describes.
 - **Spot-check sample size / refusal policy** — confirm 8 is polite enough
   and that a single definite divergence mismatch should hard-refuse
   (recommended, since divergence is immutable).

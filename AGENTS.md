@@ -142,10 +142,13 @@ stays in `build-cache.yml` on the default branch, the Sigstore identity is
 alike — confirmed against a real published signature by a VERIFIED `cache
 pull` on 2026-09-04. `EXPECTED_SIGNER_IDENTITIES` is a tuple, not a
 string, and still carries the pre-rename `@refs/heads/main` entry because
-the certificate identity is a property of the signing *run*. Both rolling
-prereleases were republished after the rename, so nothing *published*
-needs that entry any more, but a client holding a *stored* pre-rename
-bundle still does — keep it through a release cycle before dropping it.
+the certificate identity is a property of the signing *run*. The `cache`
+and `classification` rolling prereleases were both republished after the
+rename, so nothing *published* needs that entry any more, but a client
+holding a *stored* pre-rename bundle still does — keep it through a
+release cycle before dropping it. `CLASSIFICATION_SIGNER_IDENTITIES`
+carries the same pre-rename entry and the same reasoning; the drop is
+tracked in PLAN-release-1.0's trust-hardening section.
 
 `--classify` (Tier 2) classifies the whole machine via
 `divergulent.sources.apt_patches.AptSourcePatches`: it resolves each

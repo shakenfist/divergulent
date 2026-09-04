@@ -225,7 +225,15 @@ crawl when designing phase 5.
 
 *Outcome:* the schedule ships as planned (daily incremental, weekly
 `--refresh`), and the incremental build step measures ~66 s in
-production. Note when reading the workflow history that a run's
+production. On the deferred question: the worker count stays at the
+default 8 (`tools/build-cache.sh` passes no `--workers`, so the
+scheduled crawl runs at `cli.DEFAULT_WORKERS`) and no per-request
+interval was added for sources.debian.org (`SOURCES_DEBIAN_INTERVAL`
+stays 0). The schedule is what made that acceptable: the ~95 min cold
+crawl at 8 concurrent connections is now paid only on the weekly
+`--refresh`, and the daily delta is ~66 s of mostly-local recompute.
+Worth revisiting if the multi-release matrix (road-to-1.0) multiplies
+concurrent crawls. Note when reading the workflow history that a run's
 *duration* is mostly time queued for the self-hosted runner, not
 crawling — the build step is the number that reflects politeness.
 

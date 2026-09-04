@@ -87,6 +87,21 @@ This graduates to its own `PLAN-cache-matrix.md` when picked up.
       spot-check-as-the-floor is the intended 1.0 default, or nudge harder
       toward signatures (docs, prompts, or making the extra a default for
       some install paths).
+- [ ] **Drop the pre-rename signer identity.** `EXPECTED_SIGNER_IDENTITIES`
+      and `CLASSIFICATION_SIGNER_IDENTITIES` (`divergulent/verify.py`) each
+      still carry a `@refs/heads/main` entry from before the default-branch
+      rename. Nothing *published* has needed it since both rolling
+      prereleases were republished on 2026-09-03, but a client holding a
+      *stored* pre-rename bundle would start failing `cache verify` the
+      moment it goes. Drop both once a release cycle has passed, so no user
+      can still be holding one.
+- [ ] **Measure the spot-check at its default sample size.** The first real
+      pull reported "3 checked, 5 inconclusive" at `DEFAULT_SPOT_CHECK = 8`
+      (a re-run at 40 was 40/0, so it was small-sample luck rather than a
+      bundle-quality signal). But the spot-check is the *only* integrity
+      check a base install gets, so measure the typical definite share
+      across several pulls and decide whether 8 is enough to catch a
+      tampered bundle — against the politeness cost of raising it.
 - [ ] **Commit to schema stability.** State that `schema`/`cache_schema` 1
       is stable, and that the publisher owns migrations while the client
       drops what it cannot read.

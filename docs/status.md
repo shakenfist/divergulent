@@ -23,8 +23,12 @@ A **published precomputed cache** works today
 the slow half of a cold run (staleness + divergence) is a function of the
 Debian release, not of your machine, so it is computed once centrally and
 downloaded as a small signed bundle. Install divergulent, run `cache pull`
-with no arguments, and runs are fast from then on. The pieces: a central
-builder (`divergulent cache build`) that sweeps the whole archive into a
+with no arguments, and runs are fast from then on — re-run it weekly, or
+before a run you care about: divergence from a stored bundle is always
+used (a fixed version's patches never change), but staleness only while
+the bundle is under a week old, after which staleness is queried live
+([usage.md](usage.md)). The pieces: a central builder (`divergulent cache
+build`) that sweeps the whole archive into a
 ~0.73 MB gzipped bundle; client consumption — the `--bundle PATH` flag and
 `cache pull` resolve covered packages from a bundle (downloaded and stored
 locally, used automatically, with a live fallback); trust — the bundle is
