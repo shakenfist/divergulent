@@ -198,11 +198,19 @@ delivery phases (4–5).
 
 | Phase | Plan | Status |
 |-------|------|--------|
-| 1. Central builder + CI run: whole-archive sweep, emit bundle, **measure size/timing** | PLAN-published-cache-phase-01-builder.md | Measured (~0.73 MB; ~95 min cold, ~80 s incremental); one spot-check remaining |
-| 2. Bundle schema + bundle-backed sources + live fallback | PLAN-published-cache-phase-02-consume.md | Implemented (`--bundle`, bundle-backed sources + per-entry live fallback) |
-| 3. `cache pull`: download, validate, store, configurable URL | PLAN-published-cache-phase-03-pull.md | Implemented (`cache pull`, auto-discovery, freshness contract) |
-| 4. Signing + client verification + spot-verify | PLAN-published-cache-phase-04-signing.md | Implemented (CI signing, opt-in `verify` extra, always-on spot-check) |
-| 5. Scheduled daily publish to GitHub Releases | PLAN-published-cache-phase-05-publish.md | Implemented (scheduled build/sign/publish to a rolling `cache` prerelease; real run pending) |
+| 1. Central builder + CI run: whole-archive sweep, emit bundle, **measure size/timing** | PLAN-published-cache-phase-01-builder.md | Complete (~0.73 MB; ~95 min cold, ~80 s incremental; spot-check passed) |
+| 2. Bundle schema + bundle-backed sources + live fallback | PLAN-published-cache-phase-02-consume.md | Complete (`--bundle`, bundle-backed sources + per-entry live fallback) |
+| 3. `cache pull`: download, validate, store, configurable URL | PLAN-published-cache-phase-03-pull.md | Complete (`cache pull`, auto-discovery, freshness contract) |
+| 4. Signing + client verification + spot-verify | PLAN-published-cache-phase-04-signing.md | Complete (CI signing, opt-in `verify` extra, always-on spot-check) |
+| 5. Scheduled daily publish to GitHub Releases | PLAN-published-cache-phase-05-publish.md | Complete (scheduled build/sign/publish to a rolling `cache` prerelease; real `cache pull` verifies) |
+
+**Plan complete (2026-09-04).** All five phases are done and confirmed
+against production: the `cache` prerelease is republished by a daily
+scheduled build, and a `divergulent cache pull` with no arguments
+downloads, signature-verifies and spot-checks the published bundle. What
+follows — the multi-release build matrix, schema-stability commitments and
+build-failure guardrails — is tracked in
+[PLAN-release-1.0.md](PLAN-release-1.0.md), not here.
 
 **Phase 5 politeness note (from the phase-1 measurement).** The cold
 whole-archive crawl is ~95 min and, at `--workers 8`, sustains up to 8
@@ -214,6 +222,20 @@ worker count **moderate** — a central daily crawler should not be the
 heaviest client sources.debian.org sees. Revisit the default worker
 count and whether to add a small per-request interval for the scheduled
 crawl when designing phase 5.
+
+*Outcome:* the schedule ships as planned (daily incremental, weekly
+`--refresh`), and the incremental build step measures ~66 s in
+production. On the deferred question: the worker count stays at the
+default 8 (`tools/build-cache.sh` passes no `--workers`, so the
+scheduled crawl runs at `cli.DEFAULT_WORKERS`) and no per-request
+interval was added for sources.debian.org (`SOURCES_DEBIAN_INTERVAL`
+stays 0). The schedule is what made that acceptable: the ~95 min cold
+crawl at 8 concurrent connections is now paid only on the weekly
+`--refresh`, and the daily delta is ~66 s of mostly-local recompute.
+Worth revisiting if the multi-release matrix (road-to-1.0) multiplies
+concurrent crawls. Note when reading the workflow history that a run's
+*duration* is mostly time queued for the self-hosted runner, not
+crawling — the build step is the number that reflects politeness.
 
 ## Agent guidance
 

@@ -25,8 +25,12 @@ and private. Tracked in
 Blocking, because phases 1–4 are inert until something is published at the
 default URL.
 
-- [ ] Scheduled daily (incremental) + weekly (full `--refresh`) builds.
-- [ ] Signed bundle published to a stable URL; client constants reconciled.
+**Done (2026-09-04).** The published-cache plan is complete; a `cache pull`
+with no arguments downloads, signature-verifies and spot-checks the daily
+bundle.
+
+- [x] Scheduled daily (incremental) + weekly (full `--refresh`) builds.
+- [x] Signed bundle published to a stable URL; client constants reconciled.
 
 ### 2. Multi-release build matrix (Debian 11, 12, 13, testing, unstable)
 
@@ -71,16 +75,33 @@ This graduates to its own `PLAN-cache-matrix.md` when picked up.
 
 ### 3. Trust hardening
 
-- [ ] **A real end-to-end VERIFIED.** Signing/verification has only been
-      exercised with mocks and the malformed→FAILED path. Do a genuine
-      sign → publish → `cache pull` → VERIFIED cycle and pin the exact
-      signer identity the real certificate carries (closes the phase-4
-      risk that `EXPECTED_SIGNER_IDENTITY` is a guess).
+- [x] **A real end-to-end VERIFIED.** Done 2026-09-04: a `cache pull`
+      against the published bundle reported `signature verified`, and the
+      certificate identity the real run carries is
+      `build-cache.yml@refs/heads/develop`, which
+      `EXPECTED_SIGNER_IDENTITIES` already accepts — so the phase-4 "the
+      expected identity is a guess" risk is closed. See
+      [PLAN-published-cache-phase-05-publish.md](PLAN-published-cache-phase-05-publish.md).
 - [ ] **Decide the default trust level.** Today, with no `verify` extra, a
       bundle that passes the spot-check is stored even unsigned. Confirm
       spot-check-as-the-floor is the intended 1.0 default, or nudge harder
       toward signatures (docs, prompts, or making the extra a default for
       some install paths).
+- [ ] **Drop the pre-rename signer identity.** `EXPECTED_SIGNER_IDENTITIES`
+      and `CLASSIFICATION_SIGNER_IDENTITIES` (`divergulent/verify.py`) each
+      still carry a `@refs/heads/main` entry from before the default-branch
+      rename. Nothing *published* has needed it since both rolling
+      prereleases were republished on 2026-09-03, but a client holding a
+      *stored* pre-rename bundle would start failing `cache verify` the
+      moment it goes. Drop both once a release cycle has passed, so no user
+      can still be holding one.
+- [ ] **Measure the spot-check at its default sample size.** The first real
+      pull reported "3 checked, 5 inconclusive" at `DEFAULT_SPOT_CHECK = 8`
+      (a re-run at 40 was 40/0, so it was small-sample luck rather than a
+      bundle-quality signal). But the spot-check is the *only* integrity
+      check a base install gets, so measure the typical definite share
+      across several pulls and decide whether 8 is enough to catch a
+      tampered bundle — against the politeness cost of raising it.
 - [ ] **Commit to schema stability.** State that `schema`/`cache_schema` 1
       is stable, and that the publisher owns migrations while the client
       drops what it cannot read.
