@@ -124,7 +124,7 @@ exactly the fingerprints it had settled, and nothing else.
 
 The same recording pass also attaches cheap deterministic **axes**
 that ride alongside the category: reviewability (size), reach
-(install base), the phase-6 CVE/bug cross-reference, and — as of
+(install base), the external CVE/bug cross-reference, and — as of
 part of [its plan](plans/PLAN-generated-marking.md) — a
 generated-content mark for files that claim to be build-system
 generator output. The mark is
@@ -174,9 +174,17 @@ fingerprint whose hand-written residue sits at or under the oversized
 cut reaches the LLM after all, shown the identical residue-first
 projection the risk gate reads; the still-unreviewable population —
 residue also past the cut, or no mark at all — keeps routing to a
-human with its honest reason. The injection tripwire still scans the
-*full* body regardless, and its skip outranks the unlock: a
-diff-region hit never reaches the model, marked or not. The verifier
+human with its honest reason. The injection tripwire screens a bounded
+head of the body (1 MiB) regardless — recording a `scan-truncated` note
+rather than an unearned clean result when it caps, and screening the
+residue-first projection as well when it did — and its skip outranks the
+unlock in *both* LLM tiers, triage and the security-risk gate: a
+diff-region hit never reaches a model, marked or not. In the risk gate
+the skip is not a dead end — a suspect is dispositioned `elevated`
+deterministically, and that disposition is *retracted* once its cause
+is gone (a rules-version bump, a retired family, or a body the
+tightened patterns no longer hit), returning the fingerprint to the
+un-scored pending set so the next run scores it normally. The verifier
 always reads exactly the same projected text the drafter did, and an
 unmarked fingerprint's prompt stays byte-identical to what it was
 before that. Triage runs over a bounded, prioritised slice (risk
@@ -186,6 +194,38 @@ each decision's identity, so a model swap or prompt bump is cleanly
 supersedable. When triage notices clusters of identical verified
 verdicts it surfaces them as *candidate* deterministic rules — for
 human approval, never auto-applied.
+
+One category is never settled by this tier at all: a draft of
+**`security` always goes to a human**, however cleanly the verifier
+agreed with it. The LLM may propose that a patch is a security fix; only
+a person may finalise the call. Expect this to *grow* the review queue
+rather than reading the growth as a regression — a verified `security`
+draft that would once have settled itself now waits for a reviewer.
+
+This arrived with a triage prompt-version bump, which is what lets a
+re-run reach the rows the old routing wrote. A ledger built before it
+may still hold live `kind='llm'`, `verified=True`, `security` decisions
+at prompt version 1, and those keep outranking the deterministic tiers
+until they are superseded: `python -m divergulent.classify.ledger
+supersede <ledger-path> llm-triage:<model> 1` retires that generation and
+re-queues its fingerprints. That is the ledger module's own CLI, not a
+`divergulent-classify` verb — the front CLI forwards `record`, `triage`,
+`risk` and friends, but `supersede` is reached through the module. Until an
+operator runs it, the guarantee holds for rows written from version 2
+onward, not retrospectively.
+
+That command is blunter than the problem it solves, and knowing how much
+blunter is the point. `supersede` keys on `(rule_id, version)` alone, so
+it retires **every** live decision that rule wrote at version 1 — the
+whole version-1 LLM triage generation, not the `security` subset — and
+every one of those fingerprints comes back through the queue to be
+re-triaged at LLM cost. The rule id carries the model name, so a ledger
+triaged with more than one model needs the command run once per model.
+Size it before running it: `divergulent-classify status` reports the
+current queue, and `python -m divergulent.classify.ledger report
+<ledger-path>` breaks the ledger down by decision kind, so the count of
+version-1 `llm` decisions is visible in advance rather than discovered as
+a bill.
 
 ### 8. Human review
 
@@ -244,7 +284,7 @@ push — is in [the classification runbook](classification-runbook.md).
 | Tier | Decides | Never does |
 | --- | --- | --- |
 | Deterministic | structural categories, size, reach, provable benignity, CVE-confirmed `security` | guess intent; pronounce malice |
-| LLM | draft categories for the residue; advisory risk scores | count unverified; see the author's claim |
+| LLM | draft categories for the residue; advisory risk scores | count unverified; see the author's claim; finalise a `security` call |
 | Human | final verdicts, rule approvals, notes | be bypassed: nothing outranks a signed human verdict |
 
 The published bundle preserves these boundaries: every entry says

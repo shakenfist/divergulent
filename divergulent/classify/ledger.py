@@ -12,7 +12,8 @@ Two ideas govern the design:
    is never edited and never deleted — it can only be *superseded* (a
    ``superseded_at`` timestamp set on it).  The current verdict for a
    fingerprint is computed (in step 3c) from the live, non-superseded decisions
-   at ``human > llm > heuristic`` precedence; it is never stored.  Because the
+   at ``verdict.decision_rank`` precedence (``human`` > verified-``llm`` >
+   ``heuristic`` > unverified-``llm``); it is never stored.  Because the
    audit trail is complete, retiring or bumping a rule is a surgical redo:
    supersede exactly its decisions, recompute the view, and re-queue only the
    fingerprints left with no live decision.
@@ -74,14 +75,14 @@ files -- non-shipping, structurally determined; see ``rules._rule_test_only``).
 Every bump is a tracked migration, applied when the ledger is next rebuilt."""
 
 # ---------------------------------------------------------------------------
-# The decision kinds and rule purities, and the precedence that ranks them.
+# The decision kinds and rule purities.
 #
-# ``kind`` ranks WHO decided: a human overrides a (verified) LLM, which
-# overrides a heuristic.  The derived current-verdict view (step 3c) uses
-# ``KIND_PRECEDENCE`` to pick, per fingerprint, the highest-precedence live
-# decision; it is defined here so the registry and the view share one source of
-# truth.  Phase-2 decisions are all ``heuristic``; the ``llm`` and ``human``
-# seats are reserved now so phases 4+ slot in without a schema change.
+# ``kind`` records WHO decided.  Phase-2 decisions are all ``heuristic``; the
+# ``llm`` and ``human`` seats are reserved so phases 4+ slot in without a schema
+# change.  The PRECEDENCE that ranks kinds lives in ``verdict.decision_rank``,
+# not here: it folds the ``verified`` flag into the ranking (``human`` >
+# verified-``llm`` > ``heuristic`` > unverified-``llm``) so an unreviewed LLM
+# draft can never outrank a deterministic heuristic.
 # ---------------------------------------------------------------------------
 
 KINDS: frozenset[str] = frozenset({'heuristic', 'llm', 'human'})
@@ -91,24 +92,6 @@ PURITIES: frozenset[str] = frozenset({'pure', 'external'})
 """Valid ``purity`` values.  ``pure`` is a function of the diff alone (no clock,
 no network); ``external`` consults the world and so records an input snapshot +
 freshness (phase 6)."""
-
-# Precedence order, lowest-to-highest, for the derived view: human > llm >
-# heuristic.  Higher index == higher precedence.  Used by step 3c.
-KIND_PRECEDENCE: tuple[str, ...] = ('heuristic', 'llm', 'human')
-
-
-def kind_rank(kind: str) -> int:
-    """Precedence rank of a decision ``kind`` (higher wins).
-
-    ``human`` outranks ``llm`` outranks ``heuristic``.  Step 3c uses this to
-    pick the winning live decision per fingerprint.  Raises ``ValueError`` for
-    an unknown kind so a typo cannot silently sort to the bottom.
-    """
-    try:
-        return KIND_PRECEDENCE.index(kind)
-    except ValueError:
-        raise ValueError('unknown decision kind: %r' % kind)
-
 
 # ---------------------------------------------------------------------------
 # The rule registry.
@@ -1199,15 +1182,25 @@ def _cmd_record(args: argparse.Namespace) -> int:
         print(verdict.render_report(verdict.summarise_ledger(conn)))
         print('recorded into ledger: %s' % args.ledger)
         print('dequeued %d now-settled review items' % dequeued)
+        # The counters are not all in the same unit, and the line has to say so.
+        # ``appended``/``superseded`` count ledger ROWS, while ``skipped`` counts
+        # FINGERPRINTS whose live set was already exactly right -- a reconcile
+        # compares a whole set at a time, so there is no per-row skip to count. The
+        # two coincide wherever a fingerprint has at most one row (decisions,
+        # reviewability, the generated mark) and diverge where it can have several
+        # (dangerous-construct observations, injection).
+        print('counts below: appended/superseded are ledger rows, skipped are '
+              'fingerprints whose live set was already right')
         print('decisions appended=%d skipped=%d superseded=%d; observations appended=%d '
-              'skipped=%d; reviewability appended=%d skipped=%d; injection appended=%d '
+              'skipped=%d superseded=%d; reviewability appended=%d skipped=%d; injection appended=%d '
               'skipped=%d superseded=%d; generated appended=%d skipped=%d superseded=%d; '
               'reach appended=%d '
               'skipped=%d unknown=%d; external decisions appended=%d skipped=%d superseded=%d; '
               'external provenance appended=%d skipped=%d; fingerprints=%d; current verdicts=%d' % (
                   stats.decisions_appended, stats.decisions_skipped,
                   stats.decisions_superseded, stats.observations_appended,
-                  stats.observations_skipped, stats.reviewability_appended,
+                  stats.observations_skipped, stats.observations_superseded,
+                  stats.reviewability_appended,
                   stats.reviewability_skipped, stats.injection_appended,
                   stats.injection_skipped, stats.injection_superseded,
                   stats.generated_appended, stats.generated_skipped, stats.generated_superseded,

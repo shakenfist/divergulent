@@ -56,7 +56,14 @@ from divergulent.classify import generated as generated_mod
 # stale verdicts, exactly as the deterministic tiers key on their *_VERSION.
 # ---------------------------------------------------------------------------
 
-PROMPT_VERSION = 1
+# 2: a ``security`` draft is no longer finalisable by the LLM tier -- it always
+#    routes to ``needs_human``, so the same (model, prompt) pair now records
+#    ``verified=False`` where it once recorded ``verified=True``.  That is a
+#    routing-semantics change, and ``triage_record`` skips a fingerprint whose
+#    live decision already matches ``(decided_by, rule_version)``, so without the
+#    bump every verified ``security`` row already in a ledger would stay live and
+#    keep outranking the deterministic tiers, unreachable by any re-run.
+PROMPT_VERSION = 2
 
 # The verification prompt is versioned independently of the triage prompt: the
 # adversarial pass can be re-tuned without re-triaging, and the ledger keys on
@@ -582,7 +589,8 @@ class TriageResult:
     reason: str
     """The deciding reason(s). For ``'needs_human'`` this lists every condition
     that fired (verifier disagreed, low confidence, claim mismatch, dangerous
-    construct); for ``'verified'`` it states the draft passed."""
+    construct, a ``security`` draft); for ``'verified'`` it states the draft
+    passed."""
 
     usage: Usage = Usage()
     """Total token usage for this patch -- the draft call plus the verify call --
@@ -604,17 +612,17 @@ def triage_and_verify(patch_text: str, *, call, claim_category: str | None = Non
       * a claim/content mismatch -- ``claim_category`` is given, is not ``None``
         or ``'unknown'``, and differs from the drafted category (the loud signal:
         the author's claim and the content read disagree);
-      * a live dangerous-construct observation (``has_dangerous_construct``).
+      * a live dangerous-construct observation (``has_dangerous_construct``);
+      * the draft category is ``'security'``.
 
     ``claim_category`` and ``has_dangerous_construct`` are supplied by the 4d
     driver from the ledger/classification, and are parameters (not re-derived
     here) so this function stays pure and testable.
 
-    Note the security/malice escape hatch: a ``security`` draft that the verifier
-    confirms STILL routes to ``'needs_human'`` if it carries a dangerous-construct
-    flag or a claim mismatch. The LLM never finalises a security or malice call
-    on its own -- a human does (step 4e). ``security`` from the LLM is only ever
-    a *candidate for human confirmation*.
+    Note the security rule: a ``security`` draft ALWAYS routes to
+    ``'needs_human'``, however cleanly the verifier confirms it -- the LLM never
+    finalises a security call on its own, so ``security`` from the LLM is only
+    ever a *candidate for human confirmation* (step 4e).
 
     ``mark_files`` (the fingerprint's live ``generated-content`` mark, threaded by
     the driver from a marks dict read once per run) is passed to BOTH passes, so
@@ -641,6 +649,11 @@ def triage_and_verify(patch_text: str, *, call, claim_category: str | None = Non
             % (claim_category, draft.category))
     if has_dangerous_construct:
         reasons.append('a dangerous-construct observation is present')
+    if draft.category == 'security':
+        # The LLM never finalises a security call, however clean the verification:
+        # a security verdict is expensive to be wrong about in either direction,
+        # so it is only ever a candidate for human confirmation (step 4e).
+        reasons.append('a security draft is only ever a candidate for human confirmation')
 
     usage = draft.usage + verification.usage
 

@@ -344,7 +344,9 @@ class StructureTestCase(testtools.TestCase):
         verdict = _verdict(_edit('src/foo.c'))
         self.assertIsInstance(verdict, ContentVerdict)
         self.assertEqual(RULES_VERSION, verdict.rule_version)
-        self.assertEqual(1, verdict.rule_version)
+        # Pinned deliberately: a rule-semantics change must arrive WITH its bump, so
+        # the ledger can supersede-and-re-record rather than mix incomparable rows.
+        self.assertEqual(2, verdict.rule_version)
 
     def test_verdict_is_frozen(self):
         verdict = _verdict(_edit('src/foo.c'))

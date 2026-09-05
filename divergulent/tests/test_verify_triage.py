@@ -9,8 +9,8 @@ Coverage: the verify prompt is claim-blind and states the proposed category;
 ``agrees=False`` is the safe default for a garbled verifier answer; and the full
 routing matrix (agree+high+matching claim -> verified; refute -> needs_human;
 low confidence on either side -> needs_human; claim mismatch -> needs_human;
-dangerous-construct even when verified -> needs_human; garbled verify ->
-needs_human).
+dangerous-construct even when verified -> needs_human; a ``security`` draft even
+when spotlessly verified -> needs_human; garbled verify -> needs_human).
 """
 import json
 
@@ -275,6 +275,48 @@ class TriageAndVerifyTestCase(testtools.TestCase):
                                    claim_category='security', has_dangerous_construct=True)
         self.assertEqual('needs_human', result.routing)
         self.assertIn('dangerous-construct', result.reason)
+
+    def test_clean_security_draft_still_routes_to_needs_human(self):
+        # The security rule: an otherwise SPOTLESS security draft -- agreeing
+        # verifier, high confidence on both passes, matching claim, no dangerous
+        # construct -- must still go to a human. The LLM never finalises a
+        # security call on its own (step 4e).
+        call = _routing_call(
+            triage_response=_triage_json(category='security', confidence='high'),
+            verify_response=_verify_json(agrees=True, confidence='high'))
+        result = triage_and_verify(_patch_with_description(), call=call,
+                                   claim_category='security', has_dangerous_construct=False)
+        self.assertEqual('security', result.draft.category)
+        self.assertTrue(result.verification.agrees)
+        self.assertEqual('needs_human', result.routing)
+        self.assertIn('security draft is only ever a candidate for human confirmation',
+                      result.reason)
+
+    def test_security_is_the_only_reason_when_nothing_else_fires(self):
+        # Nothing else fired, so the security rule is the WHOLE reason -- proving
+        # the routing came from the category and not from a coincidental second
+        # condition.
+        call = _routing_call(
+            triage_response=_triage_json(category='security', confidence='high'),
+            verify_response=_verify_json(agrees=True, confidence='high'))
+        result = triage_and_verify(_patch_with_description(), call=call)
+        self.assertEqual(
+            'a security draft is only ever a candidate for human confirmation',
+            result.reason)
+
+    def test_non_security_verified_path_is_unchanged(self):
+        # The guard must not widen beyond security: every other clean category
+        # still routes to 'verified' with the unchanged pass reason.
+        for category in ('packaging', 'documentation', 'bugfix', 'feature'):
+            call = _routing_call(
+                triage_response=_triage_json(category=category, confidence='high'),
+                verify_response=_verify_json(agrees=True, confidence='high'))
+            result = triage_and_verify(_patch_with_description(), call=call,
+                                       claim_category=category, has_dangerous_construct=False)
+            self.assertEqual('verified', result.routing)
+            self.assertEqual(
+                'verifier confirmed the drafted category at sufficient confidence',
+                result.reason)
 
     def test_garbled_verify_response_safe_default_needs_human(self):
         call = _routing_call(

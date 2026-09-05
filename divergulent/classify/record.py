@@ -53,6 +53,12 @@ from divergulent.classify.rules import RULES_VERSION
 # dangerous-construct flags are recorded under this id at ``RULES_VERSION``.
 _SCAN_RULE_ID = 'dangerous-construct-scan'
 
+# The kind those flags carry (``rules.Flag.kind``).  Named here because the
+# desired-vs-live reconcile has to supersede the fingerprint's live rows BEFORE
+# it knows what this run's flags are -- including the case where the scan now
+# finds nothing and the whole live set must be retired.
+_SCAN_KIND = 'dangerous-construct'
+
 # The observation source for the prompt-injection tripwire.  All
 # ``llm-injection-suspect`` flags are recorded under this id at
 # ``injection.INJECTION_RULES_VERSION``.
@@ -63,8 +69,12 @@ _INJECTION_RULE_ID = 'injection-scan'
 class RecordStats:
     """What a :func:`record_to_ledger` run did.
 
-    ``*_appended`` rows were newly written; ``*_skipped`` rows already existed
-    live and were left untouched (idempotency).  ``decisions_superseded`` counts
+    ``*_appended`` and ``*_superseded`` count ledger ROWS -- newly written, and
+    retired.  ``*_skipped`` counts FINGERPRINTS whose live set was already
+    exactly right and so was left untouched (idempotency): a block that
+    reconciles a whole set at a time has no per-row skip to count.  The two
+    units coincide wherever a fingerprint carries at most one row and diverge
+    where it can carry several.  ``decisions_superseded`` counts
     heuristic decisions a ``reconcile`` run retired because the winning rule for
     that fingerprint changed.  ``reviewability_*`` counts the deterministic size
     (reviewability) observation, one per fingerprint.  ``fingerprints`` is the
@@ -74,8 +84,14 @@ class RecordStats:
     decisions_appended: int = 0
     decisions_skipped: int = 0
     decisions_superseded: int = 0
+    # The dangerous-construct scan.  ``observations_appended`` counts rows newly
+    # written (one per firing pattern); ``observations_skipped`` counts fingerprints
+    # whose live set was already exactly right; ``observations_superseded`` counts
+    # stale rows retired when the set changed (a version bump, or a body whose flags
+    # the tightened patterns no longer produce).
     observations_appended: int = 0
     observations_skipped: int = 0
+    observations_superseded: int = 0
     reviewability_appended: int = 0
     reviewability_skipped: int = 0
     reach_appended: int = 0
@@ -232,9 +248,11 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
       ``rule_version=RULES_VERSION``, ``observed_at=now``.
 
     Idempotent: a decision is skipped when a LIVE decision already exists for
-    ``(fingerprint, decided_by, rule_version)``; an observation is skipped when a
-    LIVE observation already exists for ``(fingerprint, observed_by,
-    rule_version, detail, evidence)``.  A second run therefore appends nothing.
+    ``(fingerprint, decided_by, rule_version)``; the deterministic observation
+    blocks each compare the fingerprint's DESIRED set against its LIVE one and
+    skip when they match.  A second run therefore appends nothing -- and, unlike
+    an exists-then-append loop, a run at a NEW ``rule_version`` supersedes the
+    previous generation instead of stacking a second one beside it.
 
     ``reconcile`` (the ``ledger record`` path, default off so ``build``'s
     behaviour is unchanged): when the WINNING rule for a fingerprint has changed
@@ -294,6 +312,16 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
             progress.step(record.fingerprint[:12])
         verdict = record.verdict
 
+        # ONE read of this fingerprint's observations, filtered three ways below
+        # (dangerous-construct, injection, generated) instead of the same indexed
+        # SELECT issued three times per fingerprint -- ~180k queries over the corpus
+        # where the clean 93% used to issue none. Safe to snapshot ahead of the
+        # writes because each block reads only its OWN kind/observed_by and writes
+        # only that same slice, so no block can invalidate another's view. That
+        # invariant is what makes the snapshot correct rather than merely faster:
+        # a future block that writes ANOTHER block's rows must re-read instead.
+        observations = ledger_mod.observations_for(conn, record.fingerprint)
+
         # The winning content-category rule decided this fingerprint; record its
         # id and its OWN registered version so a later supersede keys exactly.
         decided_by = verdict.rule_ids[0]
@@ -318,17 +346,56 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
                 evidence=' | '.join(verdict.signals), decided_at=now, commit=False)
             stats.decisions_appended += 1
 
-        for flag in verdict.flags:
-            if ledger_mod.live_observation_exists(
-                    conn, fingerprint=record.fingerprint, observed_by=_SCAN_RULE_ID,
-                    rule_version=RULES_VERSION, detail=flag.detail,
-                    evidence=flag.evidence):
-                stats.observations_skipped += 1
-            else:
+        # Desired-vs-live over the WHOLE set, the same shape the injection block
+        # below uses, and for the same reason: an exists-then-append loop keyed on
+        # the current RULES_VERSION can only ever ADD. It cannot retire a row the
+        # scan no longer produces, so a version bump -- the mechanism this project
+        # uses to make a rule change auditable -- left the old generation live
+        # beside the new one, and a flag the tightened pattern now rejects lived
+        # forever. The body is fingerprint-stable and the scan is pure, so an
+        # unchanged set still skips and the ~60k clean fingerprints see no churn.
+        # Every flag this block files belongs to its own family, and nothing in
+        # the tree emits another -- which is exactly why a new one has to fail
+        # here rather than be caught by a test of the current scanner. A flag of
+        # some other kind would be counted in the desired set below, keyed OUT of
+        # ``live_scan`` and out of the supersede, and so never leave the live set:
+        # the block would supersede-and-re-append the whole set on every run over
+        # ~60k fingerprints. Silently dropping it instead would lose the finding.
+        # A genuinely different family needs its own rule id and its own block.
+        foreign = sorted({flag.kind for flag in verdict.flags if flag.kind != _SCAN_KIND})
+        if foreign:
+            raise ValueError(
+                'the dangerous-construct scan emitted flag kind(s) %s, which %s has no '
+                'block for; give them their own rule id rather than filing them here'
+                % (', '.join(foreign), _SCAN_RULE_ID))
+        desired_scan = {(flag.detail, flag.evidence, RULES_VERSION) for flag in verdict.flags}
+        # Keyed EXACTLY as the supersede below is (kind AND observed_by): a row this
+        # comprehension counts but that supersede would not retire could never leave
+        # the live set, so the block would supersede-and-re-append forever on every
+        # run. The two filters have to stay in lockstep for the reconcile to converge.
+        live_scan = {(obs['detail'], obs['evidence'], obs['rule_version'])
+                     for obs in observations
+                     if obs['kind'] == _SCAN_KIND and obs['observed_by'] == _SCAN_RULE_ID
+                     and obs['superseded_at'] is None}
+        if desired_scan == live_scan:
+            stats.observations_skipped += 1
+        else:
+            stats.observations_superseded += ledger_mod.supersede_observations_for_fingerprint(
+                conn, fingerprint=record.fingerprint, kind=_SCAN_KIND,
+                observed_by=_SCAN_RULE_ID, superseded_at=now, commit=False)
+            # Append the RECONCILED set, not the raw flag list. The scan dedupes only
+            # within a line, so a body that adds the same dangerous line twice yields
+            # two byte-identical flags -- and the old exists-then-append loop absorbed
+            # that by construction (the second append saw the first on the same
+            # connection). Comparing a set and then appending a list dropped that
+            # dedupe, writing duplicate live rows that no later run can retire,
+            # because the very next comparison finds the set already correct. Appending
+            # what was compared is what makes the block idempotent in one step.
+            for detail, evidence, version in sorted(desired_scan):
                 ledger_mod.append_observation(
-                    conn, fingerprint=record.fingerprint, kind=flag.kind,
-                    detail=flag.detail, evidence=flag.evidence,
-                    observed_by=_SCAN_RULE_ID, rule_version=RULES_VERSION,
+                    conn, fingerprint=record.fingerprint, kind=_SCAN_KIND,
+                    detail=detail, evidence=evidence,
+                    observed_by=_SCAN_RULE_ID, rule_version=version,
                     observed_at=now, commit=False)
                 stats.observations_appended += 1
 
@@ -356,6 +423,12 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
                 observed_at=now, commit=False)
             stats.reviewability_appended += 1
 
+        # The generated-content scan is computed HERE, above the tripwire, because the
+        # tripwire's screen needs the mark: the residue-first projection it drives is
+        # what an oversized marked patch actually shows a model. Its OBSERVATION is
+        # still written below, with the rest of its block.
+        generated_scan = generated_mod.scan(record.body)
+
         # The deterministic prompt-injection tripwire -- its own rule identity.
         # Scans the LLM-visible diff body and, separately, the author-controlled
         # header for injection-shaped text; each firing family/region becomes an
@@ -369,12 +442,44 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
         diff_region = triage_mod.diff_body(record.body)
         header_region = (record.body[:len(record.body) - len(diff_region)]
                          if diff_region else record.body)
-        injection_flags = (injection_mod.scan_injection(diff_region, region=injection_mod.DIFF_REGION)
+        diff_flags = injection_mod.scan_injection(diff_region, region=injection_mod.DIFF_REGION)
+
+        # The screen reads a PREFIX of each region, and both LLM tiers read a prefix
+        # of the diff body too -- a shorter one -- so a prefix screen ordinarily
+        # covers everything the model can be shown. A MARKED fingerprint breaks that
+        # ordering: ``project_residue_first`` REORDERS the body before the cap, so
+        # hand-written residue from anywhere in a multi-megabyte diff is hoisted into
+        # the head the model reads. When the raw scan was TRUNCATED, that hoisted text
+        # may never have been looked at -- and the residue-unlocked population is
+        # exactly the oversized one. So the projection is screened too, in that case
+        # only: below the cap the projection is a permutation of already-screened text
+        # (its segments are verbatim; the preamble and notes are ours), so re-scanning
+        # it could not find anything the raw scan missed. Hits ride the same
+        # diff-region detail -- one ledger fact, one skip, no second decision point --
+        # and a family the raw scan already found is not duplicated.
+        #
+        # PRECONDITION, because the two sides read the mark from different places:
+        # this screens a projection built from the FRESH scan above, while both LLM
+        # tiers build theirs from ``generated_marks(conn)`` -- the ledger's stored
+        # mark, which carries no rule_version filter. They agree, and "every
+        # character the model can be shown has been screened" holds, only once a
+        # record pass has run at the current GENERATED_RULES_VERSION. Between a bump
+        # and that pass a tier can project a file set this never projected.
+        if len(diff_region) > injection_mod.MAX_SCAN_CHARS and generated_scan.files:
+            projected = generated_mod.project_residue_first(
+                diff_region, generated_mod.mark_files_for(generated_scan)).text
+            seen = {flag.detail for flag in diff_flags}
+            diff_flags += [
+                flag for flag in injection_mod.scan_injection(
+                    projected, region=injection_mod.DIFF_REGION)
+                if flag.detail not in seen]
+
+        injection_flags = (diff_flags
                            + injection_mod.scan_injection(header_region, region=injection_mod.HEADER_REGION))
         desired_injection = {(flag.detail, flag.evidence, injection_mod.INJECTION_RULES_VERSION)
                              for flag in injection_flags}
         live_injection = {(obs['detail'], obs['evidence'], obs['rule_version'])
-                          for obs in ledger_mod.observations_for(conn, record.fingerprint)
+                          for obs in observations
                           if obs['kind'] == injection_mod.INJECTION_KIND and obs['superseded_at'] is None}
         if desired_injection == live_injection:
             stats.injection_skipped += 1
@@ -404,12 +509,11 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
         # because a tightened rule un-marked its files (retraction supersedes the prior row
         # and appends nothing). NEVER a verdict -- nothing downstream may map this mark to
         # a category.
-        generated_scan = generated_mod.scan(record.body)
         desired_generated = set() if not generated_scan.files else {
             (generated_mod.detail_for(generated_scan), generated_mod.evidence_for(generated_scan),
              generated_mod.GENERATED_RULES_VERSION)}
         live_generated = {(obs['detail'], obs['evidence'], obs['rule_version'])
-                          for obs in ledger_mod.observations_for(conn, record.fingerprint)
+                          for obs in observations
                           if obs['kind'] == generated_mod.GENERATED_KIND and obs['superseded_at'] is None}
         if desired_generated == live_generated:
             stats.generated_skipped += 1

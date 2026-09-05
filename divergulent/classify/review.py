@@ -865,6 +865,20 @@ def record_review_verdict(conn: sqlite3.Connection, item: sqlite3.Row,
     the queue ``item`` reviewed.  On ``'defer'`` the item is left pending and
     NOTHING is recorded.
 
+    ALL-OR-NOTHING for any failure, not just a signing one.  The two writes are one
+    verdict: the decision is appended uncommitted and ``mark_reviewed`` commits both
+    together, so a failure between them (a locked database, say) would otherwise
+    leave the signed decision sitting in the connection's transaction, to be flushed
+    by whatever commits next -- and the caller, having been told the submission
+    failed, would never know.  Any exception rolls the pair back and re-raises, so a
+    caller that reports a failure is telling the truth: a human verdict outranks
+    every rule, and it must land only when it was deliberate.
+
+    PRECONDITION: ``rollback()`` is connection-wide, so the caller must hold no
+    other uncommitted work on ``conn`` when it calls this.  Every caller today is
+    one verdict per commit; a future one that staged several would lose the earlier
+    ones here, and would want a ``SAVEPOINT`` instead.
+
     ``signer``/``now`` are injected so this is pure given a fake signer; ``now`` is
     the caller-supplied ISO-8601 timestamp (this module never reads a clock).
     """
@@ -890,12 +904,19 @@ def record_review_verdict(conn: sqlite3.Connection, item: sqlite3.Row,
         'queue_reason': context.reason,
     }, sort_keys=True)
 
-    decision_id = ledger_mod.append_decision(
-        conn, fingerprint=fingerprint, category=category, confidence='high',
-        decided_by=DECIDED_BY, rule_version=REVIEW_RULE_VERSION, kind='human',
-        verified=True, signature=signature, signed_by=signed_by,
-        evidence=evidence, decided_at=now, commit=False)
-    ledger_mod.mark_reviewed(conn, item_id=item['id'], reviewed_at=now)
+    try:
+        decision_id = ledger_mod.append_decision(
+            conn, fingerprint=fingerprint, category=category, confidence='high',
+            decided_by=DECIDED_BY, rule_version=REVIEW_RULE_VERSION, kind='human',
+            verified=True, signature=signature, signed_by=signed_by,
+            evidence=evidence, decided_at=now, commit=False)
+        ledger_mod.mark_reviewed(conn, item_id=item['id'], reviewed_at=now)
+    except Exception:
+        # Discard the half-written verdict rather than leaving it staged on a
+        # connection that outlives this call (the web UI's is process-lifetime).
+        # Re-raised so the caller still reports the failure it was going to.
+        conn.rollback()
+        raise
 
     return ReviewOutcome(fingerprint, True, False, category, decision_id)
 
@@ -1111,19 +1132,42 @@ def requeue_one(conn: sqlite3.Connection, fingerprint: str, *, now,
     pending item carrying ``reason``.  Does NOT commit or rebuild the verdict
     cache; the CLI does both once.  ``now`` is caller-supplied (this module never
     reads a clock).
-    """
-    superseded = ledger_mod.supersede_decisions_for_fingerprint(
-        conn, fingerprint=fingerprint, kind='human', superseded_at=now, commit=False)
-    reopened = ledger_mod.reopen_review_items(conn, fingerprint=fingerprint, commit=False)
 
-    created = False
-    if reopened == 0 and not ledger_mod.pending_review_item_exists(conn, fingerprint=fingerprint):
-        ledger_mod.append_review_item(
-            conn, fingerprint=fingerprint,
-            reason=reason or 'manually re-queued for human review',
-            draft_category=None, draft_confidence=None,
-            enqueued_at=now, priority=0, commit=False)
-        created = True
+    ALL-OR-NOTHING, for the same reason :func:`record_review_verdict` is: the two
+    or three writes are one re-queue, all left uncommitted for the caller, so a
+    failure part-way -- a locked database, say -- would otherwise leave the earlier
+    ones staged on a connection that outlives this call (the web UI's is
+    process-lifetime), to be flushed by whatever commits next.  That is the worse
+    half of the pair: the supersede lands without the re-open, so a human verdict is
+    silently retracted and the patch is not queued for anyone to replace it, while
+    the operator was told the re-queue crashed.  Any exception rolls the set back
+    and re-raises, so a caller that reports a failure is telling the truth.
+
+    PRECONDITION, as for :func:`record_review_verdict`: ``rollback()`` is
+    connection-wide, so the caller must hold no other uncommitted work on ``conn``.
+    'The CLI does both once' above means one fingerprint per commit -- a caller
+    batching several re-queues into one transaction would lose the earlier ones when
+    the last failed, and wants a ``SAVEPOINT`` rather than this.
+    """
+    try:
+        superseded = ledger_mod.supersede_decisions_for_fingerprint(
+            conn, fingerprint=fingerprint, kind='human', superseded_at=now, commit=False)
+        reopened = ledger_mod.reopen_review_items(conn, fingerprint=fingerprint, commit=False)
+
+        created = False
+        if reopened == 0 and not ledger_mod.pending_review_item_exists(conn, fingerprint=fingerprint):
+            ledger_mod.append_review_item(
+                conn, fingerprint=fingerprint,
+                reason=reason or 'manually re-queued for human review',
+                draft_category=None, draft_confidence=None,
+                enqueued_at=now, priority=0, commit=False)
+            created = True
+    except Exception:
+        # Discard the half-written re-queue rather than leaving it staged on a
+        # connection that outlives this call.  Re-raised so the caller still
+        # reports the failure it was going to.
+        conn.rollback()
+        raise
 
     return RequeueOutcome(fingerprint, superseded, reopened, created)
 

@@ -67,7 +67,22 @@ distribution exactly with a 42,907-fingerprint derived queue. See
 
 The reserved llm/human seats are filled here. `triage.py` does the claim-blind LLM
 draft + an independent adversarial verification, routing each patch to
-`verified` or `needs_human`. The model-call boundary is
+`verified` or `needs_human`. A `security` draft is the one exception to that
+routing: it goes to `needs_human` unconditionally, even when the verifier agreed
+at high confidence, so no `kind='llm'`, `verified=True` decision **written at
+`PROMPT_VERSION` 2 or later** can carry that category. This deliberately
+increases the human queue — the alternative is letting a model settle the one
+call whose cost of being wrong is highest. The routing change arrived with the
+version bump because `record_triage_result` skips a fingerprint whose live
+decision already matches `(decided_by, rule_version)`: without it, verified
+`security` rows written under version 1 would stay live and unreachable by any
+re-run. Retiring that generation in an existing ledger is an operator step —
+`python -m divergulent.classify.ledger supersede <ledger-path> llm-triage:<model> 1`,
+the same module CLI named above — which supersedes those decisions and
+re-queues their fingerprints. It is not targeted at `security`: `supersede`
+keys on `(rule_id, version)`, so it retires the entire version-1 generation
+that rule wrote and re-queues all of it for re-triage, once per model that
+was used. `docs/workflow.md` says what that costs and how to size it first. The model-call boundary is
 `call(system, user, *, model, schema=None) -> CallResult(text, usage)`: the
 **static rubric is the cacheable `system` prompt** and the per-patch diff is the
 `user` message, so the rubric is billed once per run and read from cache
@@ -86,7 +101,7 @@ on the subscription path, ~100× less input. `anthropic_call` sends the rubric a
 a 1h-cached `cache_control` block. The driver sums each call's usage into a **Cost
 & cache** report section (tokens, cache-hit ratio, reported + at-rates cost per
 run and per patch). See
-`docs/plans/PLAN-patch-classification-phase-04-triage-backend.md`. Step 4c bumped the ledger to **schema v2**: a
+`docs/plans/PLAN-patch-classification-phase-04-triage-backend.md`. The ledger schema is now **v2**, adding a
 `verified` flag on `decision`, reserved `signature`/`signed_by` columns for
 signed human ManualDecisions (4e), and a `review_queue` worklist table. The
 precedence is now `human > verified-llm > heuristic > unverified-llm`
@@ -141,7 +156,7 @@ first; it is opt-in on a pinned snapshot and recorded only when a bucket changes
 `docs/plans/PLAN-patch-classification-phase-04-risk-gate.md`,
 `docs/plans/PLAN-patch-classification-phase-04-reviewability-axis.md` and
 `docs/plans/PLAN-patch-classification-phase-04-reach-axis.md`. `cross_reference.py`
-adds the phase-6 **external** tier (`purity='external'`): it verifies the CVE/bug
+adds the **external** tier (`purity='external'`): it verifies the CVE/bug
 references a patch *claims* against Debian's own bulk-pinned records — the Security
 Tracker (`security_tracker.py` → `corpus/security_tracker.sqlite`) and the BTS
 (`bts.py` → `corpus/bts.sqlite`, a gzipped `bug→source,status` TSV built weekly from
@@ -195,7 +210,13 @@ to pre-exist; the one-time corpus/`build` steps stay
 longhand, as they create the root's contents). It guards the forgetful operator: a missing ledger or a not-a-root cwd is a
 clear error not a crash, and a **stale published cache** is loudly flagged before
 data-consuming verbs. `status` is the one-screen orientation (residue, categories,
-risk distribution, pending review, cache age). The old `python -m
+risk distribution, pending review, cache age); `report` prints the ledger's own
+markdown summary (`verdict.render_report`) — verdict/queue/superseded headline
+counts, then breakdowns by category, by deciding rule, and by observation detail.
+`report` predates `status` and `status` has superseded it for day-to-day
+orientation; what `report` still gives that `status` does not is the per-rule and
+per-observation-detail breakdown, useful for auditing which rule or LLM pass
+produced today's ledger. The old `python -m
 divergulent.classify.<x>` forms still work. See
 `docs/plans/PLAN-curation-cli-ergonomics.md`.
 
@@ -277,7 +298,23 @@ identity + signature, indicated by a worklist count badge, and never enters the
 published bundle. Flask + Jinja2 (autoescaping) are behind the optional **`review`
 extra** — `pip install divergulent[review]`, or `[review,verify]` to sign — off
 the default scan/report install; it binds **loopback only**, has no auth, is
-single-user, and is never run in CI or by clients. Handlers test offline through
-Flask's test client (injected fake `fetch`/`signer`, temp ledger; no socket). See
+single-user, and is never run in CI or by clients. Binding loopback is not on its
+own enough, because a page in the operator's browser can post to a local server
+across origins: every request must also carry a `Host` naming this app (so a
+rebound DNS name cannot read the queue), and every state-changing one must carry
+this app's `Origin` — scheme, loopback name **and the bound port exactly**, since
+a page on another local port is another server — plus a per-process token in both
+a `SameSite=Strict` cookie and the form itself. The practical consequence for the
+operator is that a tab left open across a restart submits into a **403 page**
+rather than a stale process — reload it and the verdict goes through. The other
+consequence is for **SSH port-forwarding**: the port the browser sends must be the
+port the app was told it is bound to, so `ssh -L 9000:127.0.0.1:8765` sends
+`Host: localhost:9000` and is refused with a message about DNS rebinding that does
+not describe the situation. Forward the port to itself (`ssh -L
+8765:127.0.0.1:8765`), or start the far side with `--port 9000` so the two agree.
+Relaxing the check is not the answer — tolerating an unexpected port is what the
+rebinding defence exists to prevent. Handlers
+test offline through Flask's test client (injected fake `fetch`/`signer`, temp
+ledger; no socket). See
 `docs/plans/PLAN-patch-classification-phase-04-review-web.md`.
 

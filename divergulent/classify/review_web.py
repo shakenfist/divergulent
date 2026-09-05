@@ -11,17 +11,23 @@ important, by category, cherry-pick by fingerprint) and the per-item review page
 The signed verdict POST and the audit/spot-check view arrive in later steps.
 
 Bound to the loopback interface only, with no authentication: it is a
-single-user local tool, never a networked service.  All handler logic is driven
-through Flask's test client in the tests, with an injected fake ``fetch`` and a
-temp ledger -- no real socket, no real network.
+single-user local tool, never a networked service.  A loopback bind is not on its
+own a security boundary -- any page in the operator's browser can POST to it -- so
+every mutating request must additionally clear :func:`guard_request`: a same-origin
+``Origin``, a loopback ``Host`` on the bound port, and the per-process CSRF token
+(see the guard's docstring).  All handler logic is driven through Flask's test
+client in the tests, with an injected fake ``fetch`` and a temp ledger -- no real
+socket, no real network.
 """
 
 from __future__ import annotations
 
 import argparse
+import hmac
 import os
+import secrets
 import sqlite3
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from divergulent.classify import cross_reference as xref_mod
 from divergulent.classify import generated as generated_mod
@@ -42,6 +48,27 @@ LOOPBACK_HOSTS = ('127.0.0.1', 'localhost', '::1')
 # tell the operator how many were dropped rather than building a vast page.
 AUDIT_LIMIT = 500
 
+# The CSRF token's cookie name, its hidden-form-field name, and the app.config
+# key holding the value.  The token is minted once per ``create_app`` (per
+# process) from ``secrets.token_urlsafe`` and is never derived from anything
+# stable, so it cannot be guessed, and a token learned from one run is worthless
+# against the next.
+CSRF_COOKIE = 'divergulent_csrf'
+CSRF_FIELD = 'csrf_token'
+CSRF_CONFIG_KEY = 'DIVERGULENT_CSRF_TOKEN'
+# Methods that cannot change the ledger.  Everything else is a mutating request
+# and must clear the full origin + host + token check.
+SAFE_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
+# The largest request body this UI will read at all.  Every POST it renders is a
+# short form -- a choice, a fingerprint, a token -- plus at most a reviewer's note,
+# so a megabyte is orders of magnitude more than any legitimate one.  Flask already
+# caps urlencoded FORM data at its ``MAX_FORM_MEMORY_SIZE`` default (500 kB, a 413
+# before anything is buffered); this covers what that does not -- a body of some
+# other content type, which the guard has to accept the whole of before it can find
+# no CSRF field in it and refuse.  Pinned here rather than left to a framework
+# default, because the bound is part of this UI's threat model.
+MAX_REQUEST_BYTES = 1024 * 1024
+
 
 def require_loopback(host: str) -> str:
     """Return ``host`` if it is a loopback address, else raise ``ValueError``.
@@ -55,6 +82,134 @@ def require_loopback(host: str) -> str:
             'refusing to bind a non-loopback host %r; the review UI has no auth '
             'and must stay local (use one of %s)' % (host, ', '.join(LOOPBACK_HOSTS)))
     return host
+
+
+def _split_authority(value: str) -> tuple[str, str | None]:
+    """Split an HTTP authority (``Host`` value) into ``(host, port_or_None)``.
+
+    IPv6-literal aware: ``[::1]:8765`` splits to ``('::1', '8765')``, while a bare
+    ``::1`` (which a client should bracket, but might not) keeps its colons and is
+    returned whole with no port rather than being mangled into a wrong host.
+    """
+    if value.startswith('['):
+        closing = value.find(']')
+        if closing < 0:
+            return value, None
+        rest = value[closing + 1:]
+        return value[1:closing], rest[1:] if rest.startswith(':') else None
+    if value.count(':') == 1:
+        host, _, port = value.partition(':')
+        return host, port
+    return value, None
+
+
+def host_is_local(value: str | None, port: int) -> bool:
+    """Is ``value`` (an HTTP authority) this app's own loopback address and port?
+
+    The defence against DNS rebinding, which is what would otherwise let a page on
+    ``evil.example`` read the ledger through the UI: the attacker controls where the
+    NAME resolves, but the browser still sends the name it typed in ``Host``, so a
+    rebound request carries ``Host: evil.example`` and is refused here.
+
+    The accepted NAMES are the loopback set rather than the single literal that was
+    bound, because they are interchangeable in practice -- a browser pointed at
+    ``http://localhost:8765/`` reaches a ``127.0.0.1`` bind -- and none of them is
+    attacker-controllable.  The PORT, when the client sends one, must be the bound
+    one exactly: a different port is a different server.
+    """
+    if not value:
+        return False
+    host, host_port = _split_authority(value.strip())
+    if host.lower() not in LOOPBACK_HOSTS:
+        return False
+    return host_port is None or host_port == str(port)
+
+
+def origin_is_local(value: str | None, port: int) -> bool:
+    """Is ``value`` (an ``Origin`` header) this app's own origin?
+
+    An ``Origin`` is scheme + authority; the UI is served over plain HTTP on
+    loopback, so anything else -- another scheme, another host, another port, or the
+    literal ``null`` a sandboxed iframe sends -- is not us.
+
+    The PORT is required EXACTLY, unlike :func:`host_is_local`, which tolerates an
+    absent one because a client may legitimately omit it from ``Host``.  An origin
+    has no such licence: a browser writes the port whenever it is not the scheme's
+    default, so an absent one means 80 and nothing else.  Delegating the
+    port-optional rule here would let a page served from ``http://localhost:80``
+    pass as this app on 8765 -- which is what the paragraph above promises it does
+    not.
+    """
+    if not value:
+        return False
+    try:
+        parsed = urlsplit(value.strip())
+    except ValueError:
+        return False  # unparseable is certainly not us
+    if parsed.scheme != 'http':
+        return False
+    host, origin_port = _split_authority(parsed.netloc)
+    if host.lower() not in LOOPBACK_HOSTS:
+        return False
+    return (origin_port or '80') == str(port)
+
+
+def guard_request(*, method: str, host: str | None, origin: str | None,
+                  cookie_token: str | None, form_token,
+                  expected_token: str, port: int) -> str | None:
+    """Return why this request must be refused, or ``None`` if it may proceed.
+
+    Three independent layers, because none of them is sufficient alone:
+
+    1. ``Host`` must name loopback on the bound port -- on EVERY request, safe ones
+       included, since DNS rebinding would otherwise make the read pages (the whole
+       ledger) readable by a remote page.
+    2. ``Origin`` must be present and must be this app's own origin.  A browser
+       sends ``Origin`` on every cross-origin form POST, so a MISSING one on a
+       mutating request is treated as hostile rather than waved through -- the
+       permissive reading is exactly the hole this closes.
+    3. The per-process CSRF token must arrive in BOTH the ``SameSite=Strict``
+       cookie and the hidden form field, and the two must match the process token
+       under :func:`hmac.compare_digest`.  ``SameSite=Strict`` means a cross-site
+       POST carries no cookie at all, and the hidden field means a token leaked
+       through a cookie-only channel still cannot be replayed.
+
+    ``form_token`` is a CALLABLE returning the field (or ``None``), not the field
+    itself, so the body is not read until Host and Origin have already passed --
+    reading it eagerly made the caller parse a whole request from a rebound name or
+    a foreign origin only to refuse it, which is not the layering described above.
+    A ``str`` or ``None`` is still accepted, since the pure-policy tests pass one.
+
+    Pure and header-shaped rather than Flask-shaped so the policy is testable on its
+    own, and so the caller (a ``before_request`` hook) stays three lines long.
+    """
+    if not host_is_local(host, port):
+        return ('the Host header %r is not this review UI on loopback port %d -- refusing to '
+                'answer, since a name that resolves here is how a remote page reaches a local '
+                'server (DNS rebinding)' % (host or '', port))
+    if method.upper() in SAFE_METHODS:
+        return None
+    if origin is None:
+        return ('this state-changing request carried no Origin header; a browser sends one on '
+                'every cross-origin form post, so an absent Origin cannot be trusted to mean '
+                '"same origin"')
+    if not origin_is_local(origin, port):
+        return ('this state-changing request came from %r, which is not this review UI; a '
+                'verdict may only be submitted from the UI itself' % origin)
+    if not cookie_token:
+        return ('this state-changing request carried no %s cookie; the cookie is SameSite=Strict, '
+                'so a cross-site post never has one' % CSRF_COOKIE)
+    form_value = form_token() if callable(form_token) else form_token
+    if not form_value:
+        return 'this state-changing request carried no %s form field' % CSRF_FIELD
+    expected = expected_token.encode('utf-8')
+    # Compared as BYTES: ``compare_digest`` raises on a non-ASCII str, and both of
+    # these came off the wire, so a hostile cookie would otherwise be a 500.
+    if not (hmac.compare_digest(cookie_token.encode('utf-8'), expected)
+            and hmac.compare_digest(form_value.encode('utf-8'), expected)):
+        return ('the CSRF token did not match this process; reload the page (the token is minted '
+                'per run, so a tab left open across a restart carries a stale one)')
+    return None
 
 
 def diff_lines(text: str) -> list[dict]:
@@ -256,7 +411,7 @@ def category_chips(counts: dict) -> list[dict]:
 
 
 def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fetch,
-               signer=None, clock=None):
+               signer=None, clock=None, port: int = DEFAULT_PORT):
     """Build the Flask app over an open ledger ``conn`` and the corpus/index.
 
     ``fetch``, ``signer`` and ``clock`` are injected exactly as the CLI injects
@@ -266,10 +421,73 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
     read-only (no verdict form, no POST).  ``clock`` is the single clock read --
     a ``() -> ISO-8601 str`` -- captured once per POST and threaded into the
     signed record; it defaults to the CLI's UTC clock.
+
+    ``port`` is the port the caller will bind, and is what the ``Host`` check
+    validates against; it defaults to :data:`DEFAULT_PORT` so a test client (which
+    sends a port-less ``Host: localhost``) needs no ceremony.
     """
-    from flask import Flask, abort, redirect, render_template_string, request, url_for
+    from flask import Flask, abort, g, redirect, render_template_string, request, url_for
 
     app = Flask('divergulent.review_web')
+    # Bound the request body before anything reads it: the guard below has to touch
+    # request.form to check the CSRF field, and a body this server buffers whole only
+    # to answer 403 is a stall it need not take.  See MAX_REQUEST_BYTES for what this
+    # adds over Flask's own form-memory default.
+    app.config['MAX_CONTENT_LENGTH'] = MAX_REQUEST_BYTES
+    # One token for the life of the process, handed to the templates as a Jinja
+    # global so every form carries it without threading it through each render.
+    csrf_token = secrets.token_urlsafe(32)
+    app.config[CSRF_CONFIG_KEY] = csrf_token
+    app.jinja_env.globals[CSRF_FIELD] = csrf_token
+
+    @app.before_request
+    def _guard():
+        """Refuse anything that is not this UI talking to itself; see guard_request.
+
+        A ``before_request`` hook rather than a per-route decorator so a route added
+        later is protected by default -- the failure mode of the decorator (a new
+        mutating route someone forgets to annotate) is the whole bug class this
+        closes.  ``require_loopback`` guards the bind; this guards the request.
+
+        The form is read LAST and lazily: ``form_token`` is a callable, so
+        ``request.form`` -- which buffers and parses the whole body -- is only
+        touched once the Host and Origin checks have already passed. Passing the
+        value directly evaluated it as a call argument, i.e. before any of them,
+        so a post from a rebound name or a foreign origin was parsed in full and
+        then refused. A GET never reaches the callable at all.
+        ``MAX_CONTENT_LENGTH`` bounds what a request that does get there can make
+        us parse.
+        """
+        refusal = guard_request(
+            method=request.method, host=request.headers.get('Host'),
+            origin=request.headers.get('Origin'),
+            cookie_token=request.cookies.get(CSRF_COOKIE),
+            form_token=lambda: request.form.get(CSRF_FIELD),
+            expected_token=csrf_token, port=port)
+        if refusal is not None:
+            return render_template_string(FORBIDDEN_TEMPLATE, reason=refusal, port=port), 403
+        g.request_is_ours = True
+        return None
+
+    @app.after_request
+    def _issue_csrf_cookie(response):
+        """Plant the CSRF cookie on any ACCEPTED request that did not carry it.
+
+        ``SameSite=Strict`` is the load-bearing attribute: a cross-site POST is sent
+        without the cookie at all, so it cannot satisfy the double-submit check even
+        if the token itself leaked.  ``HttpOnly`` keeps a scripted read out of it;
+        the form field is the only place the page needs the value, and it is
+        rendered server-side.  A refused request gets no cookie: handing the token
+        to whatever host just failed the check would be handing it to the caller we
+        just decided is not us.
+        """
+        if not g.get('request_is_ours'):
+            return response
+        if request.cookies.get(CSRF_COOKIE) != csrf_token:
+            response.set_cookie(CSRF_COOKIE, csrf_token, path='/', httponly=True,
+                                samesite='Strict')
+        return response
+
     # Reviewer notes are an optional, additive table; backfill it so a ledger
     # built before notes existed gains it with no rebuild.
     ledger_mod.ensure_note_table(conn)
@@ -515,10 +733,17 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             outcome = review_mod.record_review_verdict(
                 conn, item, context, choice, signer=signer, now=now)
         except Exception as exc:  # noqa: BLE001 -- a signing/auth failure is a page, not a 500
-            # record_review_verdict signs BEFORE it writes, so a signer failure
-            # leaves the ledger untouched; surface it as an actionable page.
+            # Tell the reviewer it failed only if it REALLY did not land.  Signing
+            # happens before any write, so a signer failure never reached the
+            # ledger -- but a failure BETWEEN the decision insert and the queue
+            # update would leave the signed row uncommitted on this long-lived
+            # connection, where the next successful commit would flush it.
+            # record_review_verdict rolls that back itself; this is the handler's
+            # own guarantee, and it holds for anything else the try block grows.
+            conn.rollback()
             return render_template_string(
-                ERROR_TEMPLATE, fingerprint=resolved, error=str(exc)), 502
+                ERROR_TEMPLATE, fingerprint=resolved, error=str(exc),
+                **ERROR_ACTIONS['verdict']), 502
 
         if outcome.recorded:
             # A fresh human verdict tops precedence immediately, and any items the
@@ -572,8 +797,19 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
         # any) and re-opens the item for review.  Mirror the CLI: commit, then
         # rebuild so the superseded fingerprint drops back to pending immediately.
         now = clock()
-        review_mod.requeue_one(conn, resolved, now=now)
-        conn.commit()
+        try:
+            review_mod.requeue_one(conn, resolved, now=now)
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001 -- a ledger failure is a page, not a 500
+            # Same guarantee the verdict submission makes, for the same reason: the
+            # re-queue's writes are uncommitted until the commit above, and this
+            # connection lives for the life of the process.  requeue_one rolls its
+            # own set back; this is the handler's own guarantee, and it holds for
+            # anything else the try block grows.
+            conn.rollback()
+            return render_template_string(
+                ERROR_TEMPLATE, fingerprint=resolved, error=str(exc),
+                **ERROR_ACTIONS['requeue']), 502
         verdict_mod.rebuild_current_verdict(conn)
         return redirect(url_for('audit'))
 
@@ -591,9 +827,17 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
         try:
             review_mod.record_note(conn, resolved, body, signer=signer, now=clock())
         except Exception as exc:  # noqa: BLE001 -- a signing/auth failure is a page, not a 500
-            # record_note signs BEFORE it writes, so a signer failure leaves the
-            # ledger untouched; surface it as an actionable page.
-            return render_template_string(ERROR_TEMPLATE, fingerprint=resolved, error=str(exc)), 502
+            # record_note signs BEFORE it writes, so a SIGNER failure leaves the
+            # ledger untouched -- but that reasoning covers only the signer. The
+            # append itself commits, and under SQLite a deferred transaction takes
+            # EXCLUSIVE only at commit time, so a busy database fails AFTER the
+            # INSERT and leaves the signed note staged on this process-lifetime
+            # connection for the next commit to flush. The reviewer would be shown
+            # this page and the note would land anyway. Roll back, as the verdict
+            # and re-queue handlers do.
+            conn.rollback()
+            return render_template_string(ERROR_TEMPLATE, fingerprint=resolved, error=str(exc),
+                                          **ERROR_ACTIONS['note']), 502
         return redirect(url_for('review', fingerprint=resolved))
 
     return app
@@ -648,7 +892,7 @@ def main(argv=None) -> int:
     conn = ledger_mod.open_ledger(args.ledger)
     fetch = review_mod._real_fetch()
     app = create_app(conn, args.corpus_dir, index_path, fetch=fetch,
-                     signer=_lazy_sigstore_signer())
+                     signer=_lazy_sigstore_signer(), port=args.port)
 
     print('divergulent review UI on http://%s:%d/' % (host, args.port))
     # Single connection, single user: serve requests serially so the injected
@@ -919,6 +1163,7 @@ than a line-by-line read.</p>
 </div>
 {% if can_requeue %}
 <form method="post" action="/requeue/{{ ctx.fingerprint }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <button type="submit">Re-queue for human review</button>
   <span class="muted">supersedes the current verdict; records no decision</span>
 </form>
@@ -927,6 +1172,7 @@ than a line-by-line read.</p>
 <h2 id="verdict">Your verdict</h2>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 <form method="post" action="/review/{{ ctx.fingerprint }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <fieldset class="verdict">
     {% set ns = namespace(n=0) %}
     {% if ctx.draft_category %}{% set ns.n = ns.n + 1 %}
@@ -976,6 +1222,7 @@ document.addEventListener('keydown', function(e) {
   {% endfor %}
   {% if can_note %}
     <form method="post" action="/note/{{ ctx.fingerprint }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <textarea name="body" rows="2"
         placeholder="Leave a signed note (e.g. unsafe sprintf() near a privilege boundary)..."></textarea>
       <button type="submit">Add note &amp; sign</button>
@@ -1049,15 +1296,64 @@ generated is still a construct.</p>
 </script>
 ''' + _FOOT
 
+FORBIDDEN_TEMPLATE = _HEAD.replace('{{ title }}', 'refused') + '''
+<h1>Request refused</h1>
+<p>This request did not come from the review UI running on this machine, so it was
+<b>not</b> carried out -- nothing was written to the ledger.</p>
+<pre class="diff error">{{ reason }}</pre>
+<p class="muted">A human verdict is signed with your Sigstore identity and outranks
+every rule and every LLM verdict, so it is only ever recorded from a form this UI
+rendered. Open <span class="mono">http://127.0.0.1:{{ port }}/</span> and try again
+from the page itself.</p>
+<p class="muted">Reaching this through an SSH forward? The port your browser sends must
+be <span class="mono">{{ port }}</span>, the one this process was told it is bound to.
+Forward the port to itself (<span class="mono">-L {{ port }}:127.0.0.1:{{ port }}</span>),
+or start this UI with <span class="mono">--port</span> set to the port you forward to.</p>
+''' + _FOOT
+
 ERROR_TEMPLATE = _HEAD.replace('{{ title }}', 'error') + '''
 <p><a href="/">&larr; worklist</a></p>
-<h1>Could not record the verdict</h1>
-<p>The verdict for <span class="mono">{{ fingerprint[:16] }}</span> was NOT recorded
--- the ledger is unchanged (the record is signed before it is written).</p>
+<h1>{{ heading }}</h1>
+<p>{{ subject }} <span class="mono">{{ fingerprint[:16] }}</span> {{ outcome }}.
+{{ guarantee }}</p>
 <pre class="diff error">{{ error }}</pre>
-<p class="muted">Fix the issue and try again. Signing needs the verify extra:
-<span class="mono">pip install divergulent[review,verify]</span>.</p>
+<p class="muted">Fix the issue and try again.{% if signing %} Signing needs the verify
+extra: <span class="mono">pip install divergulent[review,verify]</span>.{% endif %}</p>
 ''' + _FOOT
+
+# The three failing write paths each get their OWN copy, because this page is the
+# operator's only signal about ledger state after a failure and the three failures
+# are not the same event. A re-queue records no decision at all, so telling the
+# operator "the verdict was NOT recorded" describes something that never happened
+# and hides the guarantee that DOES matter to them -- that their existing verdict
+# survived. Keyed here rather than open-coded at the call sites so a fourth
+# mutating route has to name its own copy instead of silently inheriting the
+# verdict wording.
+ERROR_ACTIONS = {
+    'verdict': dict(
+        heading='Could not record the verdict',
+        subject='The verdict for',
+        outcome='was NOT recorded -- the ledger is unchanged',
+        guarantee='Signing happens before any write, and a failure part-way through the '
+                  'write is rolled back, so there is nothing half-recorded to clean up.',
+        signing=True),
+    'requeue': dict(
+        heading='Could not re-queue this patch',
+        subject='The re-queue of',
+        outcome='did NOT happen -- the ledger is unchanged, and any verdict this patch '
+                'already carried still stands',
+        guarantee='Superseding the verdict and re-opening the item are one all-or-nothing '
+                  'write, rolled back on any failure, so there is nothing half-applied to '
+                  'clean up.',
+        signing=False),
+    'note': dict(
+        heading='Could not record the note',
+        subject='The note on',
+        outcome='was NOT recorded -- the ledger is unchanged',
+        guarantee='Signing happens before the write, and the write itself is rolled back '
+                  'on any failure, so there is nothing half-recorded to clean up.',
+        signing=True),
+}
 
 AUDIT_TEMPLATE = _HEAD.replace('{{ title }}', 'audit') + '''
 <p><a href="/">&larr; worklist</a></p>

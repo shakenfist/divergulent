@@ -7,7 +7,8 @@ import tempfile
 import testtools
 
 from divergulent.dep3 import PatchClass
-from divergulent.sources.apt_patches import AptSourcePatches, _download_source, _source_uris, deb_src_available
+from divergulent.sources.apt_patches import (AptSourcePatches, _download_source, _source_uris,
+                                             deb_src_available, fetch_patch_texts)
 from divergulent.sources.debian_patches import DivergenceState
 
 
@@ -31,14 +32,22 @@ def _add(tar, name, content):
     tar.addfile(info, io.BytesIO(data))
 
 
-def _writer(patches, fmt='3.0 (quilt)', with_debian_tar=True):
-    '''Return a fake download() that writes a fixture source package into dest.'''
+def _writer(patches, fmt='3.0 (quilt)', with_debian_tar=True, series=None):
+    '''Return a fake download() that writes a fixture source package into dest.
+
+    ``patches`` is the ``{name: text}`` written under ``debian/patches/``. By
+    default the series file lists exactly those names, one bare name per line.
+    Pass ``series`` to write RAW series content instead -- comments, blank
+    lines, quilt options, entries naming absent patches -- so the series parser
+    itself can be exercised.
+    '''
     def download(source_package, version, dest):
         with open(os.path.join(dest, 'pkg.dsc'), 'w') as handle:
             handle.write('Format: %s\n' % fmt)
         if with_debian_tar:
+            body = series if series is not None else ''.join(name + '\n' for name in (patches or {}))
             with tarfile.open(os.path.join(dest, 'pkg.debian.tar.xz'), 'w:xz') as tar:
-                _add(tar, 'debian/patches/series', ''.join(name + '\n' for name in (patches or {})))
+                _add(tar, 'debian/patches/series', body)
                 for name, text in (patches or {}).items():
                     _add(tar, 'debian/patches/' + name, text)
         return True
@@ -79,6 +88,69 @@ class AptSourcePatchesTestCase(testtools.TestCase):
 
     def test_name(self):
         self.assertEqual('apt-source', AptSourcePatches.name)
+
+
+class SeriesParsingTestCase(testtools.TestCase):
+    """The ``debian/patches/series`` parser -- the tool's front door.
+
+    Every patch divergulent ever classifies arrives through these three
+    behaviours: comment and blank lines are skipped, an entry is stripped of
+    surrounding whitespace and of any trailing quilt options, and an entry
+    naming a patch that is not in the tarball is dropped rather than raising.
+    """
+
+    def _texts(self, patches, series):
+        source_format, texts = fetch_patch_texts('foo', '1.2-1', download=_writer(patches, series=series))
+        self.assertEqual('3.0 (quilt)', source_format)
+        return texts
+
+    def test_comment_lines_are_skipped(self):
+        texts = self._texts({'a.patch': BARE, 'b.patch': DEBIAN_ONLY},
+                            '# a leading comment\na.patch\n# mid-series note\nb.patch\n')
+        self.assertEqual({'a.patch': BARE, 'b.patch': DEBIAN_ONLY}, texts)
+
+    def test_blank_lines_are_skipped(self):
+        texts = self._texts({'a.patch': BARE, 'b.patch': DEBIAN_ONLY},
+                            '\na.patch\n\n   \n\nb.patch\n\n')
+        self.assertEqual({'a.patch': BARE, 'b.patch': DEBIAN_ONLY}, texts)
+
+    def test_surrounding_whitespace_is_stripped(self):
+        # Leading and trailing whitespace (including a tab) must not become
+        # part of the patch name, or the member lookup misses and the patch is
+        # silently dropped.
+        texts = self._texts({'a.patch': BARE}, '   a.patch\t \n')
+        self.assertEqual({'a.patch': BARE}, texts)
+
+    def test_trailing_quilt_options_are_stripped(self):
+        # 'a.patch -p1' names the patch 'a.patch'; keeping the option in the
+        # name would drop the patch entirely.
+        texts = self._texts({'a.patch': BARE, 'b.patch': DEBIAN_ONLY},
+                            'a.patch -p1\nb.patch  -p0 -R\n')
+        self.assertEqual({'a.patch': BARE, 'b.patch': DEBIAN_ONLY}, texts)
+
+    def test_entry_absent_from_the_tarball_is_dropped(self):
+        # A series entry with no corresponding file yields no key -- and does
+        # not raise or abort the rest of the series.
+        texts = self._texts({'a.patch': BARE}, 'a.patch\nmissing.patch\n')
+        self.assertEqual({'a.patch': BARE}, texts)
+
+    def test_series_of_only_comments_is_empty(self):
+        self.assertEqual({}, self._texts({}, '# nothing here\n#\n\n'))
+
+    def test_series_of_only_comments_reads_as_clean(self):
+        # The empty dict reaches details() as CLEAN, not PATCHED-with-nothing.
+        package = _source(_writer({}, series='# nothing here\n\n')).details('foo', '1.2-1')
+        self.assertEqual(DivergenceState.CLEAN, package.state)
+        self.assertEqual([], package.patches)
+
+    def test_options_and_comments_together_reach_the_classifier(self):
+        # End to end: an option-carrying entry still classifies under its bare
+        # name once details() has run.
+        package = _source(_writer({'a.patch': DEBIAN_ONLY},
+                                  series='# quilt series\n\na.patch -p1\n')).details('foo', '1.2-1')
+        self.assertEqual(DivergenceState.PATCHED, package.state)
+        self.assertEqual(['a.patch'], [p.name for p in package.patches])
+        self.assertEqual(PatchClass.DEBIAN_ONLY, package.patches[0].patch_class)
 
 
 class DownloadTestCase(testtools.TestCase):

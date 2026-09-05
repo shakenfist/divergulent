@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 
 from divergulent.classify import content as content_mod
 from divergulent.classify import generated as generated_mod
+from divergulent.classify import injection as injection_mod
 from divergulent.classify import ledger as ledger_mod
 from divergulent.classify import measure
 from divergulent.classify import reviewability as reviewability_mod
@@ -54,6 +55,13 @@ RISK_OBSERVED_BY_PREFIX = 'risk-gate:'
 # spending an LLM call), versioned independently of the LLM prompt.
 RISK_CULL_OBSERVED_BY = 'risk-cull'
 RISK_CULL_VERSION = 1
+
+# The deterministic injection-skip source: a diff carrying injection-shaped text
+# is never handed to the gate -- the model must not read instructions aimed at
+# it -- so its risk is recorded here instead of being scored, and versioned
+# independently of the LLM prompt.
+RISK_INJECTION_OBSERVED_BY = 'risk-injection-skip'
+RISK_INJECTION_VERSION = 1
 
 # Opus was the bake-off pick: 100% recall / 0% false-alarm at the >=elevated cut
 # vs Sonnet's 73%/3%. For a security gate, recall is the metric you cannot trade
@@ -199,6 +207,10 @@ def score_risk(patch_text: str, *, call, model: str = DEFAULT_RISK_MODEL,
     ``call`` is required so the function is pure given a fake; the test suite
     never touches the network.
 
+    ``max_diff_chars`` is CLAMPED to ``injection.MAX_SCAN_CHARS``: the model is
+    never shown text the injection tripwire did not screen, whatever the operator
+    passes.  A non-positive value means the screen bound here, not "no cap".
+
     ``mark_files`` is the per-file evidence of the fingerprint's live
     ``generated-content`` mark (``generated_marks(conn)[fp]['files']``), passed by
     the driver for a MARKED fingerprint and left ``None`` for every other one.
@@ -210,6 +222,16 @@ def score_risk(patch_text: str, *, call, model: str = DEFAULT_RISK_MODEL,
     call is byte-identical to before the mark existed -- ``mark_files=None`` does
     not even build a projection.
     """
+    # The screen bound is not negotiable by a flag. The tripwire guarantees that the
+    # first MAX_SCAN_CHARS of a body (and, for a marked one, of its projection) were
+    # looked at -- nothing past that. cap_diff treats a non-positive max as "no cap"
+    # and the CLI advertised "0 disables", so an operator could hand the model a
+    # multi-megabyte tail no scanner ever read, silently turning off the invariant
+    # both LLM tiers rely on. 0 now means the screen bound, and a larger value is
+    # clamped down to it; the default 40,000 is far below either way.
+    if max_diff_chars <= 0 or max_diff_chars > injection_mod.MAX_SCAN_CHARS:
+        max_diff_chars = injection_mod.MAX_SCAN_CHARS
+
     body = triage_mod.diff_body(patch_text)
     projection = None
     if mark_files:
@@ -396,6 +418,68 @@ def record_cull(conn, fingerprint: str, reason: str, *, now: str, commit: bool =
         observed_at=now, commit=commit)
 
 
+def record_injection_skip(conn, fingerprint: str, families: str, *, now: str,
+                          commit: bool = True) -> int:
+    """Record the recall-safe risk for a diff the gate must never be shown.
+
+    Mirrors :func:`record_cull` (supersede any prior live risk row, then append)
+    but at :data:`_PARSE_FAILURE_LEVEL` -- the same disposition this module
+    already gives a patch the gate could not score -- and keyed to the
+    deterministic source ``observed_by='risk-injection-skip'`` /
+    ``rule_version=RISK_INJECTION_VERSION``, so a skipped score is
+    distinguishable from an LLM one in the audit trail.  The evidence names the
+    families that fired and says plainly that the model did not score it, exactly
+    as the triage driver's needs-human reason string does.
+
+    Superseding matters here rather than being mere hygiene: a prior LIVE score
+    on such a fingerprint was read off attacker-authored text aimed at the model
+    that produced it, so it is precisely the score not to trust.
+
+    That reasoning does NOT cover the one other row this can supersede -- a
+    deterministic ``risk-cull`` ``none`` from :func:`record_cull`, which no model
+    ever saw and no payload could steer -- and the override is deliberate anyway.
+    The cull answers "can this patch carry security risk?" from the diff's shape:
+    whitespace-only, comment-only, documentation-only, changelog-only.  Those are
+    exactly the shapes with room for English prose and no code, which is to say the
+    likeliest home for an injection payload in the whole corpus, so narrowing the
+    supersede would carve the hole precisely where the vector lives.  The two
+    findings are also about different things: the cull says the PATCH is harmless,
+    the skip says the CLASSIFIER was targeted, and the second is the one a human
+    needs to see.  A cull that survives is recorded history either way -- nothing is
+    deleted -- and the cost of the override is one human review.
+    """
+    ledger_mod.supersede_observations_for_fingerprint(
+        conn, fingerprint=fingerprint, kind=RISK_KIND, superseded_at=now, commit=False)
+    reason = ('llm-injection-suspect (%s): not sent to the LLM; the model did not score it, '
+              'recorded %s for review' % (families, _PARSE_FAILURE_LEVEL))
+    evidence = json.dumps(
+        {'level': _PARSE_FAILURE_LEVEL, 'reason': reason, 'injection_suspect': True},
+        sort_keys=True)
+    return ledger_mod.append_observation(
+        conn, fingerprint=fingerprint, kind=RISK_KIND, detail=_PARSE_FAILURE_LEVEL,
+        evidence=evidence, observed_by=RISK_INJECTION_OBSERVED_BY,
+        rule_version=RISK_INJECTION_VERSION, observed_at=now, commit=commit)
+
+
+def injection_skipped_fingerprints(conn) -> set[str]:
+    """Fingerprints whose LIVE risk row is the deterministic injection skip.
+
+    The termination guard for :func:`run_risk_gate`'s skip pass: once a suspect
+    carries this row it is dispositioned, so the next run neither re-records it
+    nor re-selects it.  A suspect whose live row came from anywhere else (an LLM
+    score written before the skip existed) is absent, and is healed on the next
+    run.
+
+    Also the RETRACTION set: a fingerprint here that is no longer a suspect is one
+    whose skip has outlived its cause, and the same pass supersedes its row.  Both
+    directions matter, because the row is simultaneously the guard and a live risk
+    score -- so a stale one does not merely mislabel the patch, it removes it from
+    the population the gate scores at all.
+    """
+    return {obs['fingerprint'] for obs in ledger_mod.live_observations(conn)
+            if obs['kind'] == RISK_KIND and obs['observed_by'] == RISK_INJECTION_OBSERVED_BY}
+
+
 # ---------------------------------------------------------------------------
 # The bounded cascade driver.
 # ---------------------------------------------------------------------------
@@ -410,6 +494,8 @@ class RiskRunStats:
     errored: int = 0      # the backend raised -> recorded 'elevated' (recall-safe)
     truncated: int = 0    # diff capped before the call (head-only read)
     skipped_oversized: int = 0  # not line-reviewable -> never sent to the LLM
+    skipped_injection: int = 0  # injection-suspect diff -> never sent to the LLM -> elevated
+    healed_injection_skip: int = 0  # skip rows retracted because the hit that caused them is gone
     unlocked_by_residue: int = 0  # oversized, but a small residue -> scored after all
     projected: int = 0    # marked -> scored residue-first, generated files as notes
     re_risked: int = 0    # re-scored by the targeted --re-risk-marked pass
@@ -443,6 +529,42 @@ def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, lim
     evidence. Unmarked fingerprints -- the overwhelming majority -- are unchanged
     down to the byte.
 
+    A fingerprint whose DIFF carries injection-shaped text is never handed to the
+    gate: the tripwire's whole point is that instructions aimed at a model are not
+    fed to it, and a payload steering the gate to ``none`` would both ship that
+    value and sink the patch to the bottom of the human queue.  Such a fingerprint
+    leaves the pending set before any call is made and is recorded
+    deterministically at the recall-safe level instead
+    (:func:`record_injection_skip`), so it is dispositioned rather than left
+    un-scored and re-selected on every run -- and any live score already read off
+    that text is superseded the first time this runs.  Exactly the triage driver's
+    check, through the same helper, so the two consumers can never disagree.
+
+    That disposition is written for EVERY corpus suspect, whatever mode the run is
+    in -- it costs no LLM call, so ``limit`` does not bound it, and neither does
+    ``re_risk_marked``'s narrower selection.  Deliberate: a suspect is a suspect
+    whichever pass happens to notice it, and leaving one un-dispositioned because
+    the operator asked for a targeted re-risk would let a payload keep its stale
+    score.  Two consequences worth knowing.  A suspect that is ALSO oversized-and-
+    locked used to carry no risk row at all (its ``reviewability`` observation was
+    its whole disposition) and now carries the ``elevated`` one; and because the
+    summary counts each population separately, ``skipped_oversized`` and
+    ``skipped_injection`` can both count the same fingerprint, so those lines may
+    sum to more than the slice.  And because risk is the TOP prioritisation band, a
+    suspect now sits at the HEAD of the human queue rather than merely in it -- the
+    patterns are public, so that is a lever for buying reviewer attention at scale.
+    Accepted rather than overlooked: a diff the gate may not read is a diff a human
+    should read first, and the alternative (a band of its own between risk and
+    provenance, as the triage driver has) would put the un-scorable patches behind
+    the scored ones.  The cheap half of the lever is already blunted -- padding a
+    diff yields ``scan-truncated``, which deliberately routes nothing -- so the
+    remaining cost is writing a real marker into a patch that a human then reads.
+
+    The disposition is RETRACTED in the same pass once the injection hit behind it is
+    gone, because the row is both the termination guard and a live score: left
+    standing it would keep a no-longer-suspect fingerprint out of the un-scored
+    population for ever.
+
     ``re_risk_marked`` switches the run to the TARGETED re-risk population instead
     of the un-scored one: the marked fingerprints whose live score was read off a
     truncated generated head (:func:`rerisk_candidates`), re-scored through this
@@ -462,20 +584,56 @@ def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, lim
     oversized = reviewability_mod.oversized_fingerprints(conn)
     unlocked = generated_mod.residue_unlocked_fingerprints(conn)
     locked = oversized - unlocked
+    # The prompt-injection tripwire, read through the SAME helper the triage
+    # driver uses (diff region only -- the model never reads the header): these
+    # never reach the model, whatever else is true of them.  The injection skip
+    # outranks the residue unlock, exactly as it does in the driver.
+    suspects = injection_mod.injection_suspect_fingerprints(
+        conn, region=injection_mod.DIFF_REGION)
 
     stats = RiskRunStats(queue_size=len(work), model=model)
     corpus = {item.fingerprint for item in work}
     stats.skipped_oversized = len(locked & corpus)
     stats.unlocked_by_residue = len(unlocked & corpus)
 
+    # Disposition every suspect in the corpus that is not already dispositioned,
+    # BEFORE the selection below drops them: a bare skip would leave them
+    # un-scored, re-selected every run, and -- because risk is the top
+    # prioritisation band -- parked at the bottom of the human review queue.
+    # No LLM call is spent, so this is not bounded by ``limit``; it terminates
+    # because the row it writes is its own guard.
+    stats.skipped_injection = len(suspects & corpus)
+    already_skipped = injection_skipped_fingerprints(conn)
+    if stats.skipped_injection:
+        families = injection_mod.injection_by_fingerprint(conn)
+        for fingerprint in sorted((suspects & corpus) - already_skipped):
+            record_injection_skip(conn, fingerprint, families.get(fingerprint, ''),
+                                  now=now, commit=False)
+
+    # ... and RETRACT the skip for a fingerprint that is no longer a suspect, which
+    # is the other half of the same heal.  The skip row is its own termination
+    # guard, and it also counts as a live score -- so once the injection hit behind
+    # it goes away (an INJECTION_RULES_VERSION bump, a retired family, a body the
+    # tightened patterns no longer hit: all things record.py's desired-vs-live
+    # reconcile now does routinely) the row would otherwise keep the fingerprint out
+    # of ``pending`` for ever, un-scorable by the model that was only ever skipped
+    # because of a hit that no longer exists.  Superseding puts it back in the
+    # un-scored population, where an ordinary run picks it up.
+    for fingerprint in sorted(already_skipped - suspects):
+        stats.healed_injection_skip += ledger_mod.supersede_observations_for_fingerprint(
+            conn, fingerprint=fingerprint, kind=RISK_KIND,
+            observed_by=RISK_INJECTION_OBSERVED_BY, superseded_at=now, commit=False)
+
     if re_risk_marked:
         targets = rerisk_candidates(conn)
         pending = [item for item in work
-                   if item.fingerprint in targets and item.fingerprint not in locked]
+                   if item.fingerprint in targets and item.fingerprint not in locked
+                   and item.fingerprint not in suspects]
     else:
         scored = set(risk_rank_by_fingerprint(conn))
         pending = [item for item in work
-                   if item.fingerprint not in scored and item.fingerprint not in locked]
+                   if item.fingerprint not in scored and item.fingerprint not in locked
+                   and item.fingerprint not in suspects]
     selected = pending[:limit]
     stats.unscored_remaining = max(len(pending) - len(selected), 0)
     if re_risk_marked:
@@ -533,6 +691,12 @@ def print_risk_summary(stats: RiskRunStats) -> None:
     if stats.skipped_oversized:
         print('  (%d oversized skipped -- not line-reviewable, no LLM; see the review UI)'
               % stats.skipped_oversized)
+    if stats.skipped_injection:
+        print('  (%d injection-suspect skipped -- never sent to the LLM; recorded %s for review)'
+              % (stats.skipped_injection, _PARSE_FAILURE_LEVEL))
+    if stats.healed_injection_skip:
+        print('  (%d injection-suspect skips retracted -- the hit is gone; back in the '
+              'un-scored queue)' % stats.healed_injection_skip)
     if stats.unlocked_by_residue:
         print('  (%d oversized unlocked by a small hand-written residue -- scored residue-first)'
               % stats.unlocked_by_residue)
@@ -593,8 +757,10 @@ def main(argv=None) -> int:
     parser.add_argument('--model', default=DEFAULT_RISK_MODEL,
                         help='model for the gate (default: %s)' % DEFAULT_RISK_MODEL)
     parser.add_argument('--max-diff-chars', type=int, default=RISK_MAX_DIFF_CHARS,
-                        help='cap the diff sent to the gate, head only (default: %d; 0 disables)'
-                             % RISK_MAX_DIFF_CHARS)
+                        help='cap the diff sent to the gate, head only (default: %d; 0 or any '
+                             'value above the injection screen bound of %d means that bound, so '
+                             'the model is never shown unscreened text)'
+                             % (RISK_MAX_DIFF_CHARS, injection_mod.MAX_SCAN_CHARS))
     parser.add_argument('--re-risk-marked', action='store_true',
                         help='instead of scoring un-scored patches, RE-score the marked ones whose '
                              'current score was read off a truncated generated head (supersedes, '

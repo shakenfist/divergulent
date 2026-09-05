@@ -245,10 +245,16 @@ Unicode tag block, long zero-width runs, bidi controls; the noisy base64
 family was dropped and zero-width narrowed to exclude emoji ZWJ). The
 recorder (`record.py`) writes them as versioned ledger observations over
 the diff region (LLM-visible) and the header region separately; a
-**diff-region** hit makes the triage driver **skip the LLM entirely** and
-route the patch to a human (priority band below risk, above provenance),
-and the review UI badges it. Posture is tripwire-not-shield: a hit is a
-candidate for a human, never a verdict or a claim of malice, and no claim
+**diff-region** hit makes **both LLM tiers** — the triage driver and the
+security-risk gate — **skip the LLM entirely** and route the patch to a
+human (priority band below risk, above provenance), and the review UI
+badges it. Both tiers ask `injection_suspect_fingerprints`, so a new LLM
+caller must go through that helper rather than re-derive the set. The
+scan is bounded (`MAX_SCAN_CHARS`) and a capped scan records a
+`scan-truncated` row that never routes — see `docs/deterministic-rules.md`
+for what that does and does not guarantee. Posture is
+tripwire-not-shield: a hit is a candidate for a human, never a verdict
+or a claim of malice, and no claim
 is made against targeted adversaries (the patterns are public). Keep the
 pattern source pure ASCII (`\u`/`\U` escapes — never literal invisible or
 bidi characters). `tools/injection-screening/` retains the original

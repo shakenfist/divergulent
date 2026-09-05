@@ -6,9 +6,17 @@ hand, and no server socket is ever bound.  The web read path must surface the sa
 artefact the CLI does, so the assertions check the diff-in-context, the LLM draft,
 the claim, and the worklist slices (priority order, category filter, fingerprint
 cherry-pick), plus that hostile input stays HTML-escaped.
+
+Every mutating request must clear the CSRF/origin guard, so the fixture's ``_post``
+helper posts the way the UI's own forms do (same-origin, token in the cookie and in
+the form); ``CsrfGuardTestCase`` is the negative half of that.
 """
+import io
 import os
+import re
+import sqlite3
 import tempfile
+from contextlib import redirect_stdout
 
 import testtools
 
@@ -55,6 +63,11 @@ def _recording_signer(signature='FAKE-SIG', signed_by='reviewer@example.org'):
     return signer, seen
 
 
+def _locked_ledger(*args, **kwargs):
+    """A ledger write that fails: the shape of a locked database mid-request."""
+    raise sqlite3.OperationalError('database is locked')
+
+
 def _failing_signer(message='sigstore exploded'):
     """A fake signer that always raises -- the signing-failure path."""
     def signer(record_bytes):
@@ -97,7 +110,8 @@ def _seed_generated(conn, fingerprint, patch_text):
 class ReviewWebFixture:
     """A synthetic corpus + ledger + a Flask test client over them."""
 
-    def _client(self, *, extra_items=(), signer=None, clock=None, patch=None):
+    def _client(self, *, extra_items=(), signer=None, clock=None, patch=None,
+                port=review_web.DEFAULT_PORT):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         corpus_dir = tmp.name
@@ -124,9 +138,34 @@ class ReviewWebFixture:
 
         app = review_web.create_app(
             conn, corpus_dir, index_path, fetch=_fetch, signer=signer,
-            clock=(clock or (lambda: WHEN)))
+            clock=(clock or (lambda: WHEN)), port=port)
         app.testing = True
-        return app.test_client(), conn, fp_hex
+        self.app = app
+        self.csrf = app.config[review_web.CSRF_CONFIG_KEY]
+        client = app.test_client()
+        # Arm the client the way a browser is armed by its first GET of the UI: the
+        # guard wants the token in the cookie AND in the form.
+        client.set_cookie(review_web.CSRF_COOKIE, self.csrf)
+        return client, conn, fp_hex
+
+    def _post(self, client, path, data=None, *, token=True,
+              origin='http://localhost:%d' % review_web.DEFAULT_PORT, headers=None):
+        """POST the way the UI's own forms do: same-origin, with the CSRF token.
+
+        The origin carries the PORT, as a browser's does for anything but the scheme's
+        default -- the guard requires it exactly, so a port-less origin is a different
+        server rather than a lenient spelling of this one.
+
+        ``token=False`` omits the hidden field, ``origin=None`` omits the header, and
+        ``headers`` adds or overrides one (a foreign ``Host``, say) -- the three knobs
+        the guard tests turn.
+        """
+        form = dict(data or {})
+        if token:
+            form[review_web.CSRF_FIELD] = self.csrf
+        sent = {} if origin is None else {'Origin': origin}
+        sent.update(headers or {})
+        return client.post(path, data=form, headers=sent)
 
 
 class WorklistTestCase(ReviewWebFixture, testtools.TestCase):
@@ -309,7 +348,7 @@ class VerdictPostTestCase(ReviewWebFixture, testtools.TestCase):
     def test_accept_records_signed_decision_and_dequeues(self):
         signer, seen = _recording_signer()
         client, conn, fp_hex = self._client(signer=signer)
-        resp = client.post('/review/' + fp_hex, data={'choice': 'accept'})
+        resp = self._post(client, '/review/' + fp_hex, {'choice': 'accept'})
         self.assertEqual(302, resp.status_code)
         # The signed bytes are exactly the canonical record for the draft category.
         self.assertEqual(
@@ -326,19 +365,19 @@ class VerdictPostTestCase(ReviewWebFixture, testtools.TestCase):
     def test_override_records_the_override_category(self):
         signer, _seen = _recording_signer()
         client, conn, fp_hex = self._client(signer=signer)
-        client.post('/review/' + fp_hex, data={'choice': 'security'})
+        self._post(client, '/review/' + fp_hex, {'choice': 'security'})
         self.assertEqual('security', self._human(conn, fp_hex)[0]['category'])
 
     def test_test_category_is_assignable(self):
         signer, _seen = _recording_signer()
         client, conn, fp_hex = self._client(signer=signer)
-        client.post('/review/' + fp_hex, data={'choice': 'test'})
+        self._post(client, '/review/' + fp_hex, {'choice': 'test'})
         self.assertEqual('test', self._human(conn, fp_hex)[0]['category'])
 
     def test_defer_records_nothing_and_leaves_pending(self):
         signer, seen = _recording_signer()
         client, conn, fp_hex = self._client(signer=signer)
-        resp = client.post('/review/' + fp_hex, data={'choice': 'defer'})
+        resp = self._post(client, '/review/' + fp_hex, {'choice': 'defer'})
         self.assertEqual(302, resp.status_code)
         self.assertNotIn('record_bytes', seen)
         self.assertEqual([], self._human(conn, fp_hex))
@@ -347,14 +386,14 @@ class VerdictPostTestCase(ReviewWebFixture, testtools.TestCase):
     def test_invalid_choice_is_rejected_without_recording(self):
         signer, seen = _recording_signer()
         client, conn, fp_hex = self._client(signer=signer)
-        resp = client.post('/review/' + fp_hex, data={'choice': 'banana'})
+        resp = self._post(client, '/review/' + fp_hex, {'choice': 'banana'})
         self.assertEqual(400, resp.status_code)
         self.assertNotIn('record_bytes', seen)
         self.assertEqual(1, len(ledger_mod.pending_review_items(conn)))
 
     def test_signer_failure_renders_error_and_records_nothing(self):
         client, conn, fp_hex = self._client(signer=_failing_signer('boom'))
-        resp = client.post('/review/' + fp_hex, data={'choice': 'accept'})
+        resp = self._post(client, '/review/' + fp_hex, {'choice': 'accept'})
         self.assertEqual(502, resp.status_code)
         body = resp.get_data(as_text=True)
         self.assertIn('Could not record the verdict', body)
@@ -363,11 +402,42 @@ class VerdictPostTestCase(ReviewWebFixture, testtools.TestCase):
         self.assertEqual([], self._human(conn, fp_hex))
         self.assertEqual(1, len(ledger_mod.pending_review_items(conn)))
 
+    def test_a_write_failure_rolls_back_and_the_verdict_never_lands(self):
+        """The reviewer is told it failed, so it must not land later either.
+
+        ``record_review_verdict`` appends the signed decision uncommitted and lets
+        ``mark_reviewed`` commit the pair; a failure between them (a locked database
+        here) would otherwise leave the decision staged on a connection that lives
+        for the whole process, for the next successful commit to flush.
+        """
+        signer, _seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        self.patch(ledger_mod, 'mark_reviewed', _locked_ledger)
+
+        resp = self._post(client, '/review/' + fp_hex, {'choice': 'accept'})
+
+        self.assertEqual(502, resp.status_code)
+        self.assertIn('Could not record the verdict', resp.get_data(as_text=True))
+        self.assertEqual([], self._human(conn, fp_hex))
+        # A later, unrelated, successful commit on the same connection must not
+        # carry the abandoned verdict with it.
+        ledger_mod.append_note(conn, fingerprint=fp_hex, body='a later note',
+                               signed_by='rev@example.org', signature='S', created_at=WHEN)
+        self.assertEqual([], self._human(conn, fp_hex))
+        # And it is absent from the file itself, not merely from this connection's
+        # view of it (database_list gives the open file's path: 'main' is column 2).
+        ledger_path = conn.execute('PRAGMA database_list').fetchone()[2]
+        other = ledger_mod.open_ledger(ledger_path)
+        self.addCleanup(other.close)
+        self.assertEqual(
+            [], [r for r in ledger_mod.decisions_for(other, fp_hex) if r['kind'] == 'human'])
+        self.assertEqual(1, len(ledger_mod.pending_review_items(conn)))
+
     def test_double_submit_is_idempotent(self):
         signer, _seen = _recording_signer()
         client, conn, fp_hex = self._client(signer=signer)
-        client.post('/review/' + fp_hex, data={'choice': 'accept'})
-        resp = client.post('/review/' + fp_hex, data={'choice': 'accept'})
+        self._post(client, '/review/' + fp_hex, {'choice': 'accept'})
+        resp = self._post(client, '/review/' + fp_hex, {'choice': 'accept'})
         self.assertEqual(302, resp.status_code)
         self.assertEqual(1, len(self._human(conn, fp_hex)))  # not double-recorded
 
@@ -384,7 +454,7 @@ class VerdictPostTestCase(ReviewWebFixture, testtools.TestCase):
         client, _conn, fp_hex = self._client(signer=None)  # read-only
         self.assertNotIn(
             'name="choice"', client.get('/review/' + fp_hex).get_data(as_text=True))
-        resp = client.post('/review/' + fp_hex, data={'choice': 'accept'})
+        resp = self._post(client, '/review/' + fp_hex, {'choice': 'accept'})
         self.assertEqual(405, resp.status_code)
 
     def test_verdict_form_has_numbered_keyboard_shortcuts(self):
@@ -461,7 +531,7 @@ class RequeueTestCase(ReviewWebFixture, testtools.TestCase):
         _mark_reviewed(conn, fp_hex)
         self.assertEqual([], ledger_mod.pending_review_items(conn))  # settled
 
-        resp = client.post('/requeue/' + fp_hex)
+        resp = self._post(client, '/requeue/' + fp_hex)
         self.assertEqual(302, resp.status_code)
         self.assertIn('/audit', resp.headers['Location'])
         # Back in the queue, and NO decision was recorded by the re-queue.
@@ -474,14 +544,355 @@ class RequeueTestCase(ReviewWebFixture, testtools.TestCase):
         signer, _seen = _recording_signer()
         client, conn, fp_hex = self._client(signer=signer)
         # Record then re-queue: the human verdict is superseded (no longer live).
-        client.post('/review/' + fp_hex, data={'choice': 'accept'})
+        self._post(client, '/review/' + fp_hex, {'choice': 'accept'})
         self.assertEqual('human', verdict_mod.current_verdict(conn)[fp_hex].kind)
-        client.post('/requeue/' + fp_hex)
+        self._post(client, '/requeue/' + fp_hex)
         self.assertNotEqual('human', verdict_mod.current_verdict(conn)[fp_hex].kind)
+
+    def test_a_failed_requeue_is_reported_and_lands_nothing(self):
+        """A re-queue that crashes must leave the live verdict standing.
+
+        ``requeue_one`` leaves its writes uncommitted, and this connection lives for
+        the life of the process, so a failure part-way would otherwise stage the
+        supersede for the next commit to flush -- retracting a human verdict the
+        operator was told had not been re-queued.  The page says 502, the verdict
+        stands, and a later successful write does not carry the supersede along.
+        """
+        signer, _seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        self._post(client, '/review/' + fp_hex, {'choice': 'accept'})
+        self.patch(ledger_mod, 'reopen_review_items', _locked_ledger)
+
+        resp = self._post(client, '/requeue/' + fp_hex)
+
+        self.assertEqual(502, resp.status_code)
+        body = resp.get_data(as_text=True)
+        self.assertIn('database is locked', body)
+        self.assertEqual('human', verdict_mod.current_verdict(conn)[fp_hex].kind)
+
+        # The page must describe the event that actually happened. A re-queue
+        # records no decision, so the verdict wording would tell the operator
+        # something false about the one thing this page exists to report -- and
+        # would bury the guarantee that matters here, that the verdict survived.
+        self.assertIn('Could not re-queue this patch', body)
+        self.assertIn('still stands', body)
+        self.assertNotIn('Could not record the verdict', body)
+        self.assertNotIn('was NOT recorded', body)
 
     def test_requeue_refused_on_readonly_instance(self):
         client, _conn, fp_hex = self._client(signer=None)
-        self.assertEqual(405, client.post('/requeue/' + fp_hex).status_code)
+        self.assertEqual(405, self._post(client, '/requeue/' + fp_hex).status_code)
+
+
+class CsrfGuardTestCase(ReviewWebFixture, testtools.TestCase):
+    """Only this UI's own forms may reach the mutating endpoints.
+
+    A loopback bind constrains where the server LISTENS, not who may post to it: a
+    form on any site can target ``http://127.0.0.1:8765/review/<prefix>``, the
+    browser sends it, and the resulting decision -- ``kind='human'``,
+    ``verified=True``, signed with the reviewer's cached Sigstore identity -- tops
+    the precedence in an append-only ledger and rides the export into the published
+    bundle.  So every forgery is asserted to be refused AND to leave the ledger
+    exactly as it was.
+    """
+
+    #: One entry per way a cross-site post differs from the UI's own.
+    FORGERIES = (
+        ('no csrf token', {'token': False}),
+        ('no Origin header', {'origin': None}),
+        ('a foreign Origin', {'origin': 'http://evil.example'}),
+        ('a foreign Host', {'headers': {'Host': 'evil.example'}}),
+    )
+
+    def _signing(self):
+        """A signing app, plus the record of what its signer was asked to sign."""
+        signer, seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        return client, conn, fp_hex, seen
+
+    def _human(self, conn, fp_hex):
+        return [r for r in ledger_mod.decisions_for(conn, fp_hex) if r['kind'] == 'human']
+
+    def test_a_forged_verdict_is_refused_and_records_nothing(self):
+        for label, forgery in self.FORGERIES:
+            client, conn, fp_hex, seen = self._signing()
+            resp = self._post(client, '/review/' + fp_hex, {'choice': 'accept'}, **forgery)
+            self.assertEqual(403, resp.status_code, label)
+            self.assertIn('Request refused', resp.get_data(as_text=True), label)
+            # No decision, the item is still queued, and -- the point of the
+            # exercise -- the reviewer's identity was never used to sign anything.
+            self.assertEqual([], self._human(conn, fp_hex), label)
+            self.assertEqual(1, len(ledger_mod.pending_review_items(conn)), label)
+            self.assertNotIn('record_bytes', seen, label)
+
+    def test_a_forged_note_is_refused_and_records_nothing(self):
+        for label, forgery in self.FORGERIES:
+            client, conn, fp_hex, seen = self._signing()
+            resp = self._post(client, '/note/' + fp_hex, {'body': 'forged'}, **forgery)
+            self.assertEqual(403, resp.status_code, label)
+            self.assertEqual([], ledger_mod.notes_for(conn, fp_hex), label)
+            self.assertNotIn('record_bytes', seen, label)
+
+    def test_a_forged_requeue_cannot_unsettle_a_human_verdict(self):
+        for label, forgery in self.FORGERIES:
+            client, conn, fp_hex, _seen = self._signing()
+            self._post(client, '/review/' + fp_hex, {'choice': 'accept'})  # a real verdict
+            self.assertEqual('human', verdict_mod.current_verdict(conn)[fp_hex].kind)
+
+            resp = self._post(client, '/requeue/' + fp_hex, **forgery)
+
+            self.assertEqual(403, resp.status_code, label)
+            # The verdict still stands and the item is still settled.
+            self.assertEqual('human', verdict_mod.current_verdict(conn)[fp_hex].kind, label)
+            self.assertEqual([], ledger_mod.pending_review_items(conn), label)
+
+    def test_a_stale_token_from_another_process_is_refused(self):
+        # The token is minted per create_app, so one learned from an earlier run --
+        # or from another user's tab -- is worthless.
+        #
+        # Everything but the token is what the UI's own form sends, so the refusal
+        # can only come from the token layer: an Origin the guard rejects would
+        # short-circuit ahead of the comparison and leave the app-level wiring
+        # (cookie, hidden field, ``CSRF_CONFIG_KEY``) untested. That is why the
+        # reason is asserted and not just the status.
+        client, conn, fp_hex, _seen = self._signing()
+        resp = self._post(client, '/review/' + fp_hex,
+                          {'choice': 'accept', review_web.CSRF_FIELD: 'not-the-token'},
+                          token=False)
+        self.assertEqual(403, resp.status_code)
+        self.assertIn('did not match this process', resp.get_data(as_text=True))
+        self.assertEqual([], self._human(conn, fp_hex))
+
+    def test_the_token_must_be_in_the_cookie_as_well_as_the_form(self):
+        # SameSite=Strict means a cross-site post arrives with no cookie at all.
+        client, conn, fp_hex, _seen = self._signing()
+        client.delete_cookie(review_web.CSRF_COOKIE)
+        resp = self._post(client, '/review/' + fp_hex, {'choice': 'accept'})
+        self.assertEqual(403, resp.status_code)
+        self.assertEqual([], self._human(conn, fp_hex))
+
+    def test_a_foreign_host_cannot_even_read_the_ledger(self):
+        # The Host check is what stops DNS rebinding, which would otherwise make
+        # the GET pages (the whole worklist) readable by a remote page.
+        client, _conn, fp_hex, _seen = self._signing()
+        client.delete_cookie(review_web.CSRF_COOKIE)
+        resp = client.get('/', headers={'Host': 'attacker.example'})
+        self.assertEqual(403, resp.status_code)
+        self.assertNotIn(fp_hex[:16], resp.get_data(as_text=True))
+        # Nor is the caller we just refused handed the token for a second try.
+        self.assertNotIn('Set-Cookie', resp.headers)
+
+    def test_the_normal_in_app_flow_still_records_a_verdict(self):
+        # End to end as a browser does it: arrive with no cookie, GET the page (which
+        # plants the cookie and renders the hidden field), post the token it carried.
+        signer, seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+        client.delete_cookie(review_web.CSRF_COOKIE)
+
+        page = client.get('/review/' + fp_hex)
+        self.assertEqual(200, page.status_code)
+        cookie = page.headers['Set-Cookie']
+        self.assertIn('SameSite=Strict', cookie)
+        self.assertIn('HttpOnly', cookie)
+        token = re.search(r'name="csrf_token" value="([^"]+)"',
+                          page.get_data(as_text=True)).group(1)
+
+        resp = client.post(
+            '/review/' + fp_hex,
+            headers={'Origin': 'http://localhost:%d' % review_web.DEFAULT_PORT},
+            data={'choice': 'accept', review_web.CSRF_FIELD: token})
+
+        self.assertEqual(302, resp.status_code)
+        self.assertIn('record_bytes', seen)
+        self.assertEqual('bugfix', self._human(conn, fp_hex)[0]['category'])
+        self.assertEqual([], ledger_mod.pending_review_items(conn))
+
+    def test_every_mutating_form_carries_the_token(self):
+        # The guard is only usable if the forms feed it; a form added without the
+        # hidden field would be dead on submit.
+        client, conn, fp_hex, _seen = self._signing()
+        queued = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertEqual(2, queued.count('name="csrf_token"'))   # verdict + note
+        _mark_reviewed(conn, fp_hex)
+        settled = client.get('/review/' + fp_hex).get_data(as_text=True)
+        self.assertIn('Re-queue for human review', settled)
+        self.assertEqual(2, settled.count('name="csrf_token"'))  # requeue + note
+
+
+class GuardWiringTestCase(ReviewWebFixture, testtools.TestCase):
+    """``port`` is the one security parameter the CLI feeds the guard; check the wire.
+
+    :class:`RequestGuardTestCase` exercises the policy itself, but always at the
+    default port, and the fixture binds the default too -- so both would still pass
+    if ``create_app`` dropped ``port`` on the floor and the guard fell back to
+    :data:`review_web.DEFAULT_PORT`.  That regression would make every request on an
+    operator's ``--port 9000`` run refuse (or, worse in a future refactor, accept a
+    host naming a port nothing is bound to).
+    """
+
+    def test_the_bound_port_is_the_port_the_guard_enforces(self):
+        client, _conn, _fp_hex = self._client(port=9999)
+        self.assertEqual(
+            200, client.get('/', headers={'Host': 'localhost:9999'}).status_code)
+        # ... and the default is now just another local server.
+        refused = client.get('/', headers={'Host': 'localhost:8765'})
+        self.assertEqual(403, refused.status_code)
+        self.assertIn('DNS rebinding', refused.get_data(as_text=True))
+
+    def test_an_oversized_body_is_refused_rather_than_buffered(self):
+        """The guard reads the body, so what it may read is bounded -- for any shape.
+
+        Flask's ``MAX_FORM_MEMORY_SIZE`` default already answers 413 to an oversized
+        urlencoded form, so that half needs no help from us.  A body of some OTHER
+        content type gets no such treatment: the guard finds no CSRF field in it and
+        refuses, but only after this single-threaded server has buffered the lot.
+        Asserting both, so the covered half is not mistaken for the reason.
+        """
+        client, _conn, fp_hex = self._client()
+        oversized = b'x' * (review_web.MAX_REQUEST_BYTES + 1)
+        resp = client.post('/note/' + fp_hex, data=oversized,
+                           content_type='application/octet-stream',
+                           headers={'Origin': 'http://localhost:%d' % review_web.DEFAULT_PORT})
+        self.assertEqual(413, resp.status_code)
+        # The form path, for the record: Flask's own default, not this setting.
+        form_resp = self._post(client, '/note/' + fp_hex,
+                               {'body': 'x' * (review_web.MAX_REQUEST_BYTES + 1)})
+        self.assertEqual(413, form_resp.status_code)
+
+    def test_main_hands_create_app_the_port_it_binds(self):
+        """The remaining link: ``--port`` -> ``create_app(port=...)``."""
+        seen = {}
+
+        class _FakeApp:
+            def run(self, **kwargs):
+                seen['run'] = kwargs
+
+        def _fake_create_app(*args, **kwargs):
+            seen['create_app'] = kwargs
+            return _FakeApp()
+
+        client, conn, _fp_hex = self._client()
+        self.patch(review_web, 'create_app', _fake_create_app)
+        self.patch(review_web.ledger_mod, 'open_ledger', lambda path: conn)
+        self.patch(review_web.review_mod, '_real_fetch', lambda: _fetch)
+        self.patch(review_web, '_lazy_sigstore_signer', lambda: None)
+
+        with redirect_stdout(io.StringIO()):     # main announces the bind; not under test
+            review_web.main(['--ledger', 'ignored', '--corpus', 'ignored', '--port', '9000'])
+        self.assertEqual(9000, seen['create_app']['port'])
+        self.assertEqual(9000, seen['run']['port'])
+
+
+class RequestGuardTestCase(testtools.TestCase):
+    """The pure request policy: which Host/Origin/token combinations may proceed."""
+
+    def _guard(self, **overrides):
+        args = dict(method='POST', host='127.0.0.1:8765', origin='http://127.0.0.1:8765',
+                    cookie_token='tok', form_token='tok', expected_token='tok', port=8765)
+        args.update(overrides)
+        return review_web.guard_request(**args)
+
+    def test_the_in_app_post_passes(self):
+        self.assertIsNone(self._guard())
+
+    def test_a_callable_form_token_is_only_called_after_host_and_origin_pass(self):
+        """The body must not be read until the request is established as ours.
+
+        ``form_token`` is a callable in the app so that ``request.form`` -- which
+        buffers and parses the whole body -- is only touched once Host and Origin
+        have already been checked. Counting the calls is the only way to see that
+        ordering: reading the code cannot distinguish "evaluated last" from
+        "evaluated as an argument, i.e. first".
+        """
+        calls = []
+
+        def _token():
+            calls.append(True)
+            return 'tok'
+
+        # Refused on Host: the body is never touched.
+        self.assertIn('DNS rebinding', self._guard(host='evil.example:8765', form_token=_token))
+        self.assertEqual([], calls)
+
+        # Refused on a missing Origin, and on a foreign one: still never touched.
+        self.assertIn('no Origin header', self._guard(origin=None, form_token=_token))
+        self.assertIn('not this review UI',
+                      self._guard(origin='http://evil.example', form_token=_token))
+        self.assertEqual([], calls)
+
+        # A GET returns before the token layer at all.
+        self.assertIsNone(self._guard(method='GET', form_token=_token))
+        self.assertEqual([], calls)
+
+        # Only once the request is ours is the field read -- exactly once.
+        self.assertIsNone(self._guard(form_token=_token))
+        self.assertEqual([True], calls)
+
+    def test_every_loopback_name_passes_on_the_bound_port(self):
+        for host in ('127.0.0.1:8765', 'localhost:8765', '[::1]:8765'):
+            self.assertIsNone(self._guard(host=host, origin='http://' + host), host)
+
+    def test_a_port_less_host_is_tolerated_but_a_port_less_origin_is_not(self):
+        """The two headers get different port rules, deliberately.
+
+        A client may legitimately omit the port from ``Host`` (the test client does),
+        and the name it sends is still not attacker-chosen, so the loopback name alone
+        carries the anti-rebinding weight there.  An ``Origin`` has no such licence: a
+        browser writes the port whenever it is not the scheme's default, so a
+        port-less origin means 80 -- a DIFFERENT server, which must not pass as this
+        one just because it is also on loopback.
+        """
+        for host in ('127.0.0.1', 'localhost'):
+            self.assertIsNone(self._guard(method='GET', host=host, origin=None), host)
+            self.assertIn('not this review UI',
+                          self._guard(host=host, origin='http://' + host), host)
+        self.assertFalse(review_web.origin_is_local('http://localhost', 8765))
+        self.assertTrue(review_web.origin_is_local('http://localhost', 80))
+
+    def test_a_foreign_host_is_refused_even_on_a_safe_method(self):
+        self.assertIn('DNS rebinding', self._guard(method='GET', host='evil.example'))
+
+    def test_another_port_is_another_server(self):
+        self.assertIsNotNone(self._guard(host='127.0.0.1:9999'))
+
+    def test_a_get_needs_neither_origin_nor_token(self):
+        self.assertIsNone(self._guard(
+            method='GET', origin=None, cookie_token=None, form_token=None))
+
+    def test_an_absent_origin_is_hostile_on_a_mutating_request(self):
+        self.assertIn('no Origin header', self._guard(origin=None))
+
+    def test_a_foreign_origin_is_refused(self):
+        self.assertIn('not this review UI', self._guard(origin='http://evil.example'))
+
+    def test_the_null_origin_of_a_sandboxed_iframe_is_refused(self):
+        self.assertIsNotNone(self._guard(origin='null'))
+
+    def test_a_missing_cookie_or_field_is_refused(self):
+        self.assertIn(review_web.CSRF_COOKIE, self._guard(cookie_token=None))
+        self.assertIn(review_web.CSRF_FIELD, self._guard(form_token=''))
+
+    def test_a_mismatched_token_on_either_side_is_refused(self):
+        self.assertIn('did not match', self._guard(form_token='other'))
+        self.assertIn('did not match', self._guard(cookie_token='other'))
+
+    def test_a_non_ascii_token_is_refused_not_crashed_on(self):
+        # hmac.compare_digest raises on a non-ASCII str; both sides come off the
+        # wire, so a hostile cookie must be a refusal rather than a 500.
+        self.assertIn('did not match', self._guard(cookie_token='t\u00f8k'))
+        self.assertIn('did not match', self._guard(form_token='t\u00f8k'))
+
+    def test_an_unparseable_origin_is_refused(self):
+        self.assertFalse(review_web.origin_is_local('http://[::1', 8765))
+
+    def test_an_ipv6_literal_authority_is_split_not_mangled(self):
+        self.assertTrue(review_web.host_is_local('[::1]:8765', 8765))
+        self.assertFalse(review_web.host_is_local('[::1]:1', 8765))
+        self.assertFalse(review_web.host_is_local('[2001:db8::1]:8765', 8765))
+
+    def test_a_loopback_origin_on_another_scheme_is_not_this_ui(self):
+        self.assertFalse(review_web.origin_is_local('https://localhost:8765', 8765))
+        self.assertFalse(review_web.origin_is_local('file://localhost', 8765))
 
 
 class LoopbackGuardTestCase(testtools.TestCase):
@@ -898,7 +1309,7 @@ class NotesWebTestCase(ReviewWebFixture, testtools.TestCase):
     def test_post_note_records_a_signed_note_and_redirects(self):
         signer, seen = _recording_signer()
         client, conn, fp_hex = self._client(signer=signer)
-        resp = client.post('/note/' + fp_hex, data={'body': 'looks risky'})
+        resp = self._post(client, '/note/' + fp_hex, {'body': 'looks risky'})
         self.assertEqual(302, resp.status_code)
         self.assertIn('record_bytes', seen)           # it was signed
         rows = ledger_mod.notes_for(conn, fp_hex)
@@ -907,20 +1318,52 @@ class NotesWebTestCase(ReviewWebFixture, testtools.TestCase):
         self.assertEqual('reviewer@example.org', rows[0]['signed_by'])
         self.assertEqual('FAKE-SIG', rows[0]['signature'])
 
+    def test_a_note_that_failed_to_land_is_absent_from_the_ledger(self):
+        """The third handler with the same guarantee: signed, so it must be deliberate.
+
+        record_note signs before it writes, which makes a SIGNER failure harmless --
+        but the append itself commits, and a database busy at commit time fails after
+        the INSERT, leaving the signed note staged on this process-lifetime
+        connection for the next commit to flush.  The reviewer is shown a 502 saying
+        nothing was recorded, so nothing may be recorded.
+        """
+        signer, _seen = _recording_signer()
+        client, conn, fp_hex = self._client(signer=signer)
+
+        def _fail_at_commit(*args, **kwargs):
+            conn.execute(
+                'INSERT INTO note (fingerprint, body, signed_by, signature, created_at) '
+                'VALUES (?, ?, ?, ?, ?)', (fp_hex, 'staged', 'r@example.org', 'S', WHEN))
+            raise sqlite3.OperationalError('database is locked')
+
+        self.patch(ledger_mod, 'append_note', _fail_at_commit)
+        resp = self._post(client, '/note/' + fp_hex, {'body': 'looks risky'})
+
+        self.assertEqual(502, resp.status_code)
+        body = resp.get_data(as_text=True)
+        self.assertIn('Could not record the note', body)
+        self.assertNotIn('Could not record the verdict', body)
+        self.assertEqual([], ledger_mod.notes_for(conn, fp_hex))
+        # The next successful commit on this connection must not carry it along.
+        ledger_mod.append_review_item(
+            conn, fingerprint=fp_hex, reason='later work', draft_category=None,
+            draft_confidence=None, enqueued_at=WHEN, priority=0)
+        self.assertEqual([], ledger_mod.notes_for(conn, fp_hex))
+
     def test_empty_note_is_a_noop(self):
         signer, _ = _recording_signer()
         client, conn, fp_hex = self._client(signer=signer)
-        client.post('/note/' + fp_hex, data={'body': '   '})
+        self._post(client, '/note/' + fp_hex, {'body': '   '})
         self.assertEqual([], ledger_mod.notes_for(conn, fp_hex))
 
     def test_post_note_without_a_signer_is_rejected(self):
         client, _conn, fp_hex = self._client()        # no signer -> read-only
-        resp = client.post('/note/' + fp_hex, data={'body': 'x'})
+        resp = self._post(client, '/note/' + fp_hex, {'body': 'x'})
         self.assertEqual(405, resp.status_code)
 
     def test_signer_failure_is_a_page_and_records_nothing(self):
         client, conn, fp_hex = self._client(signer=_failing_signer())
-        resp = client.post('/note/' + fp_hex, data={'body': 'x'})
+        resp = self._post(client, '/note/' + fp_hex, {'body': 'x'})
         self.assertEqual(502, resp.status_code)
         self.assertEqual([], ledger_mod.notes_for(conn, fp_hex))
 

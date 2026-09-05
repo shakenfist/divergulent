@@ -205,6 +205,11 @@ def _scripted_ask(choice):
     return ask, seen
 
 
+def _locked_ledger(*args, **kwargs):
+    """A ledger write that fails: the shape of a locked database mid-verdict."""
+    raise sqlite3.OperationalError('database is locked')
+
+
 class ReviewFixture:
     """Mixin: a synthetic corpus + a ledger with a pending item and an llm draft."""
 
@@ -498,6 +503,9 @@ class GeneratedMarkContextTestCase(ReviewFixture, testtools.TestCase):
 class RecordReviewVerdictTestCase(ReviewFixture, testtools.TestCase):
     """The record half of the split records the same signed decision as before."""
 
+    def _human_rows(self, conn, fp_hex):
+        return [r for r in ledger_mod.decisions_for(conn, fp_hex) if r['kind'] == 'human']
+
     def test_records_the_byte_identical_canonical_record_and_clears_item(self):
         conn, corpus_dir, index_path, fp_hex = self._setup(draft_category='bugfix')
         item = self._item(conn)
@@ -518,6 +526,38 @@ class RecordReviewVerdictTestCase(ReviewFixture, testtools.TestCase):
         self.assertEqual('bugfix', human['category'])
         self.assertEqual('FAKE-SIG', human['signature'])
         self.assertEqual([], ledger_mod.pending_review_items(conn))
+
+    def test_a_failure_between_the_two_writes_leaves_the_ledger_untouched(self):
+        """The signed decision and the queue update are ONE verdict, all or nothing.
+
+        The decision is appended uncommitted and ``mark_reviewed`` commits the pair,
+        so a failure between them -- a locked database here -- would otherwise leave
+        the signed row staged in the connection's transaction, to be flushed by
+        whatever commits next.  The caller is told the verdict failed; it must then
+        never appear, on this connection or in the file.
+        """
+        conn, corpus_dir, index_path, fp_hex = self._setup()
+        item = self._item(conn)
+        signer, _seen = _fake_signer()
+        context = review.build_review_context(
+            conn, corpus_dir, index_path, fingerprint=fp_hex, item=item,
+            fetch=_recording_fetch()[0])
+        self.patch(ledger_mod, 'mark_reviewed', _locked_ledger)
+
+        self.assertRaises(
+            sqlite3.OperationalError, review.record_review_verdict,
+            conn, item, context, review.CHOICE_ACCEPT, signer=signer, now=WHEN)
+
+        self.assertEqual([], self._human_rows(conn, fp_hex))
+        # The next successful commit on this connection must not carry it along.
+        ledger_mod.append_note(conn, fingerprint=fp_hex, body='a later note',
+                               signed_by='rev@example.org', signature='S', created_at=WHEN)
+        self.assertEqual([], self._human_rows(conn, fp_hex))
+        # And it is absent from the file, not merely from this connection's view.
+        other = ledger_mod.open_ledger(os.path.join(corpus_dir, 'ledger.sqlite'))
+        self.addCleanup(other.close)
+        self.assertEqual([], self._human_rows(other, fp_hex))
+        self.assertEqual(1, len(ledger_mod.pending_review_items(conn)))
 
     def test_defer_records_nothing_and_leaves_the_item_pending(self):
         conn, corpus_dir, index_path, fp_hex = self._setup()
@@ -1195,6 +1235,36 @@ class RequeueTestCase(ReviewFixture, testtools.TestCase):
         superseded_human = [r for r in ledger_mod.decisions_for(conn, fp_hex)
                             if r['kind'] == 'human' and r['superseded_at'] is not None]
         self.assertEqual(1, len(superseded_human))
+
+    def test_a_failure_part_way_leaves_the_live_verdict_standing(self):
+        """The supersede and the re-open are ONE re-queue, all or nothing.
+
+        ``requeue_one`` leaves every write uncommitted for the caller to commit, so a
+        failure after the supersede -- a locked database here -- would otherwise leave
+        the human verdict retracted on this long-lived connection, to be flushed by
+        whatever commits next, with nothing queued to replace it.  The operator is
+        told the re-queue failed; the verdict must therefore still stand.
+        """
+        conn, corpus_dir, index_path, fp_hex = self._setup(draft_category='bugfix')
+        self._review_it(conn, corpus_dir, index_path)
+        self.patch(ledger_mod, 'reopen_review_items', _locked_ledger)
+
+        self.assertRaises(
+            sqlite3.OperationalError, review.requeue_one, conn, fp_hex, now='2026-06-15T00:00:00Z')
+
+        live_human = [r for r in ledger_mod.decisions_for(conn, fp_hex)
+                      if r['kind'] == 'human' and r['superseded_at'] is None]
+        self.assertEqual(1, len(live_human))
+        # The next successful commit on this connection must not carry the supersede.
+        ledger_mod.append_note(conn, fingerprint=fp_hex, body='a later note',
+                               signed_by='rev@example.org', signature='S', created_at=WHEN)
+        # And it is absent from the file, not merely from this connection's view.
+        other = ledger_mod.open_ledger(os.path.join(corpus_dir, 'ledger.sqlite'))
+        self.addCleanup(other.close)
+        self.assertEqual(
+            1, len([r for r in ledger_mod.decisions_for(other, fp_hex)
+                    if r['kind'] == 'human' and r['superseded_at'] is None]))
+        self.assertEqual([], ledger_mod.pending_review_items(other))
 
     def test_requeue_already_pending_is_a_noop_reopen(self):
         # Without reviewing first, the fixture's item is still pending.
