@@ -48,6 +48,7 @@ def _tracked():
     assert names, 'docs/ grew no markdown files -- the guard would pass vacuously'
     return names
 
+
 _FRONT_CLI = re.compile(r'divergulent-classify\s+([a-z][a-z-]*)')
 _LEDGER_MODULE = re.compile(r'python -m divergulent\.classify\.ledger\s+([a-z][a-z-]*)')
 
