@@ -935,12 +935,12 @@ def evidence_for(scan: GeneratedScan) -> str:
 
 
 def mark_files_for(scan: GeneratedScan) -> list[dict]:
-    """The mark's per-file evidence list, in DIFF order, as :func:`evidence_for` writes it.
+    """The mark's per-file evidence list, in diff order.
 
-    The ``files`` value ``generated_marks`` hands back on the read side, built directly
-    from a fresh scan -- so a caller holding a scan (the recorder) can drive
-    :func:`project_residue_first` without a JSON round-trip through the ledger, and there
-    is exactly one definition of the shape both sides use.
+    Exactly what :func:`evidence_for` writes and what ``generated_marks`` hands back on
+    the read side, built directly from a fresh scan -- so a caller holding a scan (the
+    recorder) can drive :func:`project_residue_first` without a JSON round-trip through
+    the ledger, and there is exactly one definition of the shape both sides use.
     """
     return [
         {'path': entry.path,
