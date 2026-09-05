@@ -208,6 +208,19 @@ re-queues its fingerprints. That is the ledger module's own CLI, not a
 operator runs it, the guarantee holds for rows written from version 2
 onward, not retrospectively.
 
+That command is blunter than the problem it solves, and knowing how much
+blunter is the point. `supersede` keys on `(rule_id, version)` alone, so
+it retires **every** live decision that rule wrote at version 1 — the
+whole version-1 LLM triage generation, not the `security` subset — and
+every one of those fingerprints comes back through the queue to be
+re-triaged at LLM cost. The rule id carries the model name, so a ledger
+triaged with more than one model needs the command run once per model.
+Size it before running it: `divergulent-classify status` reports the
+current queue, and `python -m divergulent.classify.ledger report
+<ledger-path>` breaks the ledger down by decision kind, so the count of
+version-1 `llm` decisions is visible in advance rather than discovered as
+a bill.
+
 ### 8. Human review
 
 The top of the precedence order. A reviewer works the priority queue

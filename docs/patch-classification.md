@@ -79,7 +79,10 @@ decision already matches `(decided_by, rule_version)`: without it, verified
 re-run. Retiring that generation in an existing ledger is an operator step —
 `python -m divergulent.classify.ledger supersede <ledger-path> llm-triage:<model> 1`,
 the same module CLI named above — which supersedes those decisions and
-re-queues their fingerprints. The model-call boundary is
+re-queues their fingerprints. It is not targeted at `security`: `supersede`
+keys on `(rule_id, version)`, so it retires the entire version-1 generation
+that rule wrote and re-queues all of it for re-triage, once per model that
+was used. `docs/workflow.md` says what that costs and how to size it first. The model-call boundary is
 `call(system, user, *, model, schema=None) -> CallResult(text, usage)`: the
 **static rubric is the cacheable `system` prompt** and the per-patch diff is the
 `user` message, so the rubric is billed once per run and read from cache
