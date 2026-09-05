@@ -297,7 +297,14 @@ this app's `Origin` — scheme, loopback name **and the bound port exactly**, si
 a page on another local port is another server — plus a per-process token in both
 a `SameSite=Strict` cookie and the form itself. The practical consequence for the
 operator is that a tab left open across a restart submits into a **403 page**
-rather than a stale process — reload it and the verdict goes through. Handlers
+rather than a stale process — reload it and the verdict goes through. The other
+consequence is for **SSH port-forwarding**: the port the browser sends must be the
+port the app was told it is bound to, so `ssh -L 9000:127.0.0.1:8765` sends
+`Host: localhost:9000` and is refused with a message about DNS rebinding that does
+not describe the situation. Forward the port to itself (`ssh -L
+8765:127.0.0.1:8765`), or start the far side with `--port 9000` so the two agree.
+Relaxing the check is not the answer — tolerating an unexpected port is what the
+rebinding defence exists to prevent. Handlers
 test offline through Flask's test client (injected fake `fetch`/`signer`, temp
 ledger; no socket). See
 `docs/plans/PLAN-patch-classification-phase-04-review-web.md`.

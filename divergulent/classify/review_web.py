@@ -1272,6 +1272,10 @@ FORBIDDEN_TEMPLATE = _HEAD.replace('{{ title }}', 'refused') + '''
 every rule and every LLM verdict, so it is only ever recorded from a form this UI
 rendered. Open <span class="mono">http://127.0.0.1:{{ port }}/</span> and try again
 from the page itself.</p>
+<p class="muted">Reaching this through an SSH forward? The port your browser sends must
+be <span class="mono">{{ port }}</span>, the one this process was told it is bound to.
+Forward the port to itself (<span class="mono">-L {{ port }}:127.0.0.1:{{ port }}</span>),
+or start this UI with <span class="mono">--port</span> set to the port you forward to.</p>
 ''' + _FOOT
 
 ERROR_TEMPLATE = _HEAD.replace('{{ title }}', 'error') + '''
