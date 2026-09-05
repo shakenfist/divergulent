@@ -173,7 +173,12 @@ head of the body (1 MiB) regardless — recording a `scan-truncated` note
 rather than an unearned clean result when it caps, and screening the
 residue-first projection as well when it did — and its skip outranks the
 unlock in *both* LLM tiers, triage and the security-risk gate: a
-diff-region hit never reaches a model, marked or not. The verifier
+diff-region hit never reaches a model, marked or not. In the risk gate
+the skip is not a dead end — a suspect is dispositioned `elevated`
+deterministically, and that disposition is *retracted* once its cause
+is gone (a rules-version bump, a retired family, or a body the
+tightened patterns no longer hit), returning the fingerprint to the
+un-scored pending set so the next run scores it normally. The verifier
 always reads exactly the same projected text the drafter did, and an
 unmarked fingerprint's prompt stays byte-identical to what it was
 before that. Triage runs over a bounded, prioritised slice (risk
