@@ -416,6 +416,14 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
         # it could not find anything the raw scan missed. Hits ride the same
         # diff-region detail -- one ledger fact, one skip, no second decision point --
         # and a family the raw scan already found is not duplicated.
+        #
+        # PRECONDITION, because the two sides read the mark from different places:
+        # this screens a projection built from the FRESH scan above, while both LLM
+        # tiers build theirs from ``generated_marks(conn)`` -- the ledger's stored
+        # mark, which carries no rule_version filter. They agree, and "every
+        # character the model can be shown has been screened" holds, only once a
+        # record pass has run at the current GENERATED_RULES_VERSION. Between a bump
+        # and that pass a tier can project a file set this never projected.
         if len(diff_region) > injection_mod.MAX_SCAN_CHARS and generated_scan.files:
             projected = generated_mod.project_residue_first(
                 diff_region, generated_mod.mark_files_for(generated_scan)).text

@@ -475,6 +475,19 @@ truncated*, the recorder screens the projection too. What is not
 claimed is exhaustiveness: the tail of an oversized patch that no
 projection hoists is unread, and says so.
 
+That projection screen has a **precondition worth stating**, because the
+two sides read the mark from different places. The recorder screens the
+projection built from a *fresh* scan of the body; both LLM tiers build
+theirs from the mark stored in the ledger (`generated_marks`), which is
+whatever the last `record` pass wrote and carries no version filter. The
+two agree — and the "every character the model can be shown has been
+screened" property holds — **once a `record` pass has run at the current
+`GENERATED_RULES_VERSION`**. Between a version bump and that pass, a tier
+can project a file set the screen never projected, and residue hoisted
+from past `MAX_SCAN_CHARS` reaches the model unscreened. Running `record`
+after bumping the generated rules is therefore not just bookkeeping; it is
+what re-establishes the invariant.
+
 This is a **tripwire, not a shield**: the patterns are public, so a
 targeted attacker can iterate offline until a payload scores clean. What
 it buys is every lazy, untargeted, or copy-pasted payload, and a forced
