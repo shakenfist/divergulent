@@ -308,6 +308,16 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
             progress.step(record.fingerprint[:12])
         verdict = record.verdict
 
+        # ONE read of this fingerprint's observations, filtered three ways below
+        # (dangerous-construct, injection, generated) instead of the same indexed
+        # SELECT issued three times per fingerprint -- ~180k queries over the corpus
+        # where the clean 93% used to issue none. Safe to snapshot ahead of the
+        # writes because each block reads only its OWN kind/observed_by and writes
+        # only that same slice, so no block can invalidate another's view. That
+        # invariant is what makes the snapshot correct rather than merely faster:
+        # a future block that writes ANOTHER block's rows must re-read instead.
+        observations = ledger_mod.observations_for(conn, record.fingerprint)
+
         # The winning content-category rule decided this fingerprint; record its
         # id and its OWN registered version so a later supersede keys exactly.
         decided_by = verdict.rule_ids[0]
@@ -346,7 +356,7 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
         # the live set, so the block would supersede-and-re-append forever on every
         # run. The two filters have to stay in lockstep for the reconcile to converge.
         live_scan = {(obs['detail'], obs['evidence'], obs['rule_version'])
-                     for obs in ledger_mod.observations_for(conn, record.fingerprint)
+                     for obs in observations
                      if obs['kind'] == _SCAN_KIND and obs['observed_by'] == _SCAN_RULE_ID
                      and obs['superseded_at'] is None}
         if desired_scan == live_scan:
@@ -443,7 +453,7 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
         desired_injection = {(flag.detail, flag.evidence, injection_mod.INJECTION_RULES_VERSION)
                              for flag in injection_flags}
         live_injection = {(obs['detail'], obs['evidence'], obs['rule_version'])
-                          for obs in ledger_mod.observations_for(conn, record.fingerprint)
+                          for obs in observations
                           if obs['kind'] == injection_mod.INJECTION_KIND and obs['superseded_at'] is None}
         if desired_injection == live_injection:
             stats.injection_skipped += 1
@@ -477,7 +487,7 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
             (generated_mod.detail_for(generated_scan), generated_mod.evidence_for(generated_scan),
              generated_mod.GENERATED_RULES_VERSION)}
         live_generated = {(obs['detail'], obs['evidence'], obs['rule_version'])
-                          for obs in ledger_mod.observations_for(conn, record.fingerprint)
+                          for obs in observations
                           if obs['kind'] == generated_mod.GENERATED_KIND and obs['superseded_at'] is None}
         if desired_generated == live_generated:
             stats.generated_skipped += 1
