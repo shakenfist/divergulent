@@ -550,7 +550,15 @@ def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, lim
     its whole disposition) and now carries the ``elevated`` one; and because the
     summary counts each population separately, ``skipped_oversized`` and
     ``skipped_injection`` can both count the same fingerprint, so those lines may
-    sum to more than the slice.
+    sum to more than the slice.  And because risk is the TOP prioritisation band, a
+    suspect now sits at the HEAD of the human queue rather than merely in it -- the
+    patterns are public, so that is a lever for buying reviewer attention at scale.
+    Accepted rather than overlooked: a diff the gate may not read is a diff a human
+    should read first, and the alternative (a band of its own between risk and
+    provenance, as the triage driver has) would put the un-scorable patches behind
+    the scored ones.  The cheap half of the lever is already blunted -- padding a
+    diff yields ``scan-truncated``, which deliberately routes nothing -- so the
+    remaining cost is writing a real marker into a patch that a human then reads.
 
     The disposition is RETRACTED in the same pass once the injection hit behind it is
     gone, because the row is both the termination guard and a live score: left
