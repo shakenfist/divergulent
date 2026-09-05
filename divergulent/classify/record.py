@@ -341,9 +341,14 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
         # forever. The body is fingerprint-stable and the scan is pure, so an
         # unchanged set still skips and the ~60k clean fingerprints see no churn.
         desired_scan = {(flag.detail, flag.evidence, RULES_VERSION) for flag in verdict.flags}
+        # Keyed EXACTLY as the supersede below is (kind AND observed_by): a row this
+        # comprehension counts but that supersede would not retire could never leave
+        # the live set, so the block would supersede-and-re-append forever on every
+        # run. The two filters have to stay in lockstep for the reconcile to converge.
         live_scan = {(obs['detail'], obs['evidence'], obs['rule_version'])
                      for obs in ledger_mod.observations_for(conn, record.fingerprint)
-                     if obs['observed_by'] == _SCAN_RULE_ID and obs['superseded_at'] is None}
+                     if obs['kind'] == _SCAN_KIND and obs['observed_by'] == _SCAN_RULE_ID
+                     and obs['superseded_at'] is None}
         if desired_scan == live_scan:
             stats.observations_skipped += 1
         else:

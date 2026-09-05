@@ -300,6 +300,35 @@ class IdempotencyTestCase(testtools.TestCase):
         self.assertEqual(0, second.reviewability_appended)
         self.assertEqual(4, second.reviewability_skipped)
 
+    def test_a_foreign_kind_under_the_scan_rule_id_does_not_defeat_the_skip(self):
+        """The live-set read and the supersede write must be keyed identically.
+
+        The reconcile converges only if every row it counts as live is a row its
+        supersede would retire. The supersede is keyed on kind AND observed_by; a
+        read keyed on observed_by alone would count a row of some other kind under
+        the same rule id, never see it leave the live set, and so supersede-and-
+        re-append the whole dangerous-construct set on every run forever -- across
+        ~60k fingerprints. Nothing emits such a row today, which is exactly why the
+        divergence has to be pinned by a test rather than by the tree.
+        """
+        conn, corpus_dir, index_path = self._corpus_and_ledger()
+        record.record_to_ledger(conn, corpus_dir, index_path, now=WHEN)
+
+        ledger_mod.append_observation(
+            conn, fingerprint=_fp(TROJAN), kind='some-future-flag', detail='d',
+            evidence='e', observed_by=record._SCAN_RULE_ID,
+            rule_version=record.RULES_VERSION, observed_at=WHEN)
+
+        second = record.record_to_ledger(conn, corpus_dir, index_path, now=LATER)
+        self.assertEqual(0, second.observations_appended)
+        self.assertEqual(0, second.observations_superseded)
+        self.assertEqual(4, second.observations_skipped)
+        # And the foreign row is untouched -- the scan neither counted nor retired it.
+        foreign = [o for o in ledger_mod.observations_for(conn, _fp(TROJAN))
+                   if o['kind'] == 'some-future-flag']
+        self.assertEqual(1, len(foreign))
+        self.assertIsNone(foreign[0]['superseded_at'])
+
     def test_second_run_does_not_duplicate_rows(self):
         conn, corpus_dir, index_path = self._corpus_and_ledger()
         record.record_to_ledger(conn, corpus_dir, index_path, now=WHEN)
