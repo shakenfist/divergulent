@@ -874,6 +874,11 @@ def record_review_verdict(conn: sqlite3.Connection, item: sqlite3.Row,
     caller that reports a failure is telling the truth: a human verdict outranks
     every rule, and it must land only when it was deliberate.
 
+    PRECONDITION: ``rollback()`` is connection-wide, so the caller must hold no
+    other uncommitted work on ``conn`` when it calls this.  Every caller today is
+    one verdict per commit; a future one that staged several would lose the earlier
+    ones here, and would want a ``SAVEPOINT`` instead.
+
     ``signer``/``now`` are injected so this is pure given a fake signer; ``now`` is
     the caller-supplied ISO-8601 timestamp (this module never reads a clock).
     """
@@ -1137,6 +1142,12 @@ def requeue_one(conn: sqlite3.Connection, fingerprint: str, *, now,
     silently retracted and the patch is not queued for anyone to replace it, while
     the operator was told the re-queue crashed.  Any exception rolls the set back
     and re-raises, so a caller that reports a failure is telling the truth.
+
+    PRECONDITION, as for :func:`record_review_verdict`: ``rollback()`` is
+    connection-wide, so the caller must hold no other uncommitted work on ``conn``.
+    'The CLI does both once' above means one fingerprint per commit -- a caller
+    batching several re-queues into one transaction would lose the earlier ones when
+    the last failed, and wants a ``SAVEPOINT`` rather than this.
     """
     try:
         superseded = ledger_mod.supersede_decisions_for_fingerprint(
