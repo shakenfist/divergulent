@@ -378,6 +378,33 @@ class LedgerCliTestCase(testtools.TestCase):
         conn.row_factory = sqlite3.Row
         self.assertEqual([], ledger_mod.pending_review_items(conn))
 
+    def test_record_reports_what_it_superseded_to_the_operator(self):
+        """A retired observation generation must be visible in the run's summary.
+
+        Superseding the previous generation of ``dangerous-construct`` rows is the
+        whole point of a ``RULES_VERSION`` bump, and the operator running that pass
+        has no other signal that it happened: the count was collected and asserted in
+        the unit tests but never printed, so the summary said only ``appended`` and
+        ``skipped`` and a retirement looked exactly like a no-op.
+        """
+        corpus_dir, _ = self._corpus()
+        ledger_path = os.path.join(corpus_dir, 'ledger.sqlite')
+        self._run_main(['build', corpus_dir])
+
+        # A live row from an earlier generation that the current scan no longer
+        # produces -- what a tightened pattern leaves behind.
+        conn = sqlite3.connect(ledger_path)
+        ledger_mod.append_observation(
+            conn, fingerprint=fingerprint(DOC_ONLY)[1], kind='dangerous-construct',
+            detail='shell-out', evidence='rm -rf /', observed_by='dangerous-construct-scan',
+            rule_version=1, observed_at=WHEN)
+        conn.close()
+
+        code, out = self._run_main(['record', ledger_path, corpus_dir])
+        self.assertEqual(0, code)
+        summary = next(line for line in out.splitlines() if line.startswith('decisions appended='))
+        self.assertIn('observations appended=0 skipped=1 superseded=1', summary)
+
     def test_record_refuses_unbuilt_ledger(self):
         corpus_dir, _ = self._corpus()
         missing = os.path.join(corpus_dir, 'nope.sqlite')

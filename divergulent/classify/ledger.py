@@ -1183,14 +1183,15 @@ def _cmd_record(args: argparse.Namespace) -> int:
         print('recorded into ledger: %s' % args.ledger)
         print('dequeued %d now-settled review items' % dequeued)
         print('decisions appended=%d skipped=%d superseded=%d; observations appended=%d '
-              'skipped=%d; reviewability appended=%d skipped=%d; injection appended=%d '
+              'skipped=%d superseded=%d; reviewability appended=%d skipped=%d; injection appended=%d '
               'skipped=%d superseded=%d; generated appended=%d skipped=%d superseded=%d; '
               'reach appended=%d '
               'skipped=%d unknown=%d; external decisions appended=%d skipped=%d superseded=%d; '
               'external provenance appended=%d skipped=%d; fingerprints=%d; current verdicts=%d' % (
                   stats.decisions_appended, stats.decisions_skipped,
                   stats.decisions_superseded, stats.observations_appended,
-                  stats.observations_skipped, stats.reviewability_appended,
+                  stats.observations_skipped, stats.observations_superseded,
+                  stats.reviewability_appended,
                   stats.reviewability_skipped, stats.injection_appended,
                   stats.injection_skipped, stats.injection_superseded,
                   stats.generated_appended, stats.generated_skipped, stats.generated_superseded,
