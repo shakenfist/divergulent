@@ -350,6 +350,20 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
         # beside the new one, and a flag the tightened pattern now rejects lived
         # forever. The body is fingerprint-stable and the scan is pure, so an
         # unchanged set still skips and the ~60k clean fingerprints see no churn.
+        # Every flag this block files belongs to its own family, and nothing in
+        # the tree emits another -- which is exactly why a new one has to fail
+        # here rather than be caught by a test of the current scanner. A flag of
+        # some other kind would be counted in the desired set below, keyed OUT of
+        # ``live_scan`` and out of the supersede, and so never leave the live set:
+        # the block would supersede-and-re-append the whole set on every run over
+        # ~60k fingerprints. Silently dropping it instead would lose the finding.
+        # A genuinely different family needs its own rule id and its own block.
+        foreign = sorted({flag.kind for flag in verdict.flags if flag.kind != _SCAN_KIND})
+        if foreign:
+            raise ValueError(
+                'the dangerous-construct scan emitted flag kind(s) %s, which %s has no '
+                'block for; give them their own rule id rather than filing them here'
+                % (', '.join(foreign), _SCAN_RULE_ID))
         desired_scan = {(flag.detail, flag.evidence, RULES_VERSION) for flag in verdict.flags}
         # Keyed EXACTLY as the supersede below is (kind AND observed_by): a row this
         # comprehension counts but that supersede would not retire could never leave

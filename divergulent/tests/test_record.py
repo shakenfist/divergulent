@@ -300,6 +300,29 @@ class IdempotencyTestCase(testtools.TestCase):
         self.assertEqual(0, second.reviewability_appended)
         self.assertEqual(4, second.reviewability_skipped)
 
+    def test_a_flag_of_a_foreign_kind_fails_the_recorder_rather_than_churning(self):
+        """The mirror of the test below: a foreign kind on the DESIRED side.
+
+        ``live_scan`` and the supersede are both keyed on ``_SCAN_KIND``; the desired
+        set is built from whatever the scan returned. A flag of another kind would
+        therefore be counted as desired, never appear as live, and drive a
+        supersede-and-re-append of the whole set on every run across ~60k
+        fingerprints. Nothing emits one today -- which is why the recorder has to
+        refuse it rather than the tree catching it.
+        """
+        conn, corpus_dir, index_path = self._corpus_and_ledger()
+        real = rules_mod.scan_dangerous_constructs
+
+        def _with_a_foreign_kind(text):
+            return [rules_mod.Flag(kind='some-future-flag', detail=flag.detail,
+                                   evidence=flag.evidence)
+                    for flag in real(text)]
+
+        self.patch(rules_mod, 'scan_dangerous_constructs', _with_a_foreign_kind)
+        error = self.assertRaises(
+            ValueError, record.record_to_ledger, conn, corpus_dir, index_path, now=WHEN)
+        self.assertIn('some-future-flag', str(error))
+
     def test_a_foreign_kind_under_the_scan_rule_id_does_not_defeat_the_skip(self):
         """The live-set read and the supersede write must be keyed identically.
 
