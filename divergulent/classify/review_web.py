@@ -742,7 +742,8 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             # own guarantee, and it holds for anything else the try block grows.
             conn.rollback()
             return render_template_string(
-                ERROR_TEMPLATE, fingerprint=resolved, error=str(exc)), 502
+                ERROR_TEMPLATE, fingerprint=resolved, error=str(exc),
+                **ERROR_ACTIONS['verdict']), 502
 
         if outcome.recorded:
             # A fresh human verdict tops precedence immediately, and any items the
@@ -807,7 +808,8 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             # anything else the try block grows.
             conn.rollback()
             return render_template_string(
-                ERROR_TEMPLATE, fingerprint=resolved, error=str(exc)), 502
+                ERROR_TEMPLATE, fingerprint=resolved, error=str(exc),
+                **ERROR_ACTIONS['requeue']), 502
         verdict_mod.rebuild_current_verdict(conn)
         return redirect(url_for('audit'))
 
@@ -834,7 +836,8 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
             # this page and the note would land anyway. Roll back, as the verdict
             # and re-queue handlers do.
             conn.rollback()
-            return render_template_string(ERROR_TEMPLATE, fingerprint=resolved, error=str(exc)), 502
+            return render_template_string(ERROR_TEMPLATE, fingerprint=resolved, error=str(exc),
+                                          **ERROR_ACTIONS['note']), 502
         return redirect(url_for('review', fingerprint=resolved))
 
     return app
@@ -1310,14 +1313,47 @@ or start this UI with <span class="mono">--port</span> set to the port you forwa
 
 ERROR_TEMPLATE = _HEAD.replace('{{ title }}', 'error') + '''
 <p><a href="/">&larr; worklist</a></p>
-<h1>Could not record the verdict</h1>
-<p>The verdict for <span class="mono">{{ fingerprint[:16] }}</span> was NOT recorded
--- the ledger is unchanged. Signing happens before any write, and a failure part-way
-through the write is rolled back, so there is nothing half-recorded to clean up.</p>
+<h1>{{ heading }}</h1>
+<p>{{ subject }} <span class="mono">{{ fingerprint[:16] }}</span> {{ outcome }}.
+{{ guarantee }}</p>
 <pre class="diff error">{{ error }}</pre>
-<p class="muted">Fix the issue and try again. Signing needs the verify extra:
-<span class="mono">pip install divergulent[review,verify]</span>.</p>
+<p class="muted">Fix the issue and try again.{% if signing %} Signing needs the verify
+extra: <span class="mono">pip install divergulent[review,verify]</span>.{% endif %}</p>
 ''' + _FOOT
+
+# The three failing write paths each get their OWN copy, because this page is the
+# operator's only signal about ledger state after a failure and the three failures
+# are not the same event. A re-queue records no decision at all, so telling the
+# operator "the verdict was NOT recorded" describes something that never happened
+# and hides the guarantee that DOES matter to them -- that their existing verdict
+# survived. Keyed here rather than open-coded at the call sites so a fourth
+# mutating route has to name its own copy instead of silently inheriting the
+# verdict wording.
+ERROR_ACTIONS = {
+    'verdict': dict(
+        heading='Could not record the verdict',
+        subject='The verdict for',
+        outcome='was NOT recorded -- the ledger is unchanged',
+        guarantee='Signing happens before any write, and a failure part-way through the '
+                  'write is rolled back, so there is nothing half-recorded to clean up.',
+        signing=True),
+    'requeue': dict(
+        heading='Could not re-queue this patch',
+        subject='The re-queue of',
+        outcome='did NOT happen -- the ledger is unchanged, and any verdict this patch '
+                'already carried still stands',
+        guarantee='Superseding the verdict and re-opening the item are one all-or-nothing '
+                  'write, rolled back on any failure, so there is nothing half-applied to '
+                  'clean up.',
+        signing=False),
+    'note': dict(
+        heading='Could not record the note',
+        subject='The note on',
+        outcome='was NOT recorded -- the ledger is unchanged',
+        guarantee='Signing happens before the write, and the write itself is rolled back '
+                  'on any failure, so there is nothing half-recorded to clean up.',
+        signing=True),
+}
 
 AUDIT_TEMPLATE = _HEAD.replace('{{ title }}', 'audit') + '''
 <p><a href="/">&larr; worklist</a></p>

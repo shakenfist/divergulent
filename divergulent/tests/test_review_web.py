@@ -566,8 +566,18 @@ class RequeueTestCase(ReviewWebFixture, testtools.TestCase):
         resp = self._post(client, '/requeue/' + fp_hex)
 
         self.assertEqual(502, resp.status_code)
-        self.assertIn('database is locked', resp.get_data(as_text=True))
+        body = resp.get_data(as_text=True)
+        self.assertIn('database is locked', body)
         self.assertEqual('human', verdict_mod.current_verdict(conn)[fp_hex].kind)
+
+        # The page must describe the event that actually happened. A re-queue
+        # records no decision, so the verdict wording would tell the operator
+        # something false about the one thing this page exists to report -- and
+        # would bury the guarantee that matters here, that the verdict survived.
+        self.assertIn('Could not re-queue this patch', body)
+        self.assertIn('still stands', body)
+        self.assertNotIn('Could not record the verdict', body)
+        self.assertNotIn('was NOT recorded', body)
 
     def test_requeue_refused_on_readonly_instance(self):
         client, _conn, fp_hex = self._client(signer=None)
@@ -1322,6 +1332,9 @@ class NotesWebTestCase(ReviewWebFixture, testtools.TestCase):
         resp = self._post(client, '/note/' + fp_hex, {'body': 'looks risky'})
 
         self.assertEqual(502, resp.status_code)
+        body = resp.get_data(as_text=True)
+        self.assertIn('Could not record the note', body)
+        self.assertNotIn('Could not record the verdict', body)
         self.assertEqual([], ledger_mod.notes_for(conn, fp_hex))
         # The next successful commit on this connection must not carry it along.
         ledger_mod.append_review_item(
