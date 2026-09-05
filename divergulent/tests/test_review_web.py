@@ -721,6 +721,26 @@ class GuardWiringTestCase(ReviewWebFixture, testtools.TestCase):
         self.assertEqual(403, refused.status_code)
         self.assertIn('DNS rebinding', refused.get_data(as_text=True))
 
+    def test_an_oversized_body_is_refused_rather_than_buffered(self):
+        """The guard reads the body, so what it may read is bounded -- for any shape.
+
+        Flask's ``MAX_FORM_MEMORY_SIZE`` default already answers 413 to an oversized
+        urlencoded form, so that half needs no help from us.  A body of some OTHER
+        content type gets no such treatment: the guard finds no CSRF field in it and
+        refuses, but only after this single-threaded server has buffered the lot.
+        Asserting both, so the covered half is not mistaken for the reason.
+        """
+        client, _conn, fp_hex = self._client()
+        oversized = b'x' * (review_web.MAX_REQUEST_BYTES + 1)
+        resp = client.post('/note/' + fp_hex, data=oversized,
+                           content_type='application/octet-stream',
+                           headers={'Origin': 'http://localhost:%d' % review_web.DEFAULT_PORT})
+        self.assertEqual(413, resp.status_code)
+        # The form path, for the record: Flask's own default, not this setting.
+        form_resp = self._post(client, '/note/' + fp_hex,
+                               {'body': 'x' * (review_web.MAX_REQUEST_BYTES + 1)})
+        self.assertEqual(413, form_resp.status_code)
+
     def test_main_hands_create_app_the_port_it_binds(self):
         """The remaining link: ``--port`` -> ``create_app(port=...)``."""
         seen = {}

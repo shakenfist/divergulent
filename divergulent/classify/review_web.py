@@ -59,6 +59,15 @@ CSRF_CONFIG_KEY = 'DIVERGULENT_CSRF_TOKEN'
 # Methods that cannot change the ledger.  Everything else is a mutating request
 # and must clear the full origin + host + token check.
 SAFE_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
+# The largest request body this UI will read at all.  Every POST it renders is a
+# short form -- a choice, a fingerprint, a token -- plus at most a reviewer's note,
+# so a megabyte is orders of magnitude more than any legitimate one.  Flask already
+# caps urlencoded FORM data at its ``MAX_FORM_MEMORY_SIZE`` default (500 kB, a 413
+# before anything is buffered); this covers what that does not -- a body of some
+# other content type, which the guard has to accept the whole of before it can find
+# no CSRF field in it and refuse.  Pinned here rather than left to a framework
+# default, because the bound is part of this UI's threat model.
+MAX_REQUEST_BYTES = 1024 * 1024
 
 
 def require_loopback(host: str) -> str:
@@ -413,6 +422,11 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
     from flask import Flask, abort, g, redirect, render_template_string, request, url_for
 
     app = Flask('divergulent.review_web')
+    # Bound the request body before anything reads it: the guard below has to touch
+    # request.form to check the CSRF field, and a body this server buffers whole only
+    # to answer 403 is a stall it need not take.  See MAX_REQUEST_BYTES for what this
+    # adds over Flask's own form-memory default.
+    app.config['MAX_CONTENT_LENGTH'] = MAX_REQUEST_BYTES
     # One token for the life of the process, handed to the templates as a Jinja
     # global so every form carries it without threading it through each render.
     csrf_token = secrets.token_urlsafe(32)
@@ -427,12 +441,17 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
         later is protected by default -- the failure mode of the decorator (a new
         mutating route someone forgets to annotate) is the whole bug class this
         closes.  ``require_loopback`` guards the bind; this guards the request.
+
+        The form is read only for a mutating method: ``request.form`` parses the
+        body, and a GET has no CSRF field to find, so a read never pays for it.
+        ``MAX_CONTENT_LENGTH`` bounds what a mutating one can make us parse.
         """
+        safe = request.method.upper() in SAFE_METHODS
         refusal = guard_request(
             method=request.method, host=request.headers.get('Host'),
             origin=request.headers.get('Origin'),
             cookie_token=request.cookies.get(CSRF_COOKIE),
-            form_token=request.form.get(CSRF_FIELD),
+            form_token=None if safe else request.form.get(CSRF_FIELD),
             expected_token=csrf_token, port=port)
         if refusal is not None:
             return render_template_string(FORBIDDEN_TEMPLATE, reason=refusal, port=port), 403
