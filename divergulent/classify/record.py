@@ -365,11 +365,19 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
             stats.observations_superseded += ledger_mod.supersede_observations_for_fingerprint(
                 conn, fingerprint=record.fingerprint, kind=_SCAN_KIND,
                 observed_by=_SCAN_RULE_ID, superseded_at=now, commit=False)
-            for flag in verdict.flags:
+            # Append the RECONCILED set, not the raw flag list. The scan dedupes only
+            # within a line, so a body that adds the same dangerous line twice yields
+            # two byte-identical flags -- and the old exists-then-append loop absorbed
+            # that by construction (the second append saw the first on the same
+            # connection). Comparing a set and then appending a list dropped that
+            # dedupe, writing duplicate live rows that no later run can retire,
+            # because the very next comparison finds the set already correct. Appending
+            # what was compared is what makes the block idempotent in one step.
+            for detail, evidence, version in sorted(desired_scan):
                 ledger_mod.append_observation(
-                    conn, fingerprint=record.fingerprint, kind=flag.kind,
-                    detail=flag.detail, evidence=flag.evidence,
-                    observed_by=_SCAN_RULE_ID, rule_version=RULES_VERSION,
+                    conn, fingerprint=record.fingerprint, kind=_SCAN_KIND,
+                    detail=detail, evidence=evidence,
+                    observed_by=_SCAN_RULE_ID, rule_version=version,
                     observed_at=now, commit=False)
                 stats.observations_appended += 1
 

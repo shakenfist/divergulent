@@ -685,3 +685,84 @@ class ScanVersionBumpTestCase(testtools.TestCase):
         self.assertEqual(1, stats.observations_superseded)
         self.assertEqual([], self._scan_rows(conn))                # nothing live
         self.assertEqual(1, len(self._scan_rows(conn, live_only=False)))  # history intact
+
+
+REPEATED_TROJAN = (
+    'Description: harden two call sites\n'
+    '--- a/src/loader.c\n'
+    '+++ b/src/loader.c\n'
+    '@@ -5,4 +5,6 @@\n'
+    ' void load(void) {\n'
+    '+    system("/bin/sh /opt/setup.sh");\n'
+    ' }\n'
+    ' void reload(void) {\n'
+    '+    system("/bin/sh /opt/setup.sh");\n'
+    ' }\n'
+)
+
+
+class RepeatedFlagTestCase(testtools.TestCase):
+    """The same dangerous line added twice records ONE live row, not two.
+
+    ``_line_flags`` dedupes at most one flag per ``detail`` within a single line,
+    and nothing dedupes across the patch, so a body that adds the identical line
+    in two places yields two byte-identical ``Flag``s.  The reconcile compares a
+    SET, so appending the raw list wrote a duplicate live row that no later run
+    could ever retire -- the very next comparison finds the live set already equal
+    to the desired one and skips.  Duplicates would then double-count for ever in
+    ``report``'s by-detail breakdown and in the review UI's construct display.
+    """
+
+    def _record(self, body, *, now=WHEN, conn=None, corpus_dir=None, index_path=None):
+        if conn is None:
+            tmp = tempfile.TemporaryDirectory()
+            self.addCleanup(tmp.cleanup)
+            corpus_dir = tmp.name
+            sha = body_sha256(body)
+            directory = os.path.join(corpus_dir, 'bodies', sha[:2])
+            os.makedirs(directory, exist_ok=True)
+            with open(os.path.join(directory, sha), 'w', encoding='utf-8') as handle:
+                handle.write(body)
+            index_path = os.path.join(corpus_dir, 'fingerprints.sqlite')
+            index = sqlite3.connect(index_path)
+            try:
+                index.execute(
+                    'CREATE TABLE patch ('
+                    'source_package TEXT NOT NULL, version TEXT NOT NULL, '
+                    'patch_name TEXT NOT NULL, raw_sha256 TEXT NOT NULL, '
+                    'normalisation_version INTEGER NOT NULL, fingerprint TEXT NOT NULL)')
+                index.execute(
+                    'INSERT INTO patch VALUES (?, ?, ?, ?, ?, ?)',
+                    ('pkg-twice', '1-1', 'twice.patch', sha, 1, _fp(body)))
+                index.commit()
+            finally:
+                index.close()
+            conn = ledger_mod.create_ledger(os.path.join(corpus_dir, 'ledger.sqlite'))
+            self.addCleanup(conn.close)
+        stats = record.record_to_ledger(conn, corpus_dir, index_path, now=now)
+        return stats, conn, corpus_dir, index_path
+
+    def _live_scan_rows(self, conn, body):
+        return [o for o in ledger_mod.observations_for(conn, _fp(body))
+                if o['observed_by'] == record._SCAN_RULE_ID and o['superseded_at'] is None]
+
+    def test_the_premise_the_scan_really_does_emit_the_duplicate(self):
+        """Guards the fixture: without two identical flags the test below proves nothing."""
+        flags = rules_mod.scan_dangerous_constructs(REPEATED_TROJAN)
+        self.assertEqual(2, len(flags))
+        self.assertEqual(1, len({(flag.detail, flag.evidence) for flag in flags}))
+
+    def test_two_identical_flags_record_one_row(self):
+        stats, conn, _corpus, _index = self._record(REPEATED_TROJAN)
+        self.assertEqual(1, stats.observations_appended)
+        self.assertEqual(1, len(self._live_scan_rows(conn, REPEATED_TROJAN)))
+
+    def test_a_second_run_finds_the_set_already_right(self):
+        """The duplicate was permanent precisely because the re-run skips."""
+        _stats, conn, corpus_dir, index_path = self._record(REPEATED_TROJAN)
+        second, _conn, _corpus, _index = self._record(
+            REPEATED_TROJAN, now=LATER, conn=conn, corpus_dir=corpus_dir, index_path=index_path)
+        self.assertEqual(0, second.observations_appended)
+        self.assertEqual(0, second.observations_superseded)
+        self.assertEqual(1, second.observations_skipped)
+        self.assertEqual(1, len(self._live_scan_rows(conn, REPEATED_TROJAN)))
