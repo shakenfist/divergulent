@@ -69,8 +69,12 @@ _INJECTION_RULE_ID = 'injection-scan'
 class RecordStats:
     """What a :func:`record_to_ledger` run did.
 
-    ``*_appended`` rows were newly written; ``*_skipped`` rows already existed
-    live and were left untouched (idempotency).  ``decisions_superseded`` counts
+    ``*_appended`` and ``*_superseded`` count ledger ROWS -- newly written, and
+    retired.  ``*_skipped`` counts FINGERPRINTS whose live set was already
+    exactly right and so was left untouched (idempotency): a block that
+    reconciles a whole set at a time has no per-row skip to count.  The two
+    units coincide wherever a fingerprint carries at most one row and diverge
+    where it can carry several.  ``decisions_superseded`` counts
     heuristic decisions a ``reconcile`` run retired because the winning rule for
     that fingerprint changed.  ``reviewability_*`` counts the deterministic size
     (reviewability) observation, one per fingerprint.  ``fingerprints`` is the

@@ -1182,6 +1182,15 @@ def _cmd_record(args: argparse.Namespace) -> int:
         print(verdict.render_report(verdict.summarise_ledger(conn)))
         print('recorded into ledger: %s' % args.ledger)
         print('dequeued %d now-settled review items' % dequeued)
+        # The counters are not all in the same unit, and the line has to say so.
+        # ``appended``/``superseded`` count ledger ROWS, while ``skipped`` counts
+        # FINGERPRINTS whose live set was already exactly right -- a reconcile
+        # compares a whole set at a time, so there is no per-row skip to count. The
+        # two coincide wherever a fingerprint has at most one row (decisions,
+        # reviewability, the generated mark) and diverge where it can have several
+        # (dangerous-construct observations, injection).
+        print('counts below: appended/superseded are ledger rows, skipped are '
+              'fingerprints whose live set was already right')
         print('decisions appended=%d skipped=%d superseded=%d; observations appended=%d '
               'skipped=%d superseded=%d; reviewability appended=%d skipped=%d; injection appended=%d '
               'skipped=%d superseded=%d; generated appended=%d skipped=%d superseded=%d; '
