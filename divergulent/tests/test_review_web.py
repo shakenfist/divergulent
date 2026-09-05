@@ -649,10 +649,18 @@ class CsrfGuardTestCase(ReviewWebFixture, testtools.TestCase):
     def test_a_stale_token_from_another_process_is_refused(self):
         # The token is minted per create_app, so one learned from an earlier run --
         # or from another user's tab -- is worthless.
+        #
+        # Everything but the token is what the UI's own form sends, so the refusal
+        # can only come from the token layer: an Origin the guard rejects would
+        # short-circuit ahead of the comparison and leave the app-level wiring
+        # (cookie, hidden field, ``CSRF_CONFIG_KEY``) untested. That is why the
+        # reason is asserted and not just the status.
         client, conn, fp_hex, _seen = self._signing()
-        resp = client.post('/review/' + fp_hex, headers={'Origin': 'http://localhost'},
-                           data={'choice': 'accept', review_web.CSRF_FIELD: 'not-the-token'})
+        resp = self._post(client, '/review/' + fp_hex,
+                          {'choice': 'accept', review_web.CSRF_FIELD: 'not-the-token'},
+                          token=False)
         self.assertEqual(403, resp.status_code)
+        self.assertIn('did not match this process', resp.get_data(as_text=True))
         self.assertEqual([], self._human(conn, fp_hex))
 
     def test_the_token_must_be_in_the_cookie_as_well_as_the_form(self):
