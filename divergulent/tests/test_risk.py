@@ -412,10 +412,11 @@ class InjectionSuspectTestCase(testtools.TestCase):
             observed_at=WHEN)
         conn.commit()
 
-    def _run(self, conn, corpus_dir, index_path, *, recorder=None, now=WHEN, level='none'):
+    def _run(self, conn, corpus_dir, index_path, *, recorder=None, now=WHEN, level='none',
+             re_risk_marked=False):
         return risk.run_risk_gate(
             conn, corpus_dir, index_path, call=_fake_call(_risk_json(level), recorder=recorder),
-            now=now, limit=100)
+            now=now, limit=100, re_risk_marked=re_risk_marked)
 
     def _live_risk(self, conn, fingerprint):
         return next(o for o in ledger_mod.live_observations(conn)
@@ -530,6 +531,30 @@ class InjectionSuspectTestCase(testtools.TestCase):
         self.assertEqual(0, stats.skipped_injection)
         self.assertTrue(any('src/b.c' in user for _system, user, _model in recorder))
         self.assertEqual('low', risk.risk_level_by_fingerprint(conn)[fps['bug-b.patch']])
+
+    def test_the_targeted_re_risk_pass_dispositions_suspects_too(self):
+        """'Whatever mode the run is in' -- the docstring's claim, now exercised.
+
+        ``re_risk_marked`` selects a narrow population (marked scores read off a
+        truncated generated head), and this suspect is not in it.  The disposition
+        must happen anyway: it costs no LLM call, and leaving one un-dispositioned
+        because the operator asked for a targeted re-risk would let a payload keep
+        its stale score until somebody remembered to run the default pass.
+        """
+        conn, corpus_dir, index_path, fps = self._setup()
+        self._suspect(conn, fps['bug-b.patch'])
+
+        recorder = []
+        stats = self._run(conn, corpus_dir, index_path, recorder=recorder,
+                          re_risk_marked=True)
+
+        self.assertEqual(1, stats.skipped_injection)
+        self.assertEqual(0, stats.re_risked)             # not in the targeted population
+        self.assertEqual([], recorder)                   # and no call was made at all
+        self.assertEqual({fps['bug-b.patch']}, risk.injection_skipped_fingerprints(conn))
+        obs = self._live_risk(conn, fps['bug-b.patch'])
+        self.assertEqual(risk._PARSE_FAILURE_LEVEL, obs['detail'])
+        self.assertEqual(risk.RISK_INJECTION_OBSERVED_BY, obs['observed_by'])
 
     def test_the_check_is_the_shared_helper_not_a_reimplementation(self):
         """The gate skips whatever the SHARED helper says, not its own idea of a suspect.

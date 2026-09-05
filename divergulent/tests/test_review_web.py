@@ -11,10 +11,12 @@ Every mutating request must clear the CSRF/origin guard, so the fixture's ``_pos
 helper posts the way the UI's own forms do (same-origin, token in the cookie and in
 the form); ``CsrfGuardTestCase`` is the negative half of that.
 """
+import io
 import os
 import re
 import sqlite3
 import tempfile
+from contextlib import redirect_stdout
 
 import testtools
 
@@ -108,7 +110,8 @@ def _seed_generated(conn, fingerprint, patch_text):
 class ReviewWebFixture:
     """A synthetic corpus + ledger + a Flask test client over them."""
 
-    def _client(self, *, extra_items=(), signer=None, clock=None, patch=None):
+    def _client(self, *, extra_items=(), signer=None, clock=None, patch=None,
+                port=review_web.DEFAULT_PORT):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         corpus_dir = tmp.name
@@ -135,7 +138,7 @@ class ReviewWebFixture:
 
         app = review_web.create_app(
             conn, corpus_dir, index_path, fetch=_fetch, signer=signer,
-            clock=(clock or (lambda: WHEN)))
+            clock=(clock or (lambda: WHEN)), port=port)
         app.testing = True
         self.app = app
         self.csrf = app.config[review_web.CSRF_CONFIG_KEY]
@@ -696,6 +699,50 @@ class CsrfGuardTestCase(ReviewWebFixture, testtools.TestCase):
         settled = client.get('/review/' + fp_hex).get_data(as_text=True)
         self.assertIn('Re-queue for human review', settled)
         self.assertEqual(2, settled.count('name="csrf_token"'))  # requeue + note
+
+
+class GuardWiringTestCase(ReviewWebFixture, testtools.TestCase):
+    """``port`` is the one security parameter the CLI feeds the guard; check the wire.
+
+    :class:`RequestGuardTestCase` exercises the policy itself, but always at the
+    default port, and the fixture binds the default too -- so both would still pass
+    if ``create_app`` dropped ``port`` on the floor and the guard fell back to
+    :data:`review_web.DEFAULT_PORT`.  That regression would make every request on an
+    operator's ``--port 9000`` run refuse (or, worse in a future refactor, accept a
+    host naming a port nothing is bound to).
+    """
+
+    def test_the_bound_port_is_the_port_the_guard_enforces(self):
+        client, _conn, _fp_hex = self._client(port=9999)
+        self.assertEqual(
+            200, client.get('/', headers={'Host': 'localhost:9999'}).status_code)
+        # ... and the default is now just another local server.
+        refused = client.get('/', headers={'Host': 'localhost:8765'})
+        self.assertEqual(403, refused.status_code)
+        self.assertIn('DNS rebinding', refused.get_data(as_text=True))
+
+    def test_main_hands_create_app_the_port_it_binds(self):
+        """The remaining link: ``--port`` -> ``create_app(port=...)``."""
+        seen = {}
+
+        class _FakeApp:
+            def run(self, **kwargs):
+                seen['run'] = kwargs
+
+        def _fake_create_app(*args, **kwargs):
+            seen['create_app'] = kwargs
+            return _FakeApp()
+
+        client, conn, _fp_hex = self._client()
+        self.patch(review_web, 'create_app', _fake_create_app)
+        self.patch(review_web.ledger_mod, 'open_ledger', lambda path: conn)
+        self.patch(review_web.review_mod, '_real_fetch', lambda: _fetch)
+        self.patch(review_web, '_lazy_sigstore_signer', lambda: None)
+
+        with redirect_stdout(io.StringIO()):     # main announces the bind; not under test
+            review_web.main(['--ledger', 'ignored', '--corpus', 'ignored', '--port', '9000'])
+        self.assertEqual(9000, seen['create_app']['port'])
+        self.assertEqual(9000, seen['run']['port'])
 
 
 class RequestGuardTestCase(testtools.TestCase):
