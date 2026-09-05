@@ -155,7 +155,7 @@ def origin_is_local(value: str | None, port: int) -> bool:
 
 
 def guard_request(*, method: str, host: str | None, origin: str | None,
-                  cookie_token: str | None, form_token: str | None,
+                  cookie_token: str | None, form_token,
                   expected_token: str, port: int) -> str | None:
     """Return why this request must be refused, or ``None`` if it may proceed.
 
@@ -173,6 +173,12 @@ def guard_request(*, method: str, host: str | None, origin: str | None,
        under :func:`hmac.compare_digest`.  ``SameSite=Strict`` means a cross-site
        POST carries no cookie at all, and the hidden field means a token leaked
        through a cookie-only channel still cannot be replayed.
+
+    ``form_token`` is a CALLABLE returning the field (or ``None``), not the field
+    itself, so the body is not read until Host and Origin have already passed --
+    reading it eagerly made the caller parse a whole request from a rebound name or
+    a foreign origin only to refuse it, which is not the layering described above.
+    A ``str`` or ``None`` is still accepted, since the pure-policy tests pass one.
 
     Pure and header-shaped rather than Flask-shaped so the policy is testable on its
     own, and so the caller (a ``before_request`` hook) stays three lines long.
@@ -193,13 +199,14 @@ def guard_request(*, method: str, host: str | None, origin: str | None,
     if not cookie_token:
         return ('this state-changing request carried no %s cookie; the cookie is SameSite=Strict, '
                 'so a cross-site post never has one' % CSRF_COOKIE)
-    if not form_token:
+    form_value = form_token() if callable(form_token) else form_token
+    if not form_value:
         return 'this state-changing request carried no %s form field' % CSRF_FIELD
     expected = expected_token.encode('utf-8')
     # Compared as BYTES: ``compare_digest`` raises on a non-ASCII str, and both of
     # these came off the wire, so a hostile cookie would otherwise be a 500.
     if not (hmac.compare_digest(cookie_token.encode('utf-8'), expected)
-            and hmac.compare_digest(form_token.encode('utf-8'), expected)):
+            and hmac.compare_digest(form_value.encode('utf-8'), expected)):
         return ('the CSRF token did not match this process; reload the page (the token is minted '
                 'per run, so a tab left open across a restart carries a stale one)')
     return None
@@ -442,16 +449,20 @@ def create_app(conn: sqlite3.Connection, corpus_dir: str, index_path: str, *, fe
         mutating route someone forgets to annotate) is the whole bug class this
         closes.  ``require_loopback`` guards the bind; this guards the request.
 
-        The form is read only for a mutating method: ``request.form`` parses the
-        body, and a GET has no CSRF field to find, so a read never pays for it.
-        ``MAX_CONTENT_LENGTH`` bounds what a mutating one can make us parse.
+        The form is read LAST and lazily: ``form_token`` is a callable, so
+        ``request.form`` -- which buffers and parses the whole body -- is only
+        touched once the Host and Origin checks have already passed. Passing the
+        value directly evaluated it as a call argument, i.e. before any of them,
+        so a post from a rebound name or a foreign origin was parsed in full and
+        then refused. A GET never reaches the callable at all.
+        ``MAX_CONTENT_LENGTH`` bounds what a request that does get there can make
+        us parse.
         """
-        safe = request.method.upper() in SAFE_METHODS
         refusal = guard_request(
             method=request.method, host=request.headers.get('Host'),
             origin=request.headers.get('Origin'),
             cookie_token=request.cookies.get(CSRF_COOKIE),
-            form_token=None if safe else request.form.get(CSRF_FIELD),
+            form_token=lambda: request.form.get(CSRF_FIELD),
             expected_token=csrf_token, port=port)
         if refusal is not None:
             return render_template_string(FORBIDDEN_TEMPLATE, reason=refusal, port=port), 403

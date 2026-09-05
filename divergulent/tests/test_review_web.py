@@ -777,6 +777,39 @@ class RequestGuardTestCase(testtools.TestCase):
     def test_the_in_app_post_passes(self):
         self.assertIsNone(self._guard())
 
+    def test_a_callable_form_token_is_only_called_after_host_and_origin_pass(self):
+        """The body must not be read until the request is established as ours.
+
+        ``form_token`` is a callable in the app so that ``request.form`` -- which
+        buffers and parses the whole body -- is only touched once Host and Origin
+        have already been checked. Counting the calls is the only way to see that
+        ordering: reading the code cannot distinguish "evaluated last" from
+        "evaluated as an argument, i.e. first".
+        """
+        calls = []
+
+        def _token():
+            calls.append(True)
+            return 'tok'
+
+        # Refused on Host: the body is never touched.
+        self.assertIn('DNS rebinding', self._guard(host='evil.example:8765', form_token=_token))
+        self.assertEqual([], calls)
+
+        # Refused on a missing Origin, and on a foreign one: still never touched.
+        self.assertIn('no Origin header', self._guard(origin=None, form_token=_token))
+        self.assertIn('not this review UI',
+                      self._guard(origin='http://evil.example', form_token=_token))
+        self.assertEqual([], calls)
+
+        # A GET returns before the token layer at all.
+        self.assertIsNone(self._guard(method='GET', form_token=_token))
+        self.assertEqual([], calls)
+
+        # Only once the request is ours is the field read -- exactly once.
+        self.assertIsNone(self._guard(form_token=_token))
+        self.assertEqual([True], calls)
+
     def test_every_loopback_name_passes_on_the_bound_port(self):
         for host in ('127.0.0.1:8765', 'localhost:8765', '[::1]:8765'):
             self.assertIsNone(self._guard(host=host, origin='http://' + host), host)
