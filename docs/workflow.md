@@ -195,10 +195,13 @@ This arrived with a triage prompt-version bump, which is what lets a
 re-run reach the rows the old routing wrote. A ledger built before it
 may still hold live `kind='llm'`, `verified=True`, `security` decisions
 at prompt version 1, and those keep outranking the deterministic tiers
-until they are superseded: `divergulent-classify ledger supersede
-llm-triage:<model> 1` retires that generation and re-queues its
-fingerprints. Until an operator runs it, the guarantee holds for rows
-written from version 2 onward, not retrospectively.
+until they are superseded: `python -m divergulent.classify.ledger
+supersede <ledger-path> llm-triage:<model> 1` retires that generation and
+re-queues its fingerprints. That is the ledger module's own CLI, not a
+`divergulent-classify` verb — the front CLI forwards `record`, `triage`,
+`risk` and friends, but `supersede` is reached through the module. Until an
+operator runs it, the guarantee holds for rows written from version 2
+onward, not retrospectively.
 
 ### 8. Human review
 

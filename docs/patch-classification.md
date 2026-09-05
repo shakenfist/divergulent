@@ -77,7 +77,8 @@ version bump because `record_triage_result` skips a fingerprint whose live
 decision already matches `(decided_by, rule_version)`: without it, verified
 `security` rows written under version 1 would stay live and unreachable by any
 re-run. Retiring that generation in an existing ledger is an operator step —
-`ledger supersede llm-triage:<model> 1` — which supersedes those decisions and
+`python -m divergulent.classify.ledger supersede <ledger-path> llm-triage:<model> 1`,
+the same module CLI named above — which supersedes those decisions and
 re-queues their fingerprints. The model-call boundary is
 `call(system, user, *, model, schema=None) -> CallResult(text, usage)`: the
 **static rubric is the cacheable `system` prompt** and the per-patch diff is the
