@@ -75,9 +75,13 @@ INJECTION_RULES_VERSION = 2
 # patch.  Callers inherit the cap through :func:`scan_text`, and truncation is
 # recorded rather than silent (:data:`SCAN_TRUNCATED_FAMILY`).
 #
-# The bound sits above the 400,000 characters
-# ``triage_driver.MAX_DIFF_CHARS_FOR_LLM`` will ever hand a model, so a model
-# shown a PREFIX of the diff body is shown only screened text.  That covers the
+# Only ONE tier ever shows a model a prefix.  The triage tier does not truncate
+# at ``triage_driver.MAX_DIFF_CHARS_FOR_LLM``: an over-cap diff is routed to a
+# human with the whole body, never partially classified, so it cannot show
+# unscreened text at all.  The risk gate is the prefix reader -- ``cap_diff``
+# takes the head -- which is why the clamp to this bound lives in ``score_risk``
+# and nowhere else.  This bound sitting above that cap is what makes a capped
+# read a read of screened text.  That covers the
 # ordinary path but NOT a fingerprint carrying a generated-content mark, whose
 # body ``generated.project_residue_first`` reorders before the cap: residue from
 # anywhere in a multi-megabyte diff is hoisted into the head the model reads.
