@@ -476,6 +476,50 @@ class InjectionSuspectTestCase(testtools.TestCase):
         self.assertEqual(2, len([o for o in ledger_mod.observations_for(conn, fps['bug-b.patch'])
                                  if o['kind'] == risk.RISK_KIND]))
 
+    def test_the_skip_is_retracted_once_the_injection_hit_is(self):
+        """The other direction of the heal: a skip must not outlive its cause.
+
+        The skip row is both the termination guard and a live risk score, so a stale
+        one does not merely mislabel the patch -- ``risk_rank_by_fingerprint`` counts
+        it as scored and the fingerprint leaves the un-scored population for ever.
+        The retraction here is routine, not hypothetical: an ``INJECTION_RULES_VERSION``
+        bump, a retired family or a tightened pattern all make ``record`` supersede
+        exactly this way.
+        """
+        conn, corpus_dir, index_path, fps = self._setup()
+        self._suspect(conn, fps['bug-b.patch'])
+        self._run(conn, corpus_dir, index_path)
+        self.assertEqual(risk.RISK_INJECTION_OBSERVED_BY,
+                         self._live_risk(conn, fps['bug-b.patch'])['observed_by'])
+
+        ledger_mod.supersede_observations_for_fingerprint(
+            conn, fingerprint=fps['bug-b.patch'], kind=injection.INJECTION_KIND,
+            superseded_at=LATER)
+
+        recorder = []
+        stats = self._run(conn, corpus_dir, index_path, recorder=recorder, now=LATER,
+                          level='low')
+        # The behaviour first: re-selected, and actually scored by the model this time.
+        self.assertTrue(any('src/b.c' in user for _system, user, _model in recorder))
+        self.assertEqual('low', risk.risk_level_by_fingerprint(conn)[fps['bug-b.patch']])
+        self.assertEqual(1, stats.healed_injection_skip)
+        self.assertEqual(0, stats.skipped_injection)
+        # Nothing is deleted: the skip stays in the audit trail, superseded.
+        rows = [o for o in ledger_mod.observations_for(conn, fps['bug-b.patch'])
+                if o['kind'] == risk.RISK_KIND]
+        self.assertEqual(2, len(rows))
+
+    def test_a_live_skip_for_a_still_suspect_fingerprint_is_left_alone(self):
+        # The guard on the heal above: retraction keys off the suspect set, so a
+        # suspect that is still a suspect keeps its row and is not rewritten.
+        conn, corpus_dir, index_path, fps = self._setup()
+        self._suspect(conn, fps['bug-b.patch'])
+        self._run(conn, corpus_dir, index_path)
+        again = self._run(conn, corpus_dir, index_path, now=LATER)
+        self.assertEqual(0, again.healed_injection_skip)
+        self.assertEqual(risk.RISK_INJECTION_OBSERVED_BY,
+                         self._live_risk(conn, fps['bug-b.patch'])['observed_by'])
+
     def test_a_header_only_hit_is_still_scored(self):
         # The LLM never reads the header, so a header hit must not divert the gate
         # -- the same line the triage driver draws, through the same helper.

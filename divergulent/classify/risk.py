@@ -456,6 +456,12 @@ def injection_skipped_fingerprints(conn) -> set[str]:
     nor re-selects it.  A suspect whose live row came from anywhere else (an LLM
     score written before the skip existed) is absent, and is healed on the next
     run.
+
+    Also the RETRACTION set: a fingerprint here that is no longer a suspect is one
+    whose skip has outlived its cause, and the same pass supersedes its row.  Both
+    directions matter, because the row is simultaneously the guard and a live risk
+    score -- so a stale one does not merely mislabel the patch, it removes it from
+    the population the gate scores at all.
     """
     return {obs['fingerprint'] for obs in ledger_mod.live_observations(conn)
             if obs['kind'] == RISK_KIND and obs['observed_by'] == RISK_INJECTION_OBSERVED_BY}
@@ -476,6 +482,7 @@ class RiskRunStats:
     truncated: int = 0    # diff capped before the call (head-only read)
     skipped_oversized: int = 0  # not line-reviewable -> never sent to the LLM
     skipped_injection: int = 0  # injection-suspect diff -> never sent to the LLM -> elevated
+    healed_injection_skip: int = 0  # skip rows retracted because the hit that caused them is gone
     unlocked_by_residue: int = 0  # oversized, but a small residue -> scored after all
     projected: int = 0    # marked -> scored residue-first, generated files as notes
     re_risked: int = 0    # re-scored by the targeted --re-risk-marked pass
@@ -532,6 +539,11 @@ def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, lim
     ``skipped_injection`` can both count the same fingerprint, so those lines may
     sum to more than the slice.
 
+    The disposition is RETRACTED in the same pass once the injection hit behind it is
+    gone, because the row is both the termination guard and a live score: left
+    standing it would keep a no-longer-suspect fingerprint out of the un-scored
+    population for ever.
+
     ``re_risk_marked`` switches the run to the TARGETED re-risk population instead
     of the un-scored one: the marked fingerprints whose live score was read off a
     truncated generated head (:func:`rerisk_candidates`), re-scored through this
@@ -570,11 +582,26 @@ def run_risk_gate(conn, corpus_dir: str, index_path: str, *, call, now: str, lim
     # No LLM call is spent, so this is not bounded by ``limit``; it terminates
     # because the row it writes is its own guard.
     stats.skipped_injection = len(suspects & corpus)
+    already_skipped = injection_skipped_fingerprints(conn)
     if stats.skipped_injection:
         families = injection_mod.injection_by_fingerprint(conn)
-        for fingerprint in sorted((suspects & corpus) - injection_skipped_fingerprints(conn)):
+        for fingerprint in sorted((suspects & corpus) - already_skipped):
             record_injection_skip(conn, fingerprint, families.get(fingerprint, ''),
                                   now=now, commit=False)
+
+    # ... and RETRACT the skip for a fingerprint that is no longer a suspect, which
+    # is the other half of the same heal.  The skip row is its own termination
+    # guard, and it also counts as a live score -- so once the injection hit behind
+    # it goes away (an INJECTION_RULES_VERSION bump, a retired family, a body the
+    # tightened patterns no longer hit: all things record.py's desired-vs-live
+    # reconcile now does routinely) the row would otherwise keep the fingerprint out
+    # of ``pending`` for ever, un-scorable by the model that was only ever skipped
+    # because of a hit that no longer exists.  Superseding puts it back in the
+    # un-scored population, where an ordinary run picks it up.
+    for fingerprint in sorted(already_skipped - suspects):
+        stats.healed_injection_skip += ledger_mod.supersede_observations_for_fingerprint(
+            conn, fingerprint=fingerprint, kind=RISK_KIND,
+            observed_by=RISK_INJECTION_OBSERVED_BY, superseded_at=now, commit=False)
 
     if re_risk_marked:
         targets = rerisk_candidates(conn)
@@ -646,6 +673,9 @@ def print_risk_summary(stats: RiskRunStats) -> None:
     if stats.skipped_injection:
         print('  (%d injection-suspect skipped -- never sent to the LLM; recorded %s for review)'
               % (stats.skipped_injection, _PARSE_FAILURE_LEVEL))
+    if stats.healed_injection_skip:
+        print('  (%d injection-suspect skips retracted -- the hit is gone; back in the '
+              'un-scored queue)' % stats.healed_injection_skip)
     if stats.unlocked_by_residue:
         print('  (%d oversized unlocked by a small hand-written residue -- scored residue-first)'
               % stats.unlocked_by_residue)
