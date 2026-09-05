@@ -434,6 +434,19 @@ def record_injection_skip(conn, fingerprint: str, families: str, *, now: str,
     Superseding matters here rather than being mere hygiene: a prior LIVE score
     on such a fingerprint was read off attacker-authored text aimed at the model
     that produced it, so it is precisely the score not to trust.
+
+    That reasoning does NOT cover the one other row this can supersede -- a
+    deterministic ``risk-cull`` ``none`` from :func:`record_cull`, which no model
+    ever saw and no payload could steer -- and the override is deliberate anyway.
+    The cull answers "can this patch carry security risk?" from the diff's shape:
+    whitespace-only, comment-only, documentation-only, changelog-only.  Those are
+    exactly the shapes with room for English prose and no code, which is to say the
+    likeliest home for an injection payload in the whole corpus, so narrowing the
+    supersede would carve the hole precisely where the vector lives.  The two
+    findings are also about different things: the cull says the PATCH is harmless,
+    the skip says the CLASSIFIER was targeted, and the second is the one a human
+    needs to see.  A cull that survives is recorded history either way -- nothing is
+    deleted -- and the cost of the override is one human review.
     """
     ledger_mod.supersede_observations_for_fingerprint(
         conn, fingerprint=fingerprint, kind=RISK_KIND, superseded_at=now, commit=False)
