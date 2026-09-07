@@ -161,6 +161,15 @@ authoritative for as long as the outage lasts. Read the `built` date in
 the warning, and prefer `--keep-existing` for pipelines you actually
 watch over ones you never look at.
 
+One shape of publishing outage is not covered. A release can be left
+with the bundle present but its signature asset missing, and then the
+download succeeds — so the fallback never comes into play, and
+`--require-signature` fails the run as it should. `--keep-existing` and
+`--require-signature` together therefore still fail when the signature
+alone is missing. That is the correct answer for a flag whose whole
+point is that verification stays fatal, but it is worth knowing before
+relying on the pair unattended.
+
 ### Bundle verification
 
 A downloaded bundle is untrusted, so two independent checks run before it

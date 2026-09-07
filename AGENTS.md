@@ -97,8 +97,12 @@ and stores the **downloaded bytes verbatim** at `bundle.stored_path`
 temp-file+rename — verbatim so a phase-4 signature verifies against
 exactly what was published; a download that fails to parse, is
 unrecognised, or is for another release is refused and nothing is stored.
-`cli._select_bundle` then auto-discovers that stored file when `--bundle`
-is absent (silently, since no store is the normal pre-pull state). A
+A failed *download* is survivable with `--keep-existing`, which keeps an
+already-stored, still-usable bundle and exits 0 rather than failing the
+caller; verification failures are never rescued that way, and neither is
+an empty cache dir. `cli._select_bundle` then auto-discovers that
+stored file when `--bundle` is absent (silently, since no store is the
+normal pre-pull state). A
 **freshness contract** governs use: bundle divergence is always served
 (immutable), but bundle staleness only while `generated_at` is within
 `BUNDLE_STALENESS_TTL_SECONDS` (7 days) — past that staleness is queried

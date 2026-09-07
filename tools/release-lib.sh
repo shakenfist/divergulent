@@ -46,8 +46,10 @@ ensure_gh() {
     # -f matters as much as the retry: without it curl exits 0 on a 404 or 502
     # and writes the error body into the file, so retry() sees success and the
     # run dies later at sha256sum instead of retrying the blip.
-    retry 4 10 curl -fsSLO "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${dir}.tar.gz"
-    retry 4 10 curl -fsSLO "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_checksums.txt"
+    retry 4 10 curl -fsSLO --connect-timeout 10 --max-time 300 \
+        "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${dir}.tar.gz"
+    retry 4 10 curl -fsSLO --connect-timeout 10 --max-time 300 \
+        "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_checksums.txt"
     sha256sum --ignore-missing -c "gh_${GH_VERSION}_checksums.txt"
     tar -xzf "${dir}.tar.gz"
     sudo install -m 0755 "${dir}/bin/gh" /usr/local/bin/gh
@@ -85,16 +87,30 @@ ensure_rolling_release() {
                 return 0
                 ;;
             HTTP/*\ 404*)
+                if retry 3 5 gh release create "$tag" --prerelease \
+                        --title "$title" --notes "$notes"; then
+                    return 0
+                fi
+
+                # Unlike `upload --clobber`, create is not idempotent. An attempt
+                # that reached GitHub but whose response was lost leaves the
+                # release made and every subsequent retry answering 422
+                # already_exists -- so ask again before calling this a failure,
+                # rather than aborting a publish whose release now exists.
+                status=$(gh api -i "repos/${repo}/releases/tags/${tag}" 2>/dev/null) || true
+                status=${status%%$'\n'*}
+                case "$status" in
+                    HTTP/*\ 2*)
+                        return 0
+                        ;;
+                esac
+
                 # The API also answers 404 when the token cannot see the
                 # repository at all, so a failed create should say so.
-                if ! retry 3 5 gh release create "$tag" --prerelease \
-                        --title "$title" --notes "$notes"; then
-                    echo "ERROR: could not create release '${tag}'. Note that the 404 which" >&2
-                    echo "       sent us here also means a token without read access to" >&2
-                    echo "       ${repo}, not only a missing release." >&2
-                    return 1
-                fi
-                return 0
+                echo "ERROR: could not create release '${tag}'. Note that the 404 which" >&2
+                echo "       sent us here also means a token without read access to" >&2
+                echo "       ${repo}, not only a missing release." >&2
+                return 1
                 ;;
         esac
 
@@ -136,7 +152,9 @@ _verify_one_asset() {
     local _va_url="$1" _va_path="$2"
     local _va_head _va_remote _va_local
 
-    if ! _va_head=$(curl -fsSL --head "$_va_url"); then
+    # Timeouts, not just -f: retry() can only re-run something that finishes.
+    # A hung connection would otherwise stall the job past the upload.
+    if ! _va_head=$(curl -fsSL --connect-timeout 10 --max-time 60 --head "$_va_url"); then
         return 1
     fi
 

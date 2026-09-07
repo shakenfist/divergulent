@@ -165,6 +165,42 @@ ensure_rolling_release tag "title" "notes" >/dev/null 2>&1
 check "$?" 1 "a 5xx fails rather than guessing"
 check "$(calls gh)" 3 "retried the probe and never called create"
 
+# Item 1 of the round-three review: create is not idempotent, so an attempt
+# whose response was lost leaves the release made and every retry answering
+# 422. The re-probe must notice that and succeed.
+stub gh <<'STUB'
+n=$(cat "${STUB_WORK}/gh.n" 2>/dev/null || echo 0)
+n=$((n + 1))
+echo "$n" > "${STUB_WORK}/gh.n"
+case "$*" in
+    *"-i "*)
+        # Missing on the first look, present once create has (silently) run.
+        if [ "$n" -eq 1 ]; then
+            printf 'HTTP/2.0 404 Not Found\n'
+            exit 1
+        fi
+        printf 'HTTP/2.0 200 OK\n'
+        exit 0
+        ;;
+    *)
+        exit 1  # create always reports failure
+        ;;
+esac
+STUB
+ensure_rolling_release tag "title" "notes" >/dev/null 2>&1
+check "$?" 0 "a create whose response was lost is not treated as a failure"
+
+echo "== publish_assets: the path every real publish takes =="
+stub gh <<'STUB'
+exit 0
+STUB
+stub curl <<'STUB'
+printf 'HTTP/2 200 \r\nContent-Length: 5\r\n'
+STUB
+out=$(publish_assets tag "${STUB_WORK}/asset" 2>&1)
+check "$?" 0 "a good upload verifies and succeeds"
+contains "${out}" "verified" "verification actually ran, rather than being skipped"
+
 echo "== publish_assets: the operator warning =="
 stub gh <<'STUB'
 exit 1
