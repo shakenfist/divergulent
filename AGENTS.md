@@ -136,7 +136,12 @@ signature with `tools/publish-cache.sh` to a **rolling, in-place `cache`
 prerelease** (`contents: write`). That tag is deliberately a prerelease so
 it never shadows the software "latest" release; the client's
 `DEFAULT_CACHE_URL_TEMPLATE` points at
-`.../releases/download/cache/cache-<release>.json.gz`. Because signing
+`.../releases/download/cache/cache-<release>.json.gz`. Never call `gh
+release upload` directly from a publish script: go through
+`publish_assets()` in `tools/release-lib.sh`, which retries and then
+confirms the asset is downloadable. `--clobber` deletes before it
+uploads, so an unretried failure leaves a rolling release with the old
+asset gone and the new one missing. Because signing
 stays in `build-cache.yml` on the default branch, the Sigstore identity is
 `build-cache.yml@refs/heads/develop` for scheduled and dispatched runs
 alike — confirmed against a real published signature by a VERIFIED `cache

@@ -278,6 +278,7 @@ def _build_parser():
     pullcmd.add_argument(
         '--cache-url', default=None,
         help='URL to download the bundle from (default: the GitHub Releases asset for this release).')
+    _add_keep_existing_argument(pullcmd)
     _add_verify_arguments(pullcmd)
 
     pullclasscmd = cachesub.add_parser(
@@ -286,6 +287,7 @@ def _build_parser():
     pullclasscmd.add_argument(
         '--cache-url', default=None,
         help='URL to download the classification bundle from (default: the GitHub Releases asset).')
+    _add_keep_existing_argument(pullclasscmd)
     _add_verify_arguments(pullclasscmd)
 
     verifycmd = cachesub.add_parser(
@@ -296,6 +298,14 @@ def _build_parser():
     _add_verify_arguments(verifycmd)
 
     return parser
+
+
+def _add_keep_existing_argument(parser):
+    parser.add_argument(
+        '--keep-existing', action='store_true',
+        help='If the bundle cannot be downloaded but a usable one is already stored, keep it and '
+             'succeed instead of failing. For unattended pipelines that should ride out a '
+             'publish-side outage rather than stop.')
 
 
 def _add_verify_arguments(parser):
@@ -868,6 +878,48 @@ def _validate_bundle(data, release):
     return loaded
 
 
+def _usable_cache(release):
+    '''Load the stored divergence bundle for ``release``, or None.
+
+    The read-side mirror of _usable_classification: returns the Bundle when one is
+    stored, readable, and of a recognised schema for this release; otherwise None.
+    '''
+    if release is None:
+        return None
+    path = bundle.stored_path(default_cache_dir(), release)
+    if not path.exists():
+        return None
+    try:
+        with open(path, 'rb') as handle:
+            data = handle.read()
+    except OSError:
+        return None
+    return _validate_bundle(data, release)
+
+
+def _keep_existing_or_fail(args, existing, path):
+    '''Exit code for a refresh whose download failed.
+
+    Only ever reached when the bundle could not be fetched at all -- a publish-side
+    problem (a half-updated rolling release, a transient 5xx, no network). A
+    download that succeeds but fails verification stays fatal, because that is a
+    trust problem and falling back would be exactly the wrong response.
+
+    Even here the fallback is opt-in: silently succeeding whenever a download fails
+    would hide a cache that was never fetched in the first place, so --keep-existing
+    is required and the stored bundle has to actually load.
+    '''
+    if not args.keep_existing:
+        return 1
+    if existing is None:
+        print('divergulent: --keep-existing: no usable bundle is stored; nothing to fall back to.',
+              file=sys.stderr)
+        return 1
+    print('divergulent: --keep-existing: refresh failed; keeping %s (built %s).' % (path, existing.generated_at),
+          file=sys.stderr)
+    return 0
+
+
 def _cache_pull_command(args):
     release = _detect_release()
     if release is None:
@@ -879,7 +931,8 @@ def _cache_pull_command(args):
     data = http.get_bytes(url)
     if data is None:
         print('divergulent: could not download a bundle from %s' % url, file=sys.stderr)
-        return 1
+        return _keep_existing_or_fail(
+            args, _usable_cache(release), bundle.stored_path(default_cache_dir(), release))
 
     loaded = _validate_bundle(data, release)
     if loaded is None:
@@ -986,7 +1039,9 @@ def _cache_pull_classification_command(args):
     data = http.get_bytes(url)
     if data is None:
         print('divergulent: could not download a classification bundle from %s' % url, file=sys.stderr)
-        return 1
+        return _keep_existing_or_fail(
+            args, _usable_classification(release),
+            classification_bundle.stored_path(default_cache_dir(), release))
 
     loaded = _validate_classification(data)
     if loaded is None:

@@ -117,6 +117,7 @@ the commands find it automatically:
 ```bash
 divergulent cache pull                       # download + store this release's bundle
 divergulent cache pull --cache-url URL       # ... from a specific URL or mirror
+divergulent cache pull --keep-existing       # ... tolerating a failed refresh
 divergulent score                            # now uses the stored bundle, no flag needed
 ```
 
@@ -131,6 +132,21 @@ fixed version's patches never change); **staleness** is used only while
 the bundle is fresh (within a week) — past that, staleness is queried
 live so newly-behind packages are not missed, while divergence still
 comes from the bundle.
+
+### Surviving a failed refresh
+
+By default a bundle that cannot be downloaded is an error, which in a
+pipeline running under `set -e` stops the whole run — even when a
+perfectly good bundle is already stored. Pass `--keep-existing` to make
+that case survivable: if the download fails but a usable bundle is
+already stored, it is kept, a warning is printed, and the command
+succeeds. With nothing stored the command still fails, so the flag can
+never quietly hide a cache that was never fetched at all.
+
+The fallback deliberately covers *download* failures only. A bundle that
+downloads but fails its signature or spot-check is a trust problem rather
+than a publishing outage, and stays fatal however this flag is set. The
+same flag works for `cache pull-classification`.
 
 ### Bundle verification
 

@@ -61,7 +61,11 @@ a Debian 13 runner (`tools/build-cache.sh`), signs it
 (`tools/sign-bundle.sh`), and publishes it (`tools/publish-cache.sh`) to
 the rolling `cache` prerelease daily — incremental each day, a full
 rebuild weekly — so `divergulent cache pull` serves a fresh, signed
-bundle. Software releases are tag-driven
+bundle. All three publish scripts share `tools/release-lib.sh`, which
+retries every GitHub API call and then re-downloads each asset from its
+public URL before reporting success — `gh release upload --clobber`
+deletes the old asset before writing the new one, so an unretried failure
+mid-call can leave a rolling release with neither. Software releases are tag-driven
 (`v*`) and publish to PyPI via Sigstore-signed tags and PyPI trusted
 publishing — see
 [RELEASE-SETUP.md](https://github.com/shakenfist/divergulent/blob/develop/RELEASE-SETUP.md)

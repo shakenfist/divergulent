@@ -289,6 +289,49 @@ class CachePullTestCase(testtools.TestCase):
         self.assertEqual(1, rc)
         self.assertFalse(self._stored().exists())
 
+    def test_keep_existing_succeeds_when_a_usable_bundle_is_stored(self):
+        # A first pull stores a good bundle...
+        data = _bundle_bytes(self)
+        self.assertEqual(0, self._run(['cache', 'pull', '--cache-url', 'http://example/b'],
+                                      FakeDownloadHttp(data)))
+        # ...then the publish side breaks. --keep-existing rides it out rather than
+        # taking down the caller, and leaves the stored bundle untouched.
+        rc = self._run(
+            ['cache', 'pull', '--cache-url', 'http://example/b', '--keep-existing'],
+            FakeDownloadHttp(None))
+        self.assertEqual(0, rc)
+        with open(self._stored(), 'rb') as handle:
+            self.assertEqual(data, handle.read())
+
+    def test_keep_existing_still_fails_when_nothing_is_stored(self):
+        # Opt-in fallback must not paper over a cache that was never fetched at all.
+        rc = self._run(
+            ['cache', 'pull', '--cache-url', 'http://example/b', '--keep-existing'],
+            FakeDownloadHttp(None))
+        self.assertEqual(1, rc)
+        self.assertFalse(self._stored().exists())
+
+    def test_keep_existing_does_not_rescue_a_verification_failure(self):
+        # The bundle downloads but disagrees with the live source: a trust problem,
+        # not a publish-side outage, so it stays fatal even under --keep-existing.
+        self.assertEqual(0, self._run(['cache', 'pull', '--cache-url', 'http://example/b'],
+                                      FakeDownloadHttp(_bundle_bytes(self))))
+        rc = self._run(
+            ['cache', 'pull', '--cache-url', 'http://example/b', '--keep-existing'],
+            FakeDownloadHttp(_bundle_bytes(self)), patches=_disagreeing_patches())
+        self.assertEqual(1, rc)
+
+    def test_keep_existing_ignores_an_unreadable_stored_bundle(self):
+        # A corrupt bundle on disk is not something to fall back to.
+        path = self._stored()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, 'wb') as handle:
+            handle.write(b'not a gzip bundle')
+        rc = self._run(
+            ['cache', 'pull', '--cache-url', 'http://example/b', '--keep-existing'],
+            FakeDownloadHttp(None))
+        self.assertEqual(1, rc)
+
 
 class CacheVerifyTestCase(testtools.TestCase):
 

@@ -399,6 +399,23 @@ normal session and the cheapest kind.
   bundle *this machine* has stored, not about the published
   classification bundle — run `divergulent cache pull`, or pass
   `--no-pull` if you do not care this run.
+- **Clients get a 404 for the bundle URL.** The asset is missing from
+  the rolling release, not merely stale. Check with `gh release view
+  <cache|classification|bts> --repo shakenfist/divergulent --json assets`:
+  a release carrying a `.sigstore.json` but no bundle beside it means a
+  publish died between deleting the old asset and uploading the new one.
+  Re-publish with an explicit dispatch — and note the publish step is
+  gated, so the `publish` input is **required**, or the build runs for
+  nothing:
+
+  ```bash
+  gh workflow run "Build cache" --repo shakenfist/divergulent \
+      -f publish=true -f refresh=false
+  ```
+
+  Clients can ride out the gap in the meantime with `divergulent cache
+  pull --keep-existing`, which keeps a bundle they already hold.
+
 - **The bundle covers fewer patches than you expect.** It is supposed to.
   The bundle carries settled verdicts and *grows* as review proceeds;
   clients re-pull to see more of their patches explained. A patch still
