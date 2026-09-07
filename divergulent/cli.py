@@ -995,12 +995,16 @@ def _cache_verify_command(args):
     return 1
 
 
-def _usable_classification(release):
+def _usable_classification(release, on_reject='omitting'):
     '''Load the stored classification bundle for ``release``, or None.
 
     Returns the ClassificationBundle when one is stored, readable, and of a
     recognised schema for this release; otherwise None (so ``show`` simply omits
     the classification, never guesses). A present-but-unusable bundle warns.
+
+    ``on_reject`` completes that warning, for the same reason _usable_bundle takes
+    one: `cache pull-classification --keep-existing` is deciding whether it may
+    keep this bundle, and is about to exit non-zero rather than omit anything.
     '''
     if release is None:
         return None
@@ -1010,12 +1014,13 @@ def _usable_classification(release):
     try:
         loaded = classification_bundle.load(path)
     except (OSError, ValueError, KeyError):
-        print('divergulent: classification bundle could not be read; omitting.', file=sys.stderr)
+        print('divergulent: classification bundle could not be read; %s.' % on_reject, file=sys.stderr)
         return None
     if (loaded.schema, loaded.entry_schema) != (
             classification_bundle.CLASSIFICATION_SCHEMA_VERSION,
             classification_bundle.ENTRY_SCHEMA_VERSION):
-        print('divergulent: classification bundle schema not recognised; omitting.', file=sys.stderr)
+        print('divergulent: classification bundle schema not recognised; %s.' % on_reject,
+              file=sys.stderr)
         return None
     return loaded
 
@@ -1048,7 +1053,7 @@ def _cache_pull_classification_command(args):
         print('divergulent: could not download a classification bundle from %s' % url, file=sys.stderr)
         return _keep_existing_or_fail(
             args, classification_bundle.stored_path(default_cache_dir(), release),
-            lambda: _usable_classification(release))
+            lambda: _usable_classification(release, on_reject='cannot keep it'))
 
     loaded = _validate_classification(data)
     if loaded is None:

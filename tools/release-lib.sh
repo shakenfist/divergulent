@@ -67,19 +67,41 @@ ensure_gh() {
 # by tag and treat only a genuine 404 as missing.
 ensure_rolling_release() {
     local tag="$1" title="$2" notes="$3"
-    local repo output attempt
+    local repo status attempt
     repo="$(release_repo)"
 
     for attempt in 1 2 3; do
-        if output=$(gh api "repos/${repo}/releases/tags/${tag}" 2>&1 >/dev/null); then
-            return 0
+        # -i so the decision rests on the protocol status line rather than on
+        # gh's human-readable error text, which carries no compatibility promise
+        # across version bumps -- a rephrasing there would otherwise turn every
+        # genuine 404 into a hard failure, and the first publish to a new tag
+        # would never create it. The `|| true` matters under `set -e`: gh exits
+        # non-zero on a 404, which is a case we handle rather than an error.
+        status=$(gh api -i "repos/${repo}/releases/tags/${tag}" 2>/dev/null) || true
+        status=${status%%$'\n'*}
+
+        case "$status" in
+            HTTP/*\ 2*)
+                return 0
+                ;;
+            HTTP/*\ 404*)
+                # The API also answers 404 when the token cannot see the
+                # repository at all, so a failed create should say so.
+                if ! retry 3 5 gh release create "$tag" --prerelease \
+                        --title "$title" --notes "$notes"; then
+                    echo "ERROR: could not create release '${tag}'. Note that the 404 which" >&2
+                    echo "       sent us here also means a token without read access to" >&2
+                    echo "       ${repo}, not only a missing release." >&2
+                    return 1
+                fi
+                return 0
+                ;;
+        esac
+
+        echo "Attempt ${attempt}/3: cannot tell whether release '${tag}' exists (${status:-no response})" >&2
+        if [ "$attempt" -lt 3 ]; then
+            sleep 5
         fi
-        if [ "${output#*HTTP 404}" != "$output" ]; then
-            retry 3 5 gh release create "$tag" --prerelease --title "$title" --notes "$notes"
-            return
-        fi
-        echo "Attempt ${attempt}/3: cannot tell whether release '${tag}' exists: ${output}" >&2
-        sleep 5
     done
 
     echo "ERROR: could not determine whether release '${tag}' exists; not publishing." >&2
@@ -108,32 +130,62 @@ release_repo() {
 # upload, and a stale asset left behind when a retry replaced only part of the
 # set. A response carrying no content-length is not treated as a mismatch --
 # a missing header is not evidence of a bad asset.
+# One asset: is it there, and is it the size we uploaded? Both halves in one
+# function so retry() can cover them together -- see verify_published.
+_verify_one_asset() {
+    local _va_url="$1" _va_path="$2"
+    local _va_head _va_remote _va_local
+
+    if ! _va_head=$(curl -fsSL --head "$_va_url"); then
+        return 1
+    fi
+
+    # -L means the redirect to the CDN is in this dump too, and github.com's 302
+    # carries a content-length of its own for the short redirect body. Reset at
+    # every status line so the value can only come from the response that
+    # actually carried the asset, and is empty when that response had none --
+    # otherwise a chunked final hop would silently inherit the redirect's length
+    # and fail a publish that was fine.
+    _va_remote=$(tr -d '\r' <<<"$_va_head" |
+        awk '/^HTTP\// { n = "" } tolower($1) == "content-length:" { n = $2 } END { print n }')
+
+    # Nothing local to compare against (a caller checking an asset it did not
+    # just upload), or no content-length: presence is all we can assert, and a
+    # missing header is not evidence of a bad asset.
+    if [ ! -f "$_va_path" ] || [ -z "$_va_remote" ]; then
+        return 0
+    fi
+
+    _va_local=$(stat -c%s "$_va_path")
+    if [ "$_va_remote" != "$_va_local" ]; then
+        echo "  ${_va_url} is ${_va_remote} bytes, expected ${_va_local}" >&2
+        return 1
+    fi
+    return 0
+}
+
 verify_published() {
     local tag="$1"
     shift
-    local repo path name url head remote_size local_size
+    local repo path name url local_size
     repo="$(release_repo)"
     for path in "$@"; do
         name="$(basename "$path")"
         url="https://github.com/${repo}/releases/download/${tag}/${name}"
-        # A just-uploaded asset can take a moment to become servable, so allow
-        # a few attempts before calling it broken.
-        if ! head=$(retry 4 5 curl -fsSL --head "$url"); then
-            echo "ERROR: uploaded ${name} but ${url} is not downloadable." >&2
+
+        # Retry the presence check and the size check together. A just-clobbered
+        # asset can briefly serve a 404 *or* the previous asset's length, and
+        # giving only the first of those any tolerance would turn ordinary
+        # eventual consistency into a red build over a publish that worked --
+        # false reds on the one trustworthy signal spend it fast.
+        if ! retry 4 5 _verify_one_asset "$url" "$path"; then
+            echo "ERROR: ${url} never settled: not downloadable, or never the size of ${path}." >&2
             return 1
         fi
 
-        # -L means the 302 to the CDN is in here too; the last content-length
-        # is the one belonging to the response that carries the bytes.
-        remote_size=$(tr -d '\r' <<<"$head" |
-            awk 'tolower($1) == "content-length:" { n = $2 } END { print n }')
         local_size=""
-        [ -f "$path" ] && local_size="$(stat -c%s "$path")"
-
-        if [ -n "$remote_size" ] && [ -n "$local_size" ] &&
-                [ "$remote_size" != "$local_size" ]; then
-            echo "ERROR: ${url} is ${remote_size} bytes but ${path} is ${local_size}." >&2
-            return 1
+        if [ -f "$path" ]; then
+            local_size="$(stat -c%s "$path")"
         fi
         echo "  verified ${url}${local_size:+ (${local_size} bytes)}"
     done

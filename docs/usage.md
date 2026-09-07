@@ -148,6 +148,19 @@ downloads but fails its signature or spot-check is a trust problem rather
 than a publishing outage, and stays fatal however this flag is set. The
 same flag works for `cache pull-classification`.
 
+**There is no upper bound on how old the kept bundle may be.** If
+publishing stays broken — or if something on the network path simply
+blocks the download, which needs no forgery — an unattended pipeline
+keeps succeeding on a frozen bundle indefinitely, and the only trace is
+a stderr line that names the bundle's build date. Two things bound the
+damage for the divergence cache: its divergence data is immutable for a
+given package version, and its staleness data is only trusted for a
+week (past that, staleness is queried live regardless of the flag). The
+classification bundle has no equivalent expiry, so kept verdicts stay
+authoritative for as long as the outage lasts. Read the `built` date in
+the warning, and prefer `--keep-existing` for pipelines you actually
+watch over ones you never look at.
+
 ### Bundle verification
 
 A downloaded bundle is untrusted, so two independent checks run before it
