@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -314,12 +316,34 @@ class CachePullTestCase(testtools.TestCase):
     def test_keep_existing_does_not_rescue_a_verification_failure(self):
         # The bundle downloads but disagrees with the live source: a trust problem,
         # not a publish-side outage, so it stays fatal even under --keep-existing.
+        good = _bundle_bytes(self)
         self.assertEqual(0, self._run(['cache', 'pull', '--cache-url', 'http://example/b'],
-                                      FakeDownloadHttp(_bundle_bytes(self))))
+                                      FakeDownloadHttp(good)))
         rc = self._run(
             ['cache', 'pull', '--cache-url', 'http://example/b', '--keep-existing'],
             FakeDownloadHttp(_bundle_bytes(self)), patches=_disagreeing_patches())
         self.assertEqual(1, rc)
+        # The exit code is the lesser half: the rejected download must not have
+        # disturbed the good bundle already on disk.
+        with open(self._stored(), 'rb') as handle:
+            self.assertEqual(good, handle.read())
+
+    def test_failed_download_does_not_inspect_the_stored_bundle(self):
+        # Without --keep-existing the stored bundle is irrelevant, so it must not
+        # be read: parsing the whole-archive bundle for nothing is waste, and a
+        # corrupt one would print "could not be read" directly under "could not
+        # download", where it reads as if it described the download.
+        path = self._stored()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, 'wb') as handle:
+            handle.write(b'not a gzip bundle')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc = self._run(['cache', 'pull', '--cache-url', 'http://example/b'],
+                           FakeDownloadHttp(None))
+        self.assertEqual(1, rc)
+        self.assertIn('could not download', err.getvalue())
+        self.assertNotIn('could not be read', err.getvalue())
 
     def test_keep_existing_ignores_an_unreadable_stored_bundle(self):
         # A corrupt bundle on disk is not something to fall back to.

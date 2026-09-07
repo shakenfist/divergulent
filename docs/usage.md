@@ -194,6 +194,7 @@ it and `show` annotates each patch with its category and *why*:
 
 ```bash
 divergulent cache pull-classification   # download + verify + store this release's bundle
+divergulent cache pull-classification --keep-existing   # ... tolerating a failed refresh
 divergulent show bash                    # patches now carry: class, axes, and the deciding rule
 ```
 

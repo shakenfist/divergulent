@@ -43,8 +43,11 @@ ensure_gh() {
     fi
     echo "gh not found; installing gh ${GH_VERSION}..." >&2
     local dir="gh_${GH_VERSION}_linux_amd64"
-    retry 4 10 curl -sSLO "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${dir}.tar.gz"
-    retry 4 10 curl -sSLO "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_checksums.txt"
+    # -f matters as much as the retry: without it curl exits 0 on a 404 or 502
+    # and writes the error body into the file, so retry() sees success and the
+    # run dies later at sha256sum instead of retrying the blip.
+    retry 4 10 curl -fsSLO "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${dir}.tar.gz"
+    retry 4 10 curl -fsSLO "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_checksums.txt"
     sha256sum --ignore-missing -c "gh_${GH_VERSION}_checksums.txt"
     tar -xzf "${dir}.tar.gz"
     sudo install -m 0755 "${dir}/bin/gh" /usr/local/bin/gh
@@ -56,12 +59,31 @@ ensure_gh() {
 # These tags are deliberately prereleases -- they are auto-updated data, and
 # must never shadow the repository's "latest" release, which is reserved for
 # software versions.
+#
+# A bare `gh release view` cannot tell "no such release" from "the API is
+# having a moment", and answering the second as the first sends us to `gh
+# release create` on a tag that already exists -- which fails deterministically
+# and aborts the run before a single asset is uploaded. So ask for the release
+# by tag and treat only a genuine 404 as missing.
 ensure_rolling_release() {
     local tag="$1" title="$2" notes="$3"
-    if gh release view "$tag" >/dev/null 2>&1; then
-        return 0
-    fi
-    retry 3 5 gh release create "$tag" --prerelease --title "$title" --notes "$notes"
+    local repo output attempt
+    repo="$(release_repo)"
+
+    for attempt in 1 2 3; do
+        if output=$(gh api "repos/${repo}/releases/tags/${tag}" 2>&1 >/dev/null); then
+            return 0
+        fi
+        if [ "${output#*HTTP 404}" != "$output" ]; then
+            retry 3 5 gh release create "$tag" --prerelease --title "$title" --notes "$notes"
+            return
+        fi
+        echo "Attempt ${attempt}/3: cannot tell whether release '${tag}' exists: ${output}" >&2
+        sleep 5
+    done
+
+    echo "ERROR: could not determine whether release '${tag}' exists; not publishing." >&2
+    return 1
 }
 
 # The owner/name slug for the repository we are publishing to.
@@ -70,30 +92,50 @@ release_repo() {
         echo "$GITHUB_REPOSITORY"
         return 0
     fi
-    gh repo view --json nameWithOwner --jq .nameWithOwner
+    retry 3 5 gh repo view --json nameWithOwner --jq .nameWithOwner
 }
 
-# Confirm every named asset is actually downloadable from its public URL.
+# Confirm every named asset is actually downloadable from its public URL, and
+# is the size of the file we uploaded.
 #
 # `gh release upload` exiting 0 is not proof that clients can fetch the asset,
 # and these rolling releases have exactly one job: serve a stable URL. Checking
 # the URL a client would really use turns a broken publish into a red build
 # instead of a 404 discovered by a user the next morning.
+#
+# A 200 alone only proves *something* answers to that name, so compare the
+# advertised length against the local file: that also catches a truncated
+# upload, and a stale asset left behind when a retry replaced only part of the
+# set. A response carrying no content-length is not treated as a mismatch --
+# a missing header is not evidence of a bad asset.
 verify_published() {
     local tag="$1"
     shift
-    local repo name url
+    local repo path name url head remote_size local_size
     repo="$(release_repo)"
-    for name in "$@"; do
-        name="$(basename "$name")"
+    for path in "$@"; do
+        name="$(basename "$path")"
         url="https://github.com/${repo}/releases/download/${tag}/${name}"
         # A just-uploaded asset can take a moment to become servable, so allow
         # a few attempts before calling it broken.
-        if ! retry 4 5 curl -fsSL --head -o /dev/null "$url"; then
+        if ! head=$(retry 4 5 curl -fsSL --head "$url"); then
             echo "ERROR: uploaded ${name} but ${url} is not downloadable." >&2
             return 1
         fi
-        echo "  verified ${url}"
+
+        # -L means the 302 to the CDN is in here too; the last content-length
+        # is the one belonging to the response that carries the bytes.
+        remote_size=$(tr -d '\r' <<<"$head" |
+            awk 'tolower($1) == "content-length:" { n = $2 } END { print n }')
+        local_size=""
+        [ -f "$path" ] && local_size="$(stat -c%s "$path")"
+
+        if [ -n "$remote_size" ] && [ -n "$local_size" ] &&
+                [ "$remote_size" != "$local_size" ]; then
+            echo "ERROR: ${url} is ${remote_size} bytes but ${path} is ${local_size}." >&2
+            return 1
+        fi
+        echo "  verified ${url}${local_size:+ (${local_size} bytes)}"
     done
 }
 
@@ -110,6 +152,15 @@ verify_published() {
 publish_assets() {
     local tag="$1"
     shift
-    retry 4 10 gh release upload "$tag" "$@" --clobber
+    if ! retry 4 10 gh release upload "$tag" "$@" --clobber; then
+        # Retrying narrows the delete-then-upload window; it does not close it.
+        # Whoever reads this log needs to know clients are 404ing *now*, not at
+        # the next scheduled build.
+        echo "ERROR: upload to release '${tag}' failed. --clobber deletes an asset before" >&2
+        echo "       replacing it, so the previous assets may already be gone and clients" >&2
+        echo "       may be receiving 404s right now. Re-publish before relying on this" >&2
+        echo "       release -- see the recovery steps in docs/classification-runbook.md." >&2
+        return 1
+    fi
     verify_published "$tag" "$@"
 }
