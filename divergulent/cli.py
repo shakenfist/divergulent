@@ -85,7 +85,7 @@ def _repology():
     return RepologySource(_http_client())
 
 
-def _usable_bundle(path):
+def _usable_bundle(path, on_reject='querying live'):
     '''Load a local bundle if it is present, recognised, and for this release.
 
     Returns the Bundle, or None (so the command runs fully live) when the path
@@ -93,25 +93,30 @@ def _usable_bundle(path):
     unrecognised, or the bundle describes a different Debian release. A warning
     is printed when a bundle is present but unusable, so the fall back to live is
     visible rather than silent.
+
+    ``on_reject`` completes those warnings with what happens instead. Not every
+    caller falls back to a live query -- `cache pull --keep-existing` is asking
+    whether it may keep this bundle -- and a notice that says "querying live"
+    where nothing of the sort will happen is worse than no notice at all.
     '''
     if not path:
         return None
     if not os.path.exists(path):
-        print("divergulent: bundle '%s' not found; querying live." % path, file=sys.stderr)
+        print("divergulent: bundle '%s' not found; %s." % (path, on_reject), file=sys.stderr)
         return None
     try:
         loaded = bundle.load(path)
     except (OSError, ValueError, KeyError):
-        print("divergulent: bundle '%s' could not be read; querying live." % path, file=sys.stderr)
+        print("divergulent: bundle '%s' could not be read; %s." % (path, on_reject), file=sys.stderr)
         return None
     if (loaded.schema, loaded.cache_schema) != (bundle.SCHEMA_VERSION, bundle.CACHE_SCHEMA_VERSION):
-        print('divergulent: bundle schema not recognised; querying live.', file=sys.stderr)
+        print('divergulent: bundle schema not recognised; %s.' % on_reject, file=sys.stderr)
         return None
     release = _detect_release()
     if release is not None and loaded.release != release:
         print(
-            "divergulent: bundle is for '%s' but this system is '%s'; querying live." % (
-                loaded.release, release),
+            "divergulent: bundle is for '%s' but this system is '%s'; %s." % (
+                loaded.release, release, on_reject),
             file=sys.stderr)
         return None
     return loaded
@@ -278,6 +283,7 @@ def _build_parser():
     pullcmd.add_argument(
         '--cache-url', default=None,
         help='URL to download the bundle from (default: the GitHub Releases asset for this release).')
+    _add_keep_existing_argument(pullcmd)
     _add_verify_arguments(pullcmd)
 
     pullclasscmd = cachesub.add_parser(
@@ -286,6 +292,7 @@ def _build_parser():
     pullclasscmd.add_argument(
         '--cache-url', default=None,
         help='URL to download the classification bundle from (default: the GitHub Releases asset).')
+    _add_keep_existing_argument(pullclasscmd)
     _add_verify_arguments(pullclasscmd)
 
     verifycmd = cachesub.add_parser(
@@ -296,6 +303,14 @@ def _build_parser():
     _add_verify_arguments(verifycmd)
 
     return parser
+
+
+def _add_keep_existing_argument(parser):
+    parser.add_argument(
+        '--keep-existing', action='store_true',
+        help='If the bundle cannot be downloaded but a usable one is already stored, keep it and '
+             'succeed instead of failing. For unattended pipelines that should ride out a '
+             'publish-side outage rather than stop.')
 
 
 def _add_verify_arguments(parser):
@@ -868,6 +883,49 @@ def _validate_bundle(data, release):
     return loaded
 
 
+def _usable_cache(release):
+    '''The stored divergence bundle for ``release``, or None.
+
+    Delegates to _usable_bundle, this module's one validator for a stored
+    divergence bundle, so a change to the schema or release checks lands in a
+    single place.
+    '''
+    if release is None:
+        return None
+    return _usable_bundle(str(bundle.stored_path(default_cache_dir(), release)),
+                          on_reject='cannot keep it')
+
+
+def _keep_existing_or_fail(args, path, load):
+    '''Exit code for a refresh whose download failed.
+
+    Only ever reached when the bundle could not be fetched at all -- a publish-side
+    problem (a half-updated rolling release, a transient 5xx, no network). A
+    download that succeeds but fails verification stays fatal, because that is a
+    trust problem and falling back would be exactly the wrong response.
+
+    Even here the fallback is opt-in: silently succeeding whenever a download fails
+    would hide a cache that was never fetched in the first place, so --keep-existing
+    is required and the stored bundle has to actually load.
+
+    ``load`` is a callable so the stored bundle is read only when the fallback is
+    actually wanted. Reading it eagerly would parse the whole-archive bundle on
+    every failed pull for nothing, and would print its "this bundle is unusable"
+    notices on the default path, where they read as if they described the download
+    that just failed.
+    '''
+    if not args.keep_existing:
+        return 1
+    existing = load()
+    if existing is None:
+        print('divergulent: --keep-existing: no usable bundle is stored; nothing to fall back to.',
+              file=sys.stderr)
+        return 1
+    print('divergulent: --keep-existing: refresh failed; keeping %s (built %s).' % (path, existing.generated_at),
+          file=sys.stderr)
+    return 0
+
+
 def _cache_pull_command(args):
     release = _detect_release()
     if release is None:
@@ -879,7 +937,9 @@ def _cache_pull_command(args):
     data = http.get_bytes(url)
     if data is None:
         print('divergulent: could not download a bundle from %s' % url, file=sys.stderr)
-        return 1
+        return _keep_existing_or_fail(
+            args, bundle.stored_path(default_cache_dir(), release),
+            lambda: _usable_cache(release))
 
     loaded = _validate_bundle(data, release)
     if loaded is None:
@@ -935,12 +995,16 @@ def _cache_verify_command(args):
     return 1
 
 
-def _usable_classification(release):
+def _usable_classification(release, on_reject='omitting'):
     '''Load the stored classification bundle for ``release``, or None.
 
     Returns the ClassificationBundle when one is stored, readable, and of a
     recognised schema for this release; otherwise None (so ``show`` simply omits
     the classification, never guesses). A present-but-unusable bundle warns.
+
+    ``on_reject`` completes that warning, for the same reason _usable_bundle takes
+    one: `cache pull-classification --keep-existing` is deciding whether it may
+    keep this bundle, and is about to exit non-zero rather than omit anything.
     '''
     if release is None:
         return None
@@ -950,12 +1014,13 @@ def _usable_classification(release):
     try:
         loaded = classification_bundle.load(path)
     except (OSError, ValueError, KeyError):
-        print('divergulent: classification bundle could not be read; omitting.', file=sys.stderr)
+        print('divergulent: classification bundle could not be read; %s.' % on_reject, file=sys.stderr)
         return None
     if (loaded.schema, loaded.entry_schema) != (
             classification_bundle.CLASSIFICATION_SCHEMA_VERSION,
             classification_bundle.ENTRY_SCHEMA_VERSION):
-        print('divergulent: classification bundle schema not recognised; omitting.', file=sys.stderr)
+        print('divergulent: classification bundle schema not recognised; %s.' % on_reject,
+              file=sys.stderr)
         return None
     return loaded
 
@@ -986,7 +1051,9 @@ def _cache_pull_classification_command(args):
     data = http.get_bytes(url)
     if data is None:
         print('divergulent: could not download a classification bundle from %s' % url, file=sys.stderr)
-        return 1
+        return _keep_existing_or_fail(
+            args, classification_bundle.stored_path(default_cache_dir(), release),
+            lambda: _usable_classification(release, on_reject='cannot keep it'))
 
     loaded = _validate_classification(data)
     if loaded is None:

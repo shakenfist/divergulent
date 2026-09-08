@@ -48,3 +48,16 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+
+      # The publish path is shell, and shell is where the 2026-09-06
+      # incident happened. shellcheck above catches shape, not behaviour:
+      # nothing but this would notice that a Content-Length scraped across
+      # redirect hops fails a good asset. Hermetic -- gh, curl and sleep
+      # are stubbed on PATH -- so it obeys the same offline rule as the
+      # Python tests.
+      - id: release-lib-tests
+        name: release-lib shell tests
+        entry: tools/test-release-lib.sh
+        language: script
+        pass_filenames: false
+        files: ^tools/(release-lib|test-release-lib|publish-.*|sign-bundle)\.sh$

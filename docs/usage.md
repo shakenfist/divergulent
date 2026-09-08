@@ -117,6 +117,7 @@ the commands find it automatically:
 ```bash
 divergulent cache pull                       # download + store this release's bundle
 divergulent cache pull --cache-url URL       # ... from a specific URL or mirror
+divergulent cache pull --keep-existing       # ... tolerating a failed refresh
 divergulent score                            # now uses the stored bundle, no flag needed
 ```
 
@@ -131,6 +132,43 @@ fixed version's patches never change); **staleness** is used only while
 the bundle is fresh (within a week) — past that, staleness is queried
 live so newly-behind packages are not missed, while divergence still
 comes from the bundle.
+
+### Surviving a failed refresh
+
+By default a bundle that cannot be downloaded is an error, which in a
+pipeline running under `set -e` stops the whole run — even when a
+perfectly good bundle is already stored. Pass `--keep-existing` to make
+that case survivable: if the download fails but a usable bundle is
+already stored, it is kept, a warning is printed, and the command
+succeeds. With nothing stored the command still fails, so the flag can
+never quietly hide a cache that was never fetched at all.
+
+The fallback deliberately covers *download* failures only. A bundle that
+downloads but fails its signature or spot-check is a trust problem rather
+than a publishing outage, and stays fatal however this flag is set. The
+same flag works for `cache pull-classification`.
+
+**There is no upper bound on how old the kept bundle may be.** If
+publishing stays broken — or if something on the network path simply
+blocks the download, which needs no forgery — an unattended pipeline
+keeps succeeding on a frozen bundle indefinitely, and the only trace is
+a stderr line that names the bundle's build date. Two things bound the
+damage for the divergence cache: its divergence data is immutable for a
+given package version, and its staleness data is only trusted for a
+week (past that, staleness is queried live regardless of the flag). The
+classification bundle has no equivalent expiry, so kept verdicts stay
+authoritative for as long as the outage lasts. Read the `built` date in
+the warning, and prefer `--keep-existing` for pipelines you actually
+watch over ones you never look at.
+
+One shape of publishing outage is not covered. A release can be left
+with the bundle present but its signature asset missing, and then the
+download succeeds — so the fallback never comes into play, and
+`--require-signature` fails the run as it should. `--keep-existing` and
+`--require-signature` together therefore still fail when the signature
+alone is missing. That is the correct answer for a flag whose whole
+point is that verification stays fatal, but it is worth knowing before
+relying on the pair unattended.
 
 ### Bundle verification
 
@@ -178,6 +216,7 @@ it and `show` annotates each patch with its category and *why*:
 
 ```bash
 divergulent cache pull-classification   # download + verify + store this release's bundle
+divergulent cache pull-classification --keep-existing   # ... tolerating a failed refresh
 divergulent show bash                    # patches now carry: class, axes, and the deciding rule
 ```
 

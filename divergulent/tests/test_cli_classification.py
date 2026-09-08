@@ -191,6 +191,64 @@ class PullClassificationTestCase(testtools.TestCase):
         self.assertTrue(os.path.exists(stored))
         self.assertEqual(1, len(cb.load(stored).verdicts))
 
+    def test_keep_existing_rides_out_a_failed_download(self):
+        # The classification bundle takes the same publish-side outage as the cache
+        # (both are rolling releases published by the same helper), so it gets the
+        # same opt-in fallback -- and the same refusal when nothing is stored.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        data = self._bundle_bytes()
+        available = {'ok': True}
+
+        class FakeHttp:
+            def get_bytes(self, url):
+                if not available['ok']:
+                    return None
+                return data if url.endswith('.json.gz') else None
+
+        def run(*extra):
+            err = io.StringIO()
+            with mock.patch('divergulent.cli._detect_release', return_value='trixie'), \
+                    mock.patch('divergulent.cli._http_client', return_value=FakeHttp()), \
+                    mock.patch('divergulent.cli.default_cache_dir', return_value=tmp.name), \
+                    contextlib.redirect_stderr(err):
+                return cli.main(['cache', 'pull-classification', '--insecure'] + list(extra))
+
+        # Nothing stored yet: --keep-existing has nothing to fall back to.
+        available['ok'] = False
+        self.assertEqual(1, run('--keep-existing'))
+
+        # Store a good bundle, then break the download again.
+        available['ok'] = True
+        self.assertEqual(0, run())
+        available['ok'] = False
+        self.assertEqual(1, run())                    # still fatal by default
+        self.assertEqual(0, run('--keep-existing'))   # ...but survivable on request
+        self.assertEqual(1, len(cb.load(cb.stored_path(tmp.name, 'trixie')).verdicts))
+
+    def test_keep_existing_says_what_it_is_actually_doing(self):
+        # A corrupt stored bundle under --keep-existing must not say "omitting":
+        # nothing is being omitted from anything, the command is about to exit 1.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+
+        class FakeHttp:
+            def get_bytes(self, url):
+                return None
+
+        with open(cb.stored_path(tmp.name, 'trixie'), 'wb') as handle:
+            handle.write(b'not a gzip bundle')
+
+        err = io.StringIO()
+        with mock.patch('divergulent.cli._detect_release', return_value='trixie'), \
+                mock.patch('divergulent.cli._http_client', return_value=FakeHttp()), \
+                mock.patch('divergulent.cli.default_cache_dir', return_value=tmp.name), \
+                contextlib.redirect_stderr(err):
+            rc = cli.main(['cache', 'pull-classification', '--insecure', '--keep-existing'])
+        self.assertEqual(1, rc)
+        self.assertIn('cannot keep it', err.getvalue())
+        self.assertNotIn('omitting', err.getvalue())
+
     def test_pull_verifies_against_the_classification_identities(self):
         # The only call site of verify_signature's `identities` keyword. Every
         # other test on this path passes --insecure, which returns before the
