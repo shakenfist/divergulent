@@ -32,6 +32,15 @@ bundle.
 - [x] Scheduled daily (incremental) + weekly (full `--refresh`) builds.
 - [x] Signed bundle published to a stable URL; client constants reconciled.
 
+**Merged (reconstructed):** `52cb034e` (#16), the merge that landed the
+scheduled publish and created this plan file, plus the publish-path
+fixes that followed it — `01ee0ef4` (#17), `0e55a386` (#18), `1323f00a`
+(#19) and `a87c22d8` (#21) — and `5288f4a2` (#88), which ticked the
+boxes above. The code itself belongs to
+[PLAN-published-cache.md](PLAN-published-cache.md)'s phase 5, which that
+plan carries as `Complete`; this workstream tracked it rather than
+landing it.
+
 ### 2. Multi-release build matrix (Debian 11, 12, 13, testing, unstable)
 
 Today the builder targets one release (trixie). A 1.0 should serve the
@@ -105,6 +114,11 @@ This graduates to its own `PLAN-cache-matrix.md` when picked up.
 - [ ] **Commit to schema stability.** State that `schema`/`cache_schema` 1
       is stable, and that the publisher owns migrations while the client
       drops what it cannot read.
+
+**Merged (reconstructed):** no code. The one item complete here was a
+verification run against the already-published bundle, and what landed
+was the record of it, in `5288f4a2` (#88). The four open items land
+their own merges, recorded here as they do.
 
 ### 4. "No cry wolf" validation on real machines
 
@@ -203,8 +217,55 @@ trail.
       `series` (the path `--classify` already uses). The cap prerequisite
       there narrows from "fix the count" to "fetch the full names + bodies".
 
+**Merged (reconstructed):** `d7c030e4` (#20) for the patch-count fix, the
+one item complete here — it rode in with the patch-classification plan
+because that plan is what the 60-patch cap was blocking. The other three
+items have not landed.
+
 This graduates to its own `PLAN-builder-robustness.md` when picked up,
 likely alongside the matrix since both touch `build-cache.yml`.
+
+### 9. Push audit
+
+The last workstream, and it runs before the `v1.0` tag rather than after
+it: [PUSH-AUDIT.md](https://github.com/shakenfist/divergulent/blob/develop/PUSH-AUDIT.md)
+over the accumulated diff of everything the workstreams above landed,
+not over whichever one landed last. That is the whole-plan audit the
+`plan-push-audit-phase` shared block in
+[PLAN-TEMPLATE.md](https://github.com/shakenfist/divergulent/blob/develop/PLAN-TEMPLATE.md)
+requires of every master plan, and it is not optional. divergulent has
+the runbook at its repository root, so this phase runs it rather than
+explaining its absence.
+
+- [ ] Run the audit over the range assembled from the `Merged:` lines
+      above, once workstreams 2 and 4–7 have landed and recorded theirs.
+- [ ] File the findings as their own pull request against `develop`. A
+      `v1.0` tag waits on them being fixed, or declined in writing here.
+- [ ] Record the result here in one sentence even when it is "nothing
+      found" — a clean audit is a result worth writing down.
+
+**What of the range was reconstructed.** This phase was appended on
+2026-09-10, long after workstreams 1, 3 and 8 landed what they landed,
+so their `Merged:` lines above were recovered rather than recorded at
+the time: from `gh pr list --state merged` and `git rev-list
+--first-parent origin/develop`, never from a path-filtered `git log`
+alone. Every SHA they name is a merge commit — `git rev-list --merges -1
+<sha>` returns the SHA itself — and sits on `develop`'s first-parent
+chain, so each one's diff against its first parent is the whole of what
+that pull request landed.
+
+**What the reconstruction could not scope.** Publish and release work
+has continued since this plan was last edited, and the plan as written
+attributes none of it to a workstream: `e28d90a1` (#104) and `aa06a0b7`
+(#105) on the tag-driven release pipeline, and `a5bd504e` (#107) on
+publish retry and verification. Rather than guess which box each one
+belongs under, the audit reads them by path — `tools/publish-cache.sh`,
+`tools/release-lib.sh`, `tools/sign-bundle.sh`,
+`tools/publish-classification.sh`, `tools/publish-bts.sh`,
+`.github/workflows/build-cache.yml` and `.github/workflows/release.yml`
+— which is what the shared block asks for where a range is not
+recoverable. Whoever closes workstream 7 or 8 should fold these into
+that workstream's `Merged:` line if they turn out to belong there.
 
 ## Administration
 
