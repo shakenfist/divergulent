@@ -39,7 +39,12 @@ plan file, plus the publish-path fixes that followed it — `01ee0ef4`
 `5288f4a2` (#88), which ticked the boxes above. The code itself belongs to
 [PLAN-published-cache.md](PLAN-published-cache.md)'s phase 5, which that
 plan carries as `Complete`; this workstream tracked it rather than
-landing it.
+landing it. They are in workstream 9's audit range all the same, and
+deliberately so: this plan records them, and the published-cache plan
+carries no push audit phase and — being `Complete` without one — is not
+reopened to acquire one, so nothing else would ever read them. Its
+earlier phases are a different matter; workstream 9 says where the
+range starts and what that leaves outside it.
 
 ### 2. Multi-release build matrix (Debian 11, 12, 13, testing, unstable)
 
@@ -228,13 +233,13 @@ trail.
       `series` (the path `--classify` already uses). The cap prerequisite
       there narrows from "fix the count" to "fetch the full names + bodies".
 
+This graduates to its own `PLAN-builder-robustness.md` when picked up,
+likely alongside the matrix since both touch `build-cache.yml`.
+
 **Merged:** reconstructed rather than recorded at the time. `d7c030e4`
 (#20) for the patch-count fix, the one item complete here — it rode in
 with the patch-classification plan because that plan is what the
 60-patch cap was blocking. The other three items have not landed.
-
-This graduates to its own `PLAN-builder-robustness.md` when picked up,
-likely alongside the matrix since both touch `build-cache.yml`.
 
 ### 9. Push audit
 
@@ -249,11 +254,12 @@ the runbook at its repository root, so this phase runs it rather than
 explaining its absence.
 
 - [ ] Run the audit over the range assembled from the `Merged:` lines
-      above, once workstreams 2–8 have landed and recorded theirs.
-      Workstreams 3 and 8 are in that list even though each has already
-      recorded a line: both still carry open items whose merges are not
-      in the range yet, and an audit that ran before they landed would
-      miss exactly what auditing the whole plan at once is for.
+      above plus the unattributed merges tabulated below, once
+      workstreams 2–8 have landed and recorded theirs. Workstreams 3 and
+      8 are in that list even though each has already recorded a line:
+      both still carry open items whose merges are not in the range yet,
+      and an audit that ran before they landed would miss exactly what
+      auditing the whole plan at once is for.
 - [ ] File the findings as their own pull request against `develop`. A
       `v1.0` tag waits on them being fixed, or declined in writing here.
 - [ ] Record the result here in one sentence even when it is "nothing
@@ -269,23 +275,54 @@ alone. Every SHA they name is a merge commit — `git rev-list --merges -1
 chain, so each one's diff against its first parent is the whole of what
 that pull request landed.
 
-**What the reconstruction could not scope.** Publish and release work
-has continued since this plan was last edited, and the plan as written
-attributes none of it to a workstream: `e28d90a1` (#104) and `aa06a0b7`
-(#105) on the tag-driven release pipeline, and `a5bd504e` (#107) on
-publish retry and verification. Rather than guess which box each one
-belongs under, the audit reads by path: everything on `develop`
-touching `tools/publish-cache.sh`, `tools/release-lib.sh`,
-`tools/sign-bundle.sh`, `tools/publish-classification.sh`,
-`tools/publish-bts.sh`, `.github/workflows/build-cache.yml` and
-`.github/workflows/release.yml` that no `Merged:` line above claims —
-which is what the shared block asks for where a range is not
-recoverable. Scoping it by path rather than by a time window matters:
-`02e84a7` (#76) and `9fa2b5f` (#77) touch `build-cache.yml` and landed
-before this plan was last edited, so a window anchored on that edit
-would have skipped them. Whoever closes workstream 7 or 8 should fold
-these into that workstream's `Merged:` line if they turn out to belong
-there.
+**What the reconstruction could not attribute.** Publish and release
+work has continued since this plan was last edited, and the plan as
+written attributes none of it to a workstream. Those merges are
+recorded here rather than under a box, and every one of them is in the
+audit range:
+
+| SHA | PR | What it landed |
+|---|---|---|
+| `02e84a77` | #76 | `actions/cache` bump, `build-cache.yml` among the workflows it touches |
+| `9fa2b5f5` | #77 | `actions/checkout` bump across the workflows, `build-cache.yml` and `release.yml` included |
+| `e28d90a1` | #104 | release asset download fix in `release.yml` |
+| `aa06a0b7` | #105 | release tag guards in `release.yml` |
+| `a5bd504e` | #107 | publish retry and verification: `tools/release-lib.sh`, the three publish scripts and `tools/sign-bundle.sh`, plus `divergulent/cli.py` and the new `tools/test-release-lib.sh` harness |
+
+Each is a merge commit on `develop`'s first-parent chain, so its diff
+against its first parent is the whole of what it landed. Naming the
+merges rather than the paths an audit should read is deliberate. The
+shared block reserves the path fallback for a phase that accreted over
+months of unrelated commits with *no* recoverable range, and this range
+is plainly recoverable — the merges are right there. A path list would
+also have been wrong in both directions at once: too narrow, because
+the publish scripts do not cover the ~90 lines of `divergulent/cli.py`
+or the 218-line shell test harness that rode in with #107; and too
+wide, because any list broad enough to catch these five also selects
+`4c655626` (#34) and `f5d0a7a8` (#43), which
+[PLAN-patch-classification.md](PLAN-patch-classification.md) already
+records and whose phase 7 push audit already read them.
+
+**Where the range starts, and what that leaves outside it.** It starts
+at `52cb034e` (#16), the merge that created this plan file. `fb31a07f`
+(#1), `12526318` (#11) and `55ecf094` (#15) are older than that and are
+out of scope: they landed [PLAN-initial.md](PLAN-initial.md)'s phase 1
+and [PLAN-published-cache.md](PLAN-published-cache.md)'s phases 1 and 4,
+both plans predate the push audit rule, and each is `Complete` without
+carrying the phase, so under the shared block neither is reopened to
+acquire one. Nothing else audits those three merges. That is a stated
+gap, not one a path rule closes by accident while a reader believes it
+is filling a five-merge hole; closing it means auditing them
+deliberately, as its own piece of work.
+
+Whoever closes workstream 7 or 8 should fold `e28d90a1` (#104),
+`aa06a0b7` (#105) and `a5bd504e` (#107) into that workstream's
+`Merged:` line if they turn out to belong there.
+
+**Merged:** nothing landed yet, and a closeout section cannot name the
+merge that lands it — so this is filled in afterwards, as
+[PLAN-patch-classification.md](PLAN-patch-classification.md)'s phase 7
+was.
 
 ## Administration
 
