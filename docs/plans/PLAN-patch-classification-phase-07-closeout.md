@@ -348,6 +348,12 @@ land first, and until it does, the defects it fixes are still present in the
 shipped code. The suite went from 1,279 tests to 1,328, still passing inside a
 network namespace, and `pre-commit run --all-files` is green.
 
+**Since written:** #99 merged as `8eab41bf`, so `develop` now carries all
+nine fixes. The rows above are left as the historical record of where each
+fix stood when the audit closed; the authoritative landing record is the
+`Merged` column of
+[PLAN-patch-classification.md](PLAN-patch-classification.md)'s phase 7.
+
 Three of those fixes changed behaviour, and each is deliberate rather than
 incidental:
 

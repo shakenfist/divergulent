@@ -32,11 +32,11 @@ bundle.
 - [x] Scheduled daily (incremental) + weekly (full `--refresh`) builds.
 - [x] Signed bundle published to a stable URL; client constants reconciled.
 
-**Merged (reconstructed):** `52cb034e` (#16), the merge that landed the
-scheduled publish and created this plan file, plus the publish-path
-fixes that followed it — `01ee0ef4` (#17), `0e55a386` (#18), `1323f00a`
-(#19) and `a87c22d8` (#21) — and `5288f4a2` (#88), which ticked the
-boxes above. The code itself belongs to
+**Merged:** reconstructed rather than recorded at the time. `52cb034e`
+(#16), the merge that landed the scheduled publish and created this
+plan file, plus the publish-path fixes that followed it — `01ee0ef4`
+(#17), `0e55a386` (#18), `1323f00a` (#19) and `a87c22d8` (#21) — and
+`5288f4a2` (#88), which ticked the boxes above. The code itself belongs to
 [PLAN-published-cache.md](PLAN-published-cache.md)'s phase 5, which that
 plan carries as `Complete`; this workstream tracked it rather than
 landing it.
@@ -82,6 +82,8 @@ of effort). The challenge we're choosing to take on:
 
 This graduates to its own `PLAN-cache-matrix.md` when picked up.
 
+**Merged:** nothing landed yet.
+
 ### 3. Trust hardening
 
 - [x] **A real end-to-end VERIFIED.** Done 2026-09-04: a `cache pull`
@@ -115,10 +117,11 @@ This graduates to its own `PLAN-cache-matrix.md` when picked up.
       is stable, and that the publisher owns migrations while the client
       drops what it cannot read.
 
-**Merged (reconstructed):** no code. The one item complete here was a
-verification run against the already-published bundle, and what landed
-was the record of it, in `5288f4a2` (#88). The four open items land
-their own merges, recorded here as they do.
+**Merged:** reconstructed rather than recorded at the time — no code.
+The one item complete here was a verification run against the
+already-published bundle, and what landed was the record of it, in
+`5288f4a2` (#88). The four open items land their own merges, recorded
+here as they do.
 
 ### 4. "No cry wolf" validation on real machines
 
@@ -133,6 +136,8 @@ The product is trustworthiness, so validate it beyond the CI sample.
       score only ranks and both axes are always shown, so this is tuning,
       not correctness — but worth a pass).
 
+**Merged:** nothing landed yet.
+
 ### 5. Privacy model, stated plainly
 
 - [ ] Document the two privacy regimes crisply: the **bundle path** sends
@@ -141,12 +146,16 @@ The product is trustworthiness, so validate it beyond the CI sample.
       package names to Repology / sources.debian.org. Tell users how to
       stay fully private (pull a bundle).
 
+**Merged:** nothing landed yet.
+
 ### 6. Robustness for a public release
 
 - [ ] Behave gracefully off the beaten path: non-Debian systems, missing
       `dpkg`, unexpected versions, and network failures should produce a
       clear message, never a traceback.
 - [ ] A clean `--help` and a short quickstart in the README.
+
+**Merged:** nothing landed yet.
 
 ### 7. Release mechanics
 
@@ -164,6 +173,8 @@ The product is trustworthiness, so validate it beyond the CI sample.
       produces a clean release, including the optional `verify` extra on
       PyPI.
 - [ ] Release notes / changelog.
+
+**Merged:** nothing landed yet.
 
 ### 8. Builder robustness and publish safety
 
@@ -217,10 +228,10 @@ trail.
       `series` (the path `--classify` already uses). The cap prerequisite
       there narrows from "fix the count" to "fetch the full names + bodies".
 
-**Merged (reconstructed):** `d7c030e4` (#20) for the patch-count fix, the
-one item complete here — it rode in with the patch-classification plan
-because that plan is what the 60-patch cap was blocking. The other three
-items have not landed.
+**Merged:** reconstructed rather than recorded at the time. `d7c030e4`
+(#20) for the patch-count fix, the one item complete here — it rode in
+with the patch-classification plan because that plan is what the
+60-patch cap was blocking. The other three items have not landed.
 
 This graduates to its own `PLAN-builder-robustness.md` when picked up,
 likely alongside the matrix since both touch `build-cache.yml`.
@@ -238,7 +249,11 @@ the runbook at its repository root, so this phase runs it rather than
 explaining its absence.
 
 - [ ] Run the audit over the range assembled from the `Merged:` lines
-      above, once workstreams 2 and 4–7 have landed and recorded theirs.
+      above, once workstreams 2–8 have landed and recorded theirs.
+      Workstreams 3 and 8 are in that list even though each has already
+      recorded a line: both still carry open items whose merges are not
+      in the range yet, and an audit that ran before they landed would
+      miss exactly what auditing the whole plan at once is for.
 - [ ] File the findings as their own pull request against `develop`. A
       `v1.0` tag waits on them being fixed, or declined in writing here.
 - [ ] Record the result here in one sentence even when it is "nothing
@@ -259,13 +274,18 @@ has continued since this plan was last edited, and the plan as written
 attributes none of it to a workstream: `e28d90a1` (#104) and `aa06a0b7`
 (#105) on the tag-driven release pipeline, and `a5bd504e` (#107) on
 publish retry and verification. Rather than guess which box each one
-belongs under, the audit reads them by path — `tools/publish-cache.sh`,
-`tools/release-lib.sh`, `tools/sign-bundle.sh`,
-`tools/publish-classification.sh`, `tools/publish-bts.sh`,
-`.github/workflows/build-cache.yml` and `.github/workflows/release.yml`
-— which is what the shared block asks for where a range is not
-recoverable. Whoever closes workstream 7 or 8 should fold these into
-that workstream's `Merged:` line if they turn out to belong there.
+belongs under, the audit reads by path: everything on `develop`
+touching `tools/publish-cache.sh`, `tools/release-lib.sh`,
+`tools/sign-bundle.sh`, `tools/publish-classification.sh`,
+`tools/publish-bts.sh`, `.github/workflows/build-cache.yml` and
+`.github/workflows/release.yml` that no `Merged:` line above claims —
+which is what the shared block asks for where a range is not
+recoverable. Scoping it by path rather than by a time window matters:
+`02e84a7` (#76) and `9fa2b5f` (#77) touch `build-cache.yml` and landed
+before this plan was last edited, so a window anchored on that edit
+would have skipped them. Whoever closes workstream 7 or 8 should fold
+these into that workstream's `Merged:` line if they turn out to belong
+there.
 
 ## Administration
 
