@@ -122,10 +122,17 @@ This graduates to its own `PLAN-cache-matrix.md` when picked up.
       is stable, and that the publisher owns migrations while the client
       drops what it cannot read.
 
-**Merged:** reconstructed rather than recorded at the time — no code.
-The one item complete here was a verification run against the
-already-published bundle, and what landed was the record of it, in
-`5288f4a2` (#88). The four open items land their own merges, recorded
+**Merged:** reconstructed rather than recorded at the time — no code
+against the boxes above. The one item complete here was a verification
+run against the already-published bundle, and what landed was the
+record of it, in `5288f4a2` (#88). Trust-hardening code did land in
+this window, though, and "no code" should not be read as "nothing
+touched `verify.py`": `0e55a386` (#18) taught `spot_check()` that a
+bundle-side `UNKNOWN` is the bundle declining to make a claim rather
+than a mismatch — "no cry wolf" on both sides — which is this
+workstream's subject matter. It is recorded under workstream 1's line,
+beside the publish-path fixes it shipped with, so it is in the audit
+range either way. The four open items land their own merges, recorded
 here as they do.
 
 ### 4. "No cry wolf" validation on real machines
@@ -239,7 +246,13 @@ likely alongside the matrix since both touch `build-cache.yml`.
 **Merged:** reconstructed rather than recorded at the time. `d7c030e4`
 (#20) for the patch-count fix, the one item complete here — it rode in
 with the patch-classification plan because that plan is what the
-60-patch cap was blocking. The other three items have not landed.
+60-patch cap was blocking. Recording it here is not duplication:
+[PLAN-patch-classification.md](PLAN-patch-classification.md)'s phase 7
+audit was written as `d7c030e4..develop`, and two-dot notation excludes
+the named commit, so that audit never read this merge's own diff — the
+`_patch_count` change in `divergulent/sources/debian_patches.py`.
+Workstream 9's union range does read it. The other three items have not
+landed.
 
 ### 9. Push audit
 
@@ -255,11 +268,23 @@ explaining its absence.
 
 - [ ] Run the audit over the range assembled from the `Merged:` lines
       above plus the unattributed merges tabulated below, once
-      workstreams 2–8 have landed and recorded theirs. Workstreams 3 and
-      8 are in that list even though each has already recorded a line:
-      both still carry open items whose merges are not in the range yet,
-      and an audit that ran before they landed would miss exactly what
-      auditing the whole plan at once is for.
+      workstreams 2–8 have landed and recorded theirs. **The range is a
+      union of merge diffs, not a contiguous span:** every SHA recorded
+      in this plan is a merge commit on `develop`'s first-parent chain,
+      so the audit reads each one as `git diff <sha>^1 <sha>` and
+      concatenates the results. Writing it as `52cb034e..develop`
+      instead would be wrong twice over — two-dot notation *excludes*
+      the named commit, silently dropping #16's own diff, which is the
+      merge that landed the scheduled publish and the whole subject of
+      workstream 1; and the span would sweep in all of
+      [PLAN-patch-classification.md](PLAN-patch-classification.md),
+      whose phase 7 push audit already read it as `d7c030e4..develop`
+      across 85 files. Do not re-audit those merges here; they are
+      recorded there. Workstreams 3 and 8 are in the wait list even
+      though each has already recorded a line: both still carry open
+      items whose merges are not in the range yet, and an audit that ran
+      before they landed would miss exactly what auditing the whole plan
+      at once is for.
 - [ ] File the findings as their own pull request against `develop`. A
       `v1.0` tag waits on them being fixed, or declined in writing here.
 - [ ] Record the result here in one sentence even when it is "nothing
@@ -303,17 +328,45 @@ wide, because any list broad enough to catch these five also selects
 [PLAN-patch-classification.md](PLAN-patch-classification.md) already
 records and whose phase 7 push audit already read them.
 
-**Where the range starts, and what that leaves outside it.** It starts
-at `52cb034e` (#16), the merge that created this plan file. `fb31a07f`
-(#1), `12526318` (#11) and `55ecf094` (#15) are older than that and are
-out of scope: they landed [PLAN-initial.md](PLAN-initial.md)'s phase 1
-and [PLAN-published-cache.md](PLAN-published-cache.md)'s phases 1 and 4,
-both plans predate the push audit rule, and each is `Complete` without
-carrying the phase, so under the shared block neither is reopened to
-acquire one. Nothing else audits those three merges. That is a stated
-gap, not one a path rule closes by accident while a reader believes it
-is filling a five-merge hole; closing it means auditing them
-deliberately, as its own piece of work.
+**The orphans that are not publish work.** The table above scopes
+itself to publish and release merges, which is this plan's subject, and
+that leaves a second class unaccounted for. Cross-referencing every
+merge on `develop` since #16 against every pull request number the
+plans under `docs/plans/` name leaves fourteen that no plan mentions at
+all: `771e6473` (#47) and `7b45c114` (#60), README work; `0297f4ee`
+(#49), `a3ac97ec` (#78) and `6374bc08` (#72), fleet-consistency and
+runner configuration; `4201839a` (#62) and `70b2a8f4` (#67),
+plan-template blocks; and `8da3e564` (#74), `7e08f6c7` (#75),
+`a6cb8a9b` (#83), `eea87799` (#84), `a792a65d` (#86), `f686c89c`
+(#108) and `5fa9b746` (#111), Renovate bumps. A fifteenth, `a966dd22`
+(#87), is mentioned in the prose of
+[PLAN-patch-classification-phase-07-closeout.md](PLAN-patch-classification-phase-07-closeout.md)
+but never recorded as a merge. None of them is in this plan's range and
+no plan audits them, which is the same hole the pre-#16 paragraph
+below states — just inside the window rather than before it. That
+enumeration is true as of 2026-09-11 and the class keeps growing as
+Renovate lands; closing it is its own piece of work, and it is named
+here so that it is stated rather than silently omitted.
+
+**Where the range starts, and what that leaves outside it.** The oldest
+merge in the set is `52cb034e` (#16), the merge that created this plan
+file. Everything earlier on `develop`'s first-parent chain is outside
+the range, and that is fifteen merges rather than a handful: `fb31a07f`
+(#1) through `55ecf094` (#15), plus `33308a2e`, the root commit that
+scaffolded the project before there were pull requests at all. They
+landed [PLAN-initial.md](PLAN-initial.md)'s five phases (#1–#5),
+[PLAN-full-machine-run.md](PLAN-full-machine-run.md)'s three (#6–#8),
+[PLAN-faster-full-run.md](PLAN-faster-full-run.md)'s work (#9–#10),
+[PLAN-published-cache.md](PLAN-published-cache.md)'s phases 1–4 (#11,
+#13–#15), and one `build-cache.yml` deb-src fix that belongs to no plan
+(#12, `f1c5542a`). All four of those plans are `Complete`, none carries
+a push audit phase, and none records a `Merged:` line anywhere — so
+under the shared block none is reopened to acquire one, and nothing
+audits any of the fifteen. The gap is fifteen merges wide and the whole
+pre-#16 chain, not the three this paragraph named in an earlier
+revision; closing it means auditing them deliberately, as its own piece
+of work, rather than letting a path rule sweep them in while a reader
+believes it is filling a small hole.
 
 Whoever closes workstream 7 or 8 should fold `e28d90a1` (#104),
 `aa06a0b7` (#105) and `a5bd504e` (#107) into that workstream's
