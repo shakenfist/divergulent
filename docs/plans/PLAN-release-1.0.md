@@ -32,6 +32,20 @@ bundle.
 - [x] Scheduled daily (incremental) + weekly (full `--refresh`) builds.
 - [x] Signed bundle published to a stable URL; client constants reconciled.
 
+**Merged:** reconstructed rather than recorded at the time. `52cb034e`
+(#16), the merge that landed the scheduled publish and created this
+plan file, plus the publish-path fixes that followed it — `01ee0ef4`
+(#17), `0e55a386` (#18), `1323f00a` (#19) and `a87c22d8` (#21) — and
+`5288f4a2` (#88), which ticked the boxes above. The code itself belongs to
+[PLAN-published-cache.md](PLAN-published-cache.md)'s phase 5, which that
+plan carries as `Complete`; this workstream tracked it rather than
+landing it. They are in workstream 9's audit range all the same, and
+deliberately so: this plan records them, and the published-cache plan
+carries no push audit phase and — being `Complete` without one — is not
+reopened to acquire one, so nothing else would ever read them. Its
+earlier phases are a different matter, and outside this plan's range;
+workstream 9 says what that range does not cover.
+
 ### 2. Multi-release build matrix (Debian 11, 12, 13, testing, unstable)
 
 Today the builder targets one release (trixie). A 1.0 should serve the
@@ -73,6 +87,8 @@ of effort). The challenge we're choosing to take on:
 
 This graduates to its own `PLAN-cache-matrix.md` when picked up.
 
+**Merged:** nothing landed yet.
+
 ### 3. Trust hardening
 
 - [x] **A real end-to-end VERIFIED.** Done 2026-09-04: a `cache pull`
@@ -106,6 +122,26 @@ This graduates to its own `PLAN-cache-matrix.md` when picked up.
       is stable, and that the publisher owns migrations while the client
       drops what it cannot read.
 
+**Merged:** reconstructed rather than recorded at the time — no code
+against the boxes above. The one item complete here was a verification
+run against the already-published bundle, and what landed was the
+record of it, in `5288f4a2` (#88). Trust-hardening code did land in
+this window, though, and "no code" should not be read as "nothing
+touched `verify.py`": `0e55a386` (#18) taught `spot_check()` that a
+bundle-side `UNKNOWN` is the bundle declining to make a claim rather
+than a mismatch — "no cry wolf" on both sides — which is this
+workstream's subject matter. It is recorded under workstream 1's line,
+beside the publish-path fixes it shipped with, so it is in the audit
+range either way. `4c655626` (#34) is the other `verify.py` change in
+this window — it added `CLASSIFICATION_SIGNER_IDENTITY`, a signer
+identity, which is squarely this workstream's subject. It is recorded
+under [PLAN-patch-classification.md](PLAN-patch-classification.md) and
+so is *not* in this plan's range, and its `verify.py` hunk sat outside
+that plan's phase 7 path filter, so nothing audits it today. It joins
+the stated gap in workstream 9 rather than being silently assumed
+covered. The four open items land their own merges, recorded here as
+they do.
+
 ### 4. "No cry wolf" validation on real machines
 
 The product is trustworthiness, so validate it beyond the CI sample.
@@ -119,6 +155,8 @@ The product is trustworthiness, so validate it beyond the CI sample.
       score only ranks and both axes are always shown, so this is tuning,
       not correctness — but worth a pass).
 
+**Merged:** nothing landed yet.
+
 ### 5. Privacy model, stated plainly
 
 - [ ] Document the two privacy regimes crisply: the **bundle path** sends
@@ -127,12 +165,16 @@ The product is trustworthiness, so validate it beyond the CI sample.
       package names to Repology / sources.debian.org. Tell users how to
       stay fully private (pull a bundle).
 
+**Merged:** nothing landed yet.
+
 ### 6. Robustness for a public release
 
 - [ ] Behave gracefully off the beaten path: non-Debian systems, missing
       `dpkg`, unexpected versions, and network failures should produce a
       clear message, never a traceback.
 - [ ] A clean `--help` and a short quickstart in the README.
+
+**Merged:** nothing landed yet.
 
 ### 7. Release mechanics
 
@@ -150,6 +192,8 @@ The product is trustworthiness, so validate it beyond the CI sample.
       produces a clean release, including the optional `verify` extra on
       PyPI.
 - [ ] Release notes / changelog.
+
+**Merged:** nothing landed yet.
 
 ### 8. Builder robustness and publish safety
 
@@ -205,6 +249,123 @@ trail.
 
 This graduates to its own `PLAN-builder-robustness.md` when picked up,
 likely alongside the matrix since both touch `build-cache.yml`.
+
+**Merged:** reconstructed rather than recorded at the time. `d7c030e4`
+(#20) for the patch-count fix, the one item complete here — it rode in
+with the patch-classification plan because that plan is what the
+60-patch cap was blocking. Recording it here is not duplication:
+[PLAN-patch-classification.md](PLAN-patch-classification.md)'s phase 7
+audit was written as `d7c030e4..develop`, and two-dot notation excludes
+the named commit, so that audit never read this merge's own diff — the
+`_patch_count` change in `divergulent/sources/debian_patches.py`.
+Workstream 9's union range does read it. The other three items have not
+landed.
+
+### 9. Push audit
+
+The last workstream, and it runs before the `v1.0` tag rather than after
+it: [PUSH-AUDIT.md](https://github.com/shakenfist/divergulent/blob/develop/PUSH-AUDIT.md)
+over the accumulated diff of everything the workstreams above landed,
+not over whichever one landed last. That is the whole-plan audit the
+`plan-push-audit-phase` shared block in
+[PLAN-TEMPLATE.md](https://github.com/shakenfist/divergulent/blob/develop/PLAN-TEMPLATE.md)
+requires of every master plan, and it is not optional. divergulent has
+the runbook at its repository root, so this phase runs it rather than
+explaining its absence.
+
+- [ ] Run the audit over the range assembled from the `Merged:` lines
+      above plus the unattributed merges tabulated below, once
+      workstreams 2–8 have landed and recorded theirs. **The range is a
+      union of merge diffs, not a contiguous span:** every SHA recorded
+      in this plan is a merge commit on `develop`'s first-parent chain,
+      so the audit reads each one as `git diff <sha>^1 <sha>` and
+      concatenates the results. Writing it as `52cb034e..develop`
+      instead would be wrong twice over — two-dot notation *excludes*
+      the named commit, silently dropping #16's own diff, which is the
+      merge that landed the scheduled publish and the whole subject of
+      workstream 1; and the span would sweep in all of
+      [PLAN-patch-classification.md](PLAN-patch-classification.md).
+      That plan's phase 7 push audit read `d7c030e4..develop`
+      **restricted to the classification path set** —
+      `divergulent/classify/`, `divergulent/tests/`, three docs pages,
+      two workflows and `tools/`, fixed by decision 7 of
+      [its closeout](PLAN-patch-classification-phase-07-closeout.md).
+      Do not re-audit the classification paths of those merges; they
+      are recorded there. What those merges changed *outside* that
+      path set no audit has read — notably `4c655626` (#34), which
+      also landed 166 lines of `divergulent/cli.py`, a
+      `divergulent/sources/debian_patches.py` change, and the
+      `CLASSIFICATION_SIGNER_IDENTITY` constant in
+      `divergulent/verify.py`. Those paths are a stated gap, below,
+      not an exclusion. Workstreams 3 and 8 are in the wait list even
+      though each has already recorded a line: both still carry open
+      items whose merges are not in the range yet, and an audit that ran
+      before they landed would miss exactly what auditing the whole plan
+      at once is for.
+- [ ] File the findings as their own pull request against `develop`. A
+      `v1.0` tag waits on them being fixed, or declined in writing here.
+- [ ] Record the result here in one sentence even when it is "nothing
+      found" — a clean audit is a result worth writing down.
+
+**What of the range was reconstructed.** This phase was appended on
+2026-09-10, long after workstreams 1, 3 and 8 landed what they landed,
+so their `Merged:` lines above were recovered rather than recorded at
+the time: from `gh pr list --state merged` and `git rev-list
+--first-parent origin/develop`, never from a path-filtered `git log`
+alone. Every SHA they name is a merge commit — `git rev-list --merges -1
+<sha>` returns the SHA itself — and sits on `develop`'s first-parent
+chain, so each one's diff against its first parent is the whole of what
+that pull request landed.
+
+**What the reconstruction could not attribute.** Publish and release
+work has continued since this plan was last edited, and the plan as
+written attributes none of it to a workstream. Those merges are
+recorded here rather than under a box, and every one of them is in the
+audit range:
+
+| SHA | PR | What it landed |
+|---|---|---|
+| `02e84a77` | #76 | `actions/cache` bump, `build-cache.yml` among the workflows it touches |
+| `9fa2b5f5` | #77 | `actions/checkout` bump across the workflows, `build-cache.yml` and `release.yml` included |
+| `e28d90a1` | #104 | release asset download fix in `release.yml` |
+| `aa06a0b7` | #105 | release tag guards in `release.yml` |
+| `a5bd504e` | #107 | publish retry and verification: `tools/release-lib.sh`, the three publish scripts and `tools/sign-bundle.sh`, plus `divergulent/cli.py` and the new `tools/test-release-lib.sh` harness |
+
+Each is a merge commit on `develop`'s first-parent chain, so its diff
+against its first parent is the whole of what it landed. Naming the
+merges rather than the paths an audit should read is deliberate. The
+shared block reserves the path fallback for a phase that accreted over
+months of unrelated commits with *no* recoverable range, and this range
+is plainly recoverable — the merges are right there. A path list would
+also have been wrong in both directions at once: too narrow, because
+the publish scripts do not cover the ~90 lines of `divergulent/cli.py`
+or the 218-line shell test harness that rode in with #107; and too
+wide, because any list broad enough to catch these five also selects
+`4c655626` (#34) and `f5d0a7a8` (#43), which
+[PLAN-patch-classification.md](PLAN-patch-classification.md) already
+records and whose phase 7 push audit read their classification paths.
+
+**What this range does not cover, and why that is not this plan's to
+close.** The range above is what *this plan's* workstreams landed, which
+is what the `plan-push-audit-phase` block asks a plan to record. It is
+not a census of everything on `develop` that no audit reads, and there
+is such a class: merges belonging to plans that are `Complete` without
+carrying the phase, merges belonging to no plan at all, and the
+non-classification paths of the patch-classification merges named in the
+first checkbox above. That gap is a property of the repository, not of
+the road to 1.0, and it grows on its own as Renovate lands. Enumerating
+it here would be a list that is true on the day it is written and
+quietly wrong afterwards. It is named so that a reader does not mistake
+this range for complete coverage; closing it is its own piece of work.
+
+Whoever closes workstream 7 or 8 should fold `e28d90a1` (#104),
+`aa06a0b7` (#105) and `a5bd504e` (#107) into that workstream's
+`Merged:` line if they turn out to belong there.
+
+**Merged:** nothing landed yet, and a closeout section cannot name the
+merge that lands it — so this is filled in afterwards, as
+[PLAN-patch-classification.md](PLAN-patch-classification.md)'s phase 7
+was.
 
 ## Administration
 
