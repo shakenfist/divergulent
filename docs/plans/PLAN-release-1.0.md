@@ -43,8 +43,8 @@ landing it. They are in workstream 9's audit range all the same, and
 deliberately so: this plan records them, and the published-cache plan
 carries no push audit phase and — being `Complete` without one — is not
 reopened to acquire one, so nothing else would ever read them. Its
-earlier phases are a different matter; workstream 9 says where the
-range starts and what that leaves outside it.
+earlier phases are a different matter, and outside this plan's range;
+workstream 9 says what that range does not cover.
 
 ### 2. Multi-release build matrix (Debian 11, 12, 13, testing, unstable)
 
@@ -132,8 +132,15 @@ bundle-side `UNKNOWN` is the bundle declining to make a claim rather
 than a mismatch — "no cry wolf" on both sides — which is this
 workstream's subject matter. It is recorded under workstream 1's line,
 beside the publish-path fixes it shipped with, so it is in the audit
-range either way. The four open items land their own merges, recorded
-here as they do.
+range either way. `4c655626` (#34) is the other `verify.py` change in
+this window — it added `CLASSIFICATION_SIGNER_IDENTITY`, a signer
+identity, which is squarely this workstream's subject. It is recorded
+under [PLAN-patch-classification.md](PLAN-patch-classification.md) and
+so is *not* in this plan's range, and its `verify.py` hunk sat outside
+that plan's phase 7 path filter, so nothing audits it today. It joins
+the stated gap in workstream 9 rather than being silently assumed
+covered. The four open items land their own merges, recorded here as
+they do.
 
 ### 4. "No cry wolf" validation on real machines
 
@@ -277,10 +284,20 @@ explaining its absence.
       the named commit, silently dropping #16's own diff, which is the
       merge that landed the scheduled publish and the whole subject of
       workstream 1; and the span would sweep in all of
-      [PLAN-patch-classification.md](PLAN-patch-classification.md),
-      whose phase 7 push audit already read it as `d7c030e4..develop`
-      across 85 files. Do not re-audit those merges here; they are
-      recorded there. Workstreams 3 and 8 are in the wait list even
+      [PLAN-patch-classification.md](PLAN-patch-classification.md).
+      That plan's phase 7 push audit read `d7c030e4..develop`
+      **restricted to the classification path set** —
+      `divergulent/classify/`, `divergulent/tests/`, three docs pages,
+      two workflows and `tools/`, fixed by decision 7 of
+      [its closeout](PLAN-patch-classification-phase-07-closeout.md).
+      Do not re-audit the classification paths of those merges; they
+      are recorded there. What those merges changed *outside* that
+      path set no audit has read — notably `4c655626` (#34), which
+      also landed 166 lines of `divergulent/cli.py`, a
+      `divergulent/sources/debian_patches.py` change, and the
+      `CLASSIFICATION_SIGNER_IDENTITY` constant in
+      `divergulent/verify.py`. Those paths are a stated gap, below,
+      not an exclusion. Workstreams 3 and 8 are in the wait list even
       though each has already recorded a line: both still carry open
       items whose merges are not in the range yet, and an audit that ran
       before they landed would miss exactly what auditing the whole plan
@@ -326,47 +343,20 @@ or the 218-line shell test harness that rode in with #107; and too
 wide, because any list broad enough to catch these five also selects
 `4c655626` (#34) and `f5d0a7a8` (#43), which
 [PLAN-patch-classification.md](PLAN-patch-classification.md) already
-records and whose phase 7 push audit already read them.
+records and whose phase 7 push audit read their classification paths.
 
-**The orphans that are not publish work.** The table above scopes
-itself to publish and release merges, which is this plan's subject, and
-that leaves a second class unaccounted for. Cross-referencing every
-merge on `develop` since #16 against every pull request number the
-plans under `docs/plans/` name leaves fourteen that no plan mentions at
-all: `771e6473` (#47) and `7b45c114` (#60), README work; `0297f4ee`
-(#49), `a3ac97ec` (#78) and `6374bc08` (#72), fleet-consistency and
-runner configuration; `4201839a` (#62) and `70b2a8f4` (#67),
-plan-template blocks; and `8da3e564` (#74), `7e08f6c7` (#75),
-`a6cb8a9b` (#83), `eea87799` (#84), `a792a65d` (#86), `f686c89c`
-(#108) and `5fa9b746` (#111), Renovate bumps. A fifteenth, `a966dd22`
-(#87), is mentioned in the prose of
-[PLAN-patch-classification-phase-07-closeout.md](PLAN-patch-classification-phase-07-closeout.md)
-but never recorded as a merge. None of them is in this plan's range and
-no plan audits them, which is the same hole the pre-#16 paragraph
-below states — just inside the window rather than before it. That
-enumeration is true as of 2026-09-11 and the class keeps growing as
-Renovate lands; closing it is its own piece of work, and it is named
-here so that it is stated rather than silently omitted.
-
-**Where the range starts, and what that leaves outside it.** The oldest
-merge in the set is `52cb034e` (#16), the merge that created this plan
-file. Everything earlier on `develop`'s first-parent chain is outside
-the range, and that is fifteen merges rather than a handful: `fb31a07f`
-(#1) through `55ecf094` (#15), plus `33308a2e`, the root commit that
-scaffolded the project before there were pull requests at all. They
-landed [PLAN-initial.md](PLAN-initial.md)'s five phases (#1–#5),
-[PLAN-full-machine-run.md](PLAN-full-machine-run.md)'s three (#6–#8),
-[PLAN-faster-full-run.md](PLAN-faster-full-run.md)'s work (#9–#10),
-[PLAN-published-cache.md](PLAN-published-cache.md)'s phases 1–4 (#11,
-#13–#15), and one `build-cache.yml` deb-src fix that belongs to no plan
-(#12, `f1c5542a`). All four of those plans are `Complete`, none carries
-a push audit phase, and none records a `Merged:` line anywhere — so
-under the shared block none is reopened to acquire one, and nothing
-audits any of the fifteen. The gap is fifteen merges wide and the whole
-pre-#16 chain, not the three this paragraph named in an earlier
-revision; closing it means auditing them deliberately, as its own piece
-of work, rather than letting a path rule sweep them in while a reader
-believes it is filling a small hole.
+**What this range does not cover, and why that is not this plan's to
+close.** The range above is what *this plan's* workstreams landed, which
+is what the `plan-push-audit-phase` block asks a plan to record. It is
+not a census of everything on `develop` that no audit reads, and there
+is such a class: merges belonging to plans that are `Complete` without
+carrying the phase, merges belonging to no plan at all, and the
+non-classification paths of the patch-classification merges named in the
+first checkbox above. That gap is a property of the repository, not of
+the road to 1.0, and it grows on its own as Renovate lands. Enumerating
+it here would be a list that is true on the day it is written and
+quietly wrong afterwards. It is named so that a reader does not mistake
+this range for complete coverage; closing it is its own piece of work.
 
 Whoever closes workstream 7 or 8 should fold `e28d90a1` (#104),
 `aa06a0b7` (#105) and `a5bd504e` (#107) into that workstream's
