@@ -20,4 +20,3 @@ jobs:
   # the shared template and the export-repo-config audit both expect.
   export-config:
     uses: shakenfist/actions/.github/workflows/export-repo-config.yml@main
-    secrets: inherit
