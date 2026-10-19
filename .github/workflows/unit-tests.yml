@@ -4,12 +4,16 @@ permissions:
   contents: read
 
 on:
-  push:
-    branches:
-      - develop
   pull_request:
     branches:
       - develop
+  # Merges go through a merge queue, so every commit that lands on
+  # develop is the commit a merge_group run tested, even when its base
+  # moved after the pull request run. That run is the one release.yml's
+  # CI gate counts, which is why there is no push trigger: it would
+  # only test the same commit a second time. "Can enqueue" and "Can
+  # merge" below are the checks the queue's ruleset requires.
+  merge_group:
   # How pr-retest.yml re-runs these checks without a new commit.
   workflow_dispatch:
 
@@ -87,3 +91,51 @@ jobs:
       pull-requests: write
       issues: write
     uses: shakenfist/actions/.github/workflows/pr-auto-review.yml@main
+
+  # The two checks the merge queue's ruleset requires, collecting this
+  # workflow's jobs into one result each, in the shape described at
+  # https://boinkor.net/2023/11/neat-github-actions-patterns-for-github-merge-queues/
+  # "Can enqueue" reports on pull requests and "Can merge" on merge
+  # queue entries; each is skipped, which GitHub treats as success, on
+  # the other event. Every need must succeed, with no exception for a
+  # skipped job: on both events the checks job always runs, and this
+  # workflow's merge queue run is the one release.yml's CI gate counts.
+  # The automated reviewer is advisory and deliberately not in needs:
+  # it must not be able to block a merge on an API hiccup.
+  can-enqueue:
+    name: "Can enqueue"
+    needs:
+      - checks
+    if: ${{ !cancelled() && github.event_name != 'merge_group' }}
+    # The steps read only the needs context, so the token needs nothing.
+    permissions: {}
+    runs-on: [self-hosted, static]
+    timeout-minutes: 5
+    steps:
+      - name: Transform outcomes
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          echo "ALL_SUCCESS=$(echo "${NEEDS_JSON}" | jq '. | to_entries | map(.value.result == "success") | all')" >> "${GITHUB_ENV}"
+      - name: Check outcomes
+        run: |
+          [ "${ALL_SUCCESS}" == true ]
+
+  can-merge:
+    name: "Can merge"
+    needs:
+      - checks
+    if: ${{ !cancelled() && github.event_name == 'merge_group' }}
+    # The steps read only the needs context, so the token needs nothing.
+    permissions: {}
+    runs-on: [self-hosted, static]
+    timeout-minutes: 5
+    steps:
+      - name: Transform outcomes
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          echo "ALL_SUCCESS=$(echo "${NEEDS_JSON}" | jq '. | to_entries | map(.value.result == "success") | all')" >> "${GITHUB_ENV}"
+      - name: Check outcomes
+        run: |
+          [ "${ALL_SUCCESS}" == true ]

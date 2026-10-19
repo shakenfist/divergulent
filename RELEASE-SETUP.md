@@ -53,6 +53,12 @@ This ensures releases only happen after explicit approval.
    - Add a rule: `v*` (to only allow release tags)
 8. Click **Save protection rules**
 
+The consistency audit's `release-environment-protection` criterion
+checks the environment: it must exist, have a required reviewer, and
+deploy only from tags. It is described in
+`docs/audits/release-environment-protection.md` in
+shakenfist/development.
+
 ### 3. Configure Protected Tags (Recommended)
 
 This prevents unauthorized users from creating release tags.
@@ -67,7 +73,30 @@ This prevents unauthorized users from creating release tags.
    - **Bypass list**: Add repository admins or specific maintainers
 4. Click **Create**
 
-### 4. Verify Sigstore/Rekor Access
+### 4. Configure the Merge Queue
+
+The release gate counts a CI run only from the merge queue, or from a
+push to the default branch, which is `develop` here, so `develop`
+needs a queue. Add it only once the CI workflow's aggregator jobs are
+on `develop`, or the queue waits for checks that never report.
+
+1. Go to **Settings** > **Rules** > **Rulesets** > **New ruleset** >
+   **New branch ruleset**
+2. Name it `Develop branch`, set **Enforcement status** to
+   **Active**, and target the default branch (`develop`)
+3. Enable **Restrict deletions**, **Block force pushes**, and
+   **Require a pull request before merging**
+4. Enable **Require merge queue**, with merge method **Merge**,
+   **Build concurrency** 1 and **Minimum group size** 1. A serial
+   queue is what the consistency audit's `merge-queue-config`
+   criterion accepts
+5. Enable **Require status checks to pass**, and add "Can enqueue"
+   and "Can merge", with **GitHub Actions** as the source
+6. Keep the bypass list short. A merge that bypasses the queue gets
+   no CI run, so it cannot be released until a later commit has gone
+   through the queue
+
+### 5. Verify Sigstore/Rekor Access
 
 No configuration needed. Sigstore is a public service that:
 
@@ -84,13 +113,33 @@ tag is the single source of truth for the released version.
 
 1. A maintainer pushes a tag matching `v*` (e.g., `v0.1.0`)
 2. The `release.yml` workflow triggers
-3. The workflow builds the package and waits for environment approval
-4. A required reviewer approves the release in GitHub's UI
+3. The `ci-gate` job checks that `unit-tests.yml` succeeded on the
+   tagged commit. The workflow builds the package only if the gate
+   passed, and then waits for environment approval
+4. A required reviewer approves the release in GitHub's UI. The
+   reviewer is approving a release whose CI the gate has already
+   checked, so the approval is a decision about the release, not a
+   substitute for looking at CI. The deployment review page does not
+   show CI status, which is why the gate has no override
 5. The workflow:
    - Creates a signed git tag using gitsign (Sigstore)
    - Generates Sigstore attestations for the built artifacts
    - Publishes to PyPI using OIDC (no tokens)
    - Creates a GitHub Release with the artifacts
+
+### Running the workflow by hand
+
+The workflow also offers `workflow_dispatch`. A manual run skips
+`ci-gate`, builds the package and runs `twine check` and the wheel
+check, and stops there: it never signs a tag, never uploads to PyPI,
+and never creates a release. Use it to confirm the package still
+builds without cutting a release.
+
+That is enforced by a guard on each publishing job, and on `ci-gate`:
+
+```yaml
+if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+```
 
 ## Verifying Releases
 
