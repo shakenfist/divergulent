@@ -43,8 +43,8 @@ client-python-ova's `ci.yml` does, and it would then depend on the
 queue being serial: raising the build concurrency would make each
 entry cancel the one ahead of it. A re-run keeps its original event,
 so the `github.run_attempt == '1'` test is what stops a "Re-run jobs"
-on an old queue run, the release recovery below, from cancelling the
-live entry.
+on an old queue run from cancelling the live entry or being cancelled
+by it.
 
 The two checks are the `can-enqueue` and `can-merge` jobs at the bottom
 of `unit-tests.yml`. A job added to that workflow goes in the `needs:`
@@ -109,9 +109,14 @@ Pushing a `v*` tag triggers `release.yml`. Its jobs, in order:
 
 1. `ci-gate` checks that `unit-tests.yml` succeeded on the tagged
    commit, in its merge queue run. A run started by hand, as
-   `pr-retest.yml` does with `workflow_dispatch`, does not count, so to
-   recover from a flaky queue run, use "Re-run jobs" on that merge
-   queue run itself. How the gate decides is documented with the
+   `pr-retest.yml` does with `workflow_dispatch`, does not count. A
+   queue run that fails, flaky or not, ejects its entry, so the commit
+   it built never reaches `develop` and re-running that run cannot make
+   any tag pass: re-queue the pull request and tag the commit that
+   merges. Re-running a queue run helps only when the tagged commit's
+   run was re-run after it merged and that later attempt failed,
+   because the gate judges each run at its latest attempt; then use
+   "Re-run jobs" on it. How the gate decides is documented with the
    action, as
    [`require-ci-success`](https://github.com/shakenfist/actions/blob/main/docs/actions.md#require-ci-success).
    It has no override.
