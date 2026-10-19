@@ -80,6 +80,12 @@ push to the default branch, which is `develop` here, so `develop`
 needs a queue. Add it only once the CI workflow's aggregator jobs are
 on `develop`, or the queue waits for checks that never report.
 
+Until the queue exists, a merged commit gets no CI run the gate
+accepts: the change that adds the aggregator jobs also drops the push
+trigger. That includes the merge of that change itself. Configure the
+ruleset right after it lands, and expect the first releasable commit
+to be the first one that goes through the queue.
+
 1. Go to **Settings** > **Rules** > **Rulesets** > **New ruleset** >
    **New branch ruleset**
 2. Name it `Develop branch`, set **Enforcement status** to
