@@ -69,12 +69,21 @@ test = [
 ]
 
 # Discover every divergulent subpackage (divergulent, .sources, .classify,
-# .tests, and any future one) rather than an explicit list. The client imports
+# and any future one) rather than an explicit list. The client imports
 # divergulent.classify at load, so a missing subpackage is a broken wheel; an
 # explicit list silently omitted divergulent.classify and only shipped it via a
-# now-deprecated setuptools fallback -- discovery makes it deterministic.
+# now-deprecated setuptools fallback -- discovery makes it deterministic. The
+# tests are excluded: they run from the checkout, never from an install.
 [tool.setuptools.packages.find]
 include = ["divergulent*"]
+exclude = ["divergulent.tests*"]
+
+# include-package-data defaults to true under pyproject.toml, and
+# setuptools_scm's file finder offers every git-tracked file as package
+# data, so without this the tests excluded above come straight back as
+# data. Nothing in this package reads a data file at runtime.
+[tool.setuptools]
+include-package-data = false
 
 [tool.setuptools_scm]
 git_describe_command = "git describe --dirty --tags --match v* --first-parent"

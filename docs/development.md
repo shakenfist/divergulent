@@ -17,10 +17,41 @@ pre-commit install       # once, per clone
 pre-commit run --all-files
 ```
 
-CI runs `pre-commit run --all-files` on push and pull requests
-(`.github/workflows/unit-tests.yml`), which is what makes the hooks
-enforced rather than advisory: a commit made with `--no-verify`, or
-from a clone that never ran `pre-commit install`, is still checked.
+CI runs `pre-commit run --all-files` on pull requests and merge queue
+entries (`.github/workflows/unit-tests.yml`), which is what makes the
+hooks enforced rather than advisory: a commit made with `--no-verify`,
+or from a clone that never ran `pre-commit install`, is still checked.
+
+### Merging
+
+Pull requests merge through a merge queue on `develop`, not with the
+merge button directly. A pull request can be queued once its "Can
+enqueue" check passes. The queue then runs `unit-tests.yml` again on
+the commit it is about to merge, and merges only when "Can merge"
+passes. That second run is the one a release counts (see "Releasing"
+below), so a change merged around the queue, by an administrator
+bypassing it, cannot be released until a later commit has gone through
+the queue.
+
+The queue builds one entry at a time (a serial queue is what the
+consistency audit's `merge-queue-config` criterion accepts, and
+RELEASE-SETUP.md describes the ruleset). `unit-tests.yml` has no
+`concurrency` groups today, so nothing depends on that yet. A group
+added to a job that a queue run reaches must key a first attempt on
+`github.event.merge_group.base_ref` and a re-run on `github.ref`, as
+client-python-ova's `ci.yml` does, and it would then depend on the
+queue being serial: raising the build concurrency would make each
+entry cancel the one ahead of it. A re-run keeps its original event,
+so the `github.run_attempt == '1'` test is what stops a "Re-run jobs"
+on an old queue run from cancelling the live entry or being cancelled
+by it.
+
+The two checks are the `can-enqueue` and `can-merge` jobs at the bottom
+of `unit-tests.yml`. A job added to that workflow goes in the `needs:`
+of both, or the queue will not wait for it. The automated reviewer
+stays out of them: it is advisory and must not block a merge.
+
+### Automated review
 
 Once CI passes on a pull request, `shakenfist-bot` posts an automated
 review. The reviewer itself lives in
@@ -71,6 +102,50 @@ releases are tag-driven (`v*`) and publish to PyPI via Sigstore-signed
 tags and PyPI trusted publishing — see
 [RELEASE-SETUP.md](https://github.com/shakenfist/divergulent/blob/develop/RELEASE-SETUP.md)
 for the one-time configuration.
+
+### Releasing
+
+Pushing a `v*` tag triggers `release.yml`. Its jobs, in order:
+
+1. `ci-gate` checks that `unit-tests.yml` succeeded on the tagged
+   commit, in its merge queue run. A run started by hand, as
+   `pr-retest.yml` does with `workflow_dispatch`, does not count. A
+   queue run that fails, flaky or not, ejects its entry, so the commit
+   it built never reaches `develop` and re-running that run cannot make
+   any tag pass: re-queue the pull request and tag the commit that
+   merges. Re-running a queue run helps only when the tagged commit's
+   run was re-run after it merged and that later attempt failed,
+   because the gate judges each run at its latest attempt; then use
+   "Re-run jobs" on it. How the gate decides is documented with the
+   action, as
+   [`require-ci-success`](https://github.com/shakenfist/actions/blob/main/docs/actions.md#require-ci-success).
+   It has no override.
+2. `build` builds the sdist and wheel, then runs `twine check` and
+   [`check-dist`](https://github.com/shakenfist/actions/blob/main/docs/actions.md#check-dist),
+   which fails if the wheel holds a test directory. It runs only if the
+   gate passed.
+3. The publishing jobs wait for approval in the `release`
+   environment, re-sign the tag with gitsign, and publish to PyPI with
+   attestations.
+
+So tag a commit that is on `develop` and went through the merge
+queue, and wait for its `unit-tests.yml` run to finish first. A gate
+failure means nothing was signed or published, so every failure is
+recoverable: the template's
+[recovery table](https://github.com/shakenfist/development/blob/main/templates/release-automation/README.md#recovering-from-a-gate-failure)
+says what to do for each cause, which is usually moving the tag or
+re-running CI and then the `ci-gate` job.
+
+Running `release.yml` by hand with `workflow_dispatch` skips the gate
+and the publishing jobs, and only builds and checks the packages.
+
+The wheel ships the `divergulent` package and its subpackages but not
+`divergulent.tests`, and ships no data files: nothing in the package
+reads one at runtime. `[tool.setuptools] include-package-data` is
+`false` in `pyproject.toml` because setuptools_scm would otherwise
+offer every tracked file, tests and fixtures included, as package data.
+A data file the code starts to load needs an explicit `package-data`
+entry.
 
 Process documents live at the repository root:
 [PLAN-TEMPLATE.md](https://github.com/shakenfist/divergulent/blob/develop/PLAN-TEMPLATE.md)

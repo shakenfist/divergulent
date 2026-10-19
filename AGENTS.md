@@ -236,6 +236,11 @@ publishing, running on self-hosted runners. The package version is
 derived from the git tag by `setuptools_scm`. One-time configuration is
 documented in [RELEASE-SETUP.md](RELEASE-SETUP.md).
 
+Changes merge to `develop` through the merge queue, never around it: a
+release tag is only accepted on a commit whose queue run passed. A new
+`unit-tests.yml` job goes in the `needs:` of "Can enqueue" and "Can
+merge". See "Merging" and "Releasing" in `docs/development.md`.
+
 The `sample-output.yml` workflow runs a full `divergulent score` on a
 Debian 13 runner and uploads the rendered report as an artifact (its
 logic lives in `tools/generate-sample-output.sh`, per the scripts-in-
