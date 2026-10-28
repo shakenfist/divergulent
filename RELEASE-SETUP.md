@@ -102,6 +102,14 @@ to be the first one that goes through the queue.
    no CI run, so it cannot be released until a later commit has gone
    through the queue
 
+A pull request opened with `GITHUB_TOKEN`, such as the daily
+`export-repo-config` one, starts no `pull_request` run, so it never
+reports "Can enqueue" and cannot be queued. A maintainer closes and
+reopens it, which starts the run as that person, and then queues it as
+usual. Merging it through the bypass list instead works, but gets no
+queue run, so `develop`'s tip is unreleasable until the next change
+merges through the queue.
+
 ### 5. Verify Sigstore/Rekor Access
 
 No configuration needed. Sigstore is a public service that:

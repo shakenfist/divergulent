@@ -56,10 +56,11 @@ stays out of them: it is advisory and must not block a merge.
 Once CI passes on a pull request, `shakenfist-bot` posts an automated
 review. The reviewer itself lives in
 [shakenfist/actions](https://github.com/shakenfist/actions); this
-repository only carries the calling job at the bottom of
-`unit-tests.yml`, whose `needs:` list is the CI-passed gate. It reviews
-a pull request once. Two bot commands are available to anyone with
-write access, as comments on the pull request:
+repository only carries the calling job in `unit-tests.yml`, just
+above `can-enqueue` and `can-merge`. Its `needs:` list is the
+CI-passed gate. It reviews a pull request once. Two bot commands are
+available to anyone with write access, as comments on the pull
+request:
 
 | Comment | Effect |
 |---------|--------|
