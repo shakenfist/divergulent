@@ -61,15 +61,14 @@ installed-package inventory never leaves the machine.
   axis). Picks the newest stable upstream version and compares it
   against the installed *upstream* version; yields CURRENT / BEHIND /
   UNKNOWN (unresolved is UNKNOWN, never BEHIND). `RepologySource`
-  resolves one package at a time via the `project-by` resolver,
-  caching each result for ~24h; the whole-machine commands and `show`
-  both use it. A whole-archive sweep was tried in its place and reverted
-  as a cold-run regression; it belongs in the central cache builder
+  resolves one package at a time via the `project-by` resolver, caching
+  each result for ~24h; the whole-machine commands and `show` both use
+  it. A whole-archive sweep was tried in its place and reverted as a
+  cold-run regression; it belongs in the central cache builder
   (`builder.build_staleness_map`) instead, for the measured reasons in
-  "Staleness" in `docs/usage.md`. Also holds
-  `RepologyBulkSource`, which answers staleness from a prebuilt
-  `{srcname: newest}` map (a published bundle) with no network, reusing
-  the same version classification.
+  "Staleness" in `docs/usage.md`. Also holds `RepologyBulkSource`, which
+  answers staleness from a prebuilt `{srcname: newest}` map (a published
+  bundle) with no network, reusing the same version classification.
 - `divergulent/sources/debian_patches.py` — the sources.debian.org
   adapter (divergence axis). Reads a source package's quilt series from
   the patches API, fetches each patch under its pool `raw_url`, and

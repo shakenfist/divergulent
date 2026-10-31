@@ -442,10 +442,9 @@ a lock file without the marker is never marked by name. They are
 dependency pins, and a malicious pin is exactly what a reviewer must
 see. The known exception to the name claim is the libtool source
 package itself: its own `libtool.m4` / `ltmain.sh` / `libtool.texi`
-are hand-written
-upstream source, not copied generator output, so the name claim is
-wrong there by construction (n=3, no rule proposed — a reader of the
-mark needs to know this). A broader generic `DO NOT EDIT` /
+are hand-written upstream source, not copied generator output, so the
+name claim is wrong there by construction (n=3, no rule proposed — a
+reader of the mark needs to know this). A broader generic `DO NOT EDIT` /
 "automatically generated" family was measured (1,011 hits, no
 generator or version, dominated by an unrelated Perl timezone-module
 population) and rejected for v1 on volume-without-discrimination

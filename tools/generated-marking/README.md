@@ -50,7 +50,10 @@ Its full-corpus results were written up, and adjudicated, as
 [the autotools findings](https://github.com/shakenfist/divergulent/blob/7b45450ab3253abdcd8c42a220d06e3d65dc4acc/docs/plans/PLAN-generated-marking-phase-01-findings.md)
 and
 [the translations findings](https://github.com/shakenfist/divergulent/blob/719d9a70188eac2c272bd973d5dd08d692a4ee2e/docs/plans/PLAN-generated-marking-phase-05-findings.md);
-the translations run is committed as `results-translations-full-corpus.json`.
+the autotools run (post-adjudication, rule version 1) is committed as
+`results-full-corpus.json` and the translations run as
+`results-translations-full-corpus.json`. Both are the evidence those
+findings cite; keep them.
 
 ### Usage
 
