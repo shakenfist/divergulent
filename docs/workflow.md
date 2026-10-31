@@ -124,8 +124,7 @@ exactly the fingerprints it had settled, and nothing else.
 
 The same recording pass also attaches cheap deterministic **axes**
 that ride alongside the category: reviewability (size), reach
-(install base), the external CVE/bug cross-reference, and — as of
-part of [its plan](plans/PLAN-generated-marking.md) — a
+(install base), the external CVE/bug cross-reference, and a
 generated-content mark for files that claim to be build-system
 generator output. The mark is
 consumed by both LLM stages below (the oversized unlock, the
@@ -149,7 +148,7 @@ patches first, but it never sets a category and its failures degrade
 to `elevated` (recall-safe — a scoring failure makes a patch *more*
 visible, not less).
 
-The generated-marking work folds the mark into this gate
+The generated-content mark feeds this gate
 too. An `oversized` patch is skipped only when its marked residue is
 *also* past the oversized cut — a small hand-written residue unlocks
 it into scoring — and every marked fingerprint's diff is projected

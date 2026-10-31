@@ -1,12 +1,15 @@
 # Generated-marking measurement prototype
 
-Evaluation prototype for
-[PLAN-generated-marking-phase-01-scanner.md](../../docs/plans/PLAN-generated-marking-phase-01-scanner.md)
-(phase 1, step S2). This is a measurement tool, not shipped classifier code:
-it runs `divergulent.classify.generated.scan` (and its measurement-only
+The measurement tool behind the generated-content mark
+(`divergulent/classify/generated.py`, described in
+[the deterministic rules](../../docs/deterministic-rules.md)). This is a
+measurement tool, not shipped classifier code: it runs
+`divergulent.classify.generated.scan` (and its measurement-only
 `candidate_banner_hits` sweep) over a whole patch corpus and reports the
-numbers phase 1's findings document adjudicates. No ledger writes, no
-routing, no network.
+numbers the rule's signal set was adjudicated on. No ledger writes, no
+routing, no network. The signal set changes only with a
+`GENERATED_RULES_VERSION` bump backed by a fresh measurement written up
+like the findings below, never as a quiet edit.
 
 ## measure.py
 
@@ -20,7 +23,8 @@ fingerprint in `fingerprints.sqlite`'s `patch` table), scans each body from
 * the name-set **gap list** -- banner-only marked files (outside the name
   set), grouped by basename with example paths and generators seen;
 * the patch **coverage distribution** (0 / <50% / 50-90% / >=90%), plus the
-  full >=50% population as records (phase 3's exact target);
+  full >=50% population as records (the population residue-first routing
+  acts on);
 * a **low-frequency-name** adjudication list -- every distinct matched path
   for any name whose total count is <= 20, for human eyeballing;
 * the **acinclude.m4** check -- how many touched files have that basename
@@ -32,8 +36,7 @@ fingerprint in `fingerprints.sqlite`'s `patch` table), scans each body from
   added-lines-preferred open question);
 * the **candidate do-not-edit family** -- hit counts and sample snippets for
   the generic banner family `scan()` never marks on;
-* the **translation candidates** (phase 5,
-  [plan](../../docs/plans/PLAN-generated-marking-phase-05-translations.md)) --
+* the **translation candidates** --
   per-extension corroboration rates for the `.ts`/`.po`/`.pot` candidate
   (`generated.candidate_translation_hits`, also never marking), the
   uncorroborated `.ts` population (TypeScript -- the collision that makes
@@ -43,11 +46,11 @@ fingerprint in `fingerprints.sqlite`'s `patch` table), scans each body from
   dangerous-construct hits sitting inside corroborated catalogues, and an
   informational compiled-catalogue (`.qm`/`.mo`/`.gmo`) tally.
 
-Results feed
-[PLAN-generated-marking-phase-01-findings.md](../../docs/plans/PLAN-generated-marking-phase-01-findings.md)
-(step S3), which is a separate, opus-authored step against the real corpus.
-The phase-5 sections feed the phase-5 findings the same way; that
-full-corpus run is committed as `results-translations-full-corpus.json`.
+Its full-corpus results were written up, and adjudicated, as
+[the autotools findings](https://github.com/shakenfist/divergulent/blob/7b45450ab3253abdcd8c42a220d06e3d65dc4acc/docs/plans/PLAN-generated-marking-phase-01-findings.md)
+and
+[the translations findings](https://github.com/shakenfist/divergulent/blob/719d9a70188eac2c272bd973d5dd08d692a4ee2e/docs/plans/PLAN-generated-marking-phase-05-findings.md);
+the translations run is committed as `results-translations-full-corpus.json`.
 
 ### Usage
 
@@ -62,7 +65,7 @@ PYTHONPATH=. python3 tools/generated-marking/measure.py \
 ```
 
 Use `--limit N` for a smoke run over the first N fingerprints before
-committing to a full-corpus pass (see step S3).
+committing to a full-corpus pass.
 
 Output: a compact human summary to stdout (top entries per section) and,
 with `--output`, the full report as sorted, deterministic JSON.
@@ -71,5 +74,5 @@ with `--output`, the full report as sorted, deterministic JSON.
 
 `divergulent/tests/test_generated_measure.py` builds a tiny fixture corpus
 (sqlite index + bodies) in a tempdir and loads `measure.py` directly via
-`importlib` -- fully offline, no subprocess, no real corpus. The real-corpus
-run is step S3, never CI.
+`importlib` -- fully offline, no subprocess, no real corpus. A real-corpus
+run is done by hand against the reviews corpus, never in CI.

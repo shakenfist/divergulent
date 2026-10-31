@@ -187,8 +187,8 @@ installed-package inventory never leaves the machine.
     hand-written otherwise) and generator banners with versions
     captured as the-file-as-the-patch-leaves-it evidence — plus the
     residue arithmetic (changed lines outside marked files) that the
-    routing helpers below consume. See
-    [its plan](docs/plans/PLAN-generated-marking.md). The
+    routing helpers below consume. See "Generated-content mark" in
+    [the deterministic rules](docs/deterministic-rules.md). The
     observation helpers (`detail_for`, `evidence_for`,
     `generated_marks`) and the record-pass integration, so a marked
     scan now rides alongside the category as ONE supersedable

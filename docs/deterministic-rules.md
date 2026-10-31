@@ -286,14 +286,31 @@ region. Editor/patch-tool backup suffixes (`.ori`, `.orig`, `.bak`,
 classified as whatever it is a copy of in either direction —
 `Makefile.in.ori` marks, `Makefile.am.ori` does not.
 
+The mark is its own axis rather than a change to file typing.
+`content._classify_file` already types `configure` and `Makefile.in`
+as `build`, but that type deliberately groups hand-written build
+inputs (`configure.ac`, `Makefile.am`) with their generated outputs,
+and the category rules above depend on it. Hand-written versus
+generated is orthogonal to build versus code, so `generated.py` sits
+beside the typing, reusing `content`'s section parser so its file
+boundaries match `profile()` exactly.
+
+The corpus measurements behind every choice below — the per-name
+table, the `Makefile.in` and `acinclude.m4` adjudications, the banner
+tuning, the multi-banner report — are in
+[the autotools findings](https://github.com/shakenfist/divergulent/blob/7b45450ab3253abdcd8c42a220d06e3d65dc4acc/docs/plans/PLAN-generated-marking-phase-01-findings.md)
+and, for the translations family,
+[the translations findings](https://github.com/shakenfist/divergulent/blob/719d9a70188eac2c272bd973d5dd08d692a4ee2e/docs/plans/PLAN-generated-marking-phase-05-findings.md).
+`generated.py` cites both by section.
+
 `Makefile.in` carries its own corroboration tier: its name signal
 counts only alongside a banner hit in the same region. Measured,
 ~880 of the corpus's 1,280 `Makefile.in` matches are hand-written
 `AC_OUTPUT` templates rather than automake output — a genuine
 regeneration rewrites the file from line 1 and so shows its banner
 anyway, so the requirement costs the target population nothing while
-dropping a majority-wrong claim (the findings' "The `Makefile.in`
-problem").
+dropping a majority-wrong claim (the autotools findings' "The
+`Makefile.in` problem").
 
 Rule version 2 adds the **translations family**: a
 `.ts`/`.po`/`.pot` extension match (backup-stripped, like names)
@@ -356,9 +373,8 @@ already marked by autotools signals. The unlocked population grew
 `none` residue-first (its previous `elevated` was a failed-call
 degradation on a 2.2M-token prompt).
 
-**Consumed by**: the ledger stage of
-[its plan](plans/PLAN-generated-marking.md) turns the recorded mark
-into two routing decisions, composed through one shared helper
+**Consumed by**: the ledger stage turns the recorded mark into two
+routing decisions, composed through one shared helper
 (`generated.residue_unlocked_fingerprints`) so the triage driver and
 the risk gate can never disagree about who is unlocked. An
 `oversized` fingerprint whose mark reports a `residue_changed` at or
@@ -377,7 +393,23 @@ truncated generated head, superseding it. None of this promotes the
 mark: the unlock only changes which fingerprints reach a model, the
 projection only changes what text a model is shown, and re-risk only
 supersedes a score computed on the wrong input — routing, never a
-verdict.
+verdict. Queue priority bands are untouched by the mark, too: a
+marked patch's priority still comes from risk, injection, provenance
+and reach.
+
+The cut is reviewability's, and the unlock does not move it: gatos's
+sibling `0002-Massive-cleanup-for-libtools.patch` stays locked with a
+5,410-line residue, which is correctly not line-reviewable either. A
+mark with no residue at all is still projected, as notes only, so the
+model is told exactly what it is not shown and scores on that. The
+triage decision and the risk observation record `projected: true`
+and what was omitted, beside the existing `truncated` flag (which
+keeps meaning the cap bit after projection), so a reviewer can
+always reconstruct what the model saw. The prompt-injection tripwire
+is deliberately outside all of this: it scans the **full** body,
+because generated segments are exactly where hidden text would hide,
+and its diversion outranks the unlock — an injection-suspect patch
+never reaches a model, marked or not.
 
 The display consumers are the CLI, which tags marked rows, and
 appends a mark summary, the web UI badges and default-collapses
@@ -393,7 +425,12 @@ this kind of build machinery, the sort reviewers treat as noise, so
 a marked file stays in the record, badged, never dropped. The claim
 is that a file *says* it is generator output, not that regeneration
 was verified — upgrading "claims" to "verified" is deliberately out
-of scope. The known exception is the libtool source package itself:
+of scope, and doing it means regenerating the output, which on
+attacker-influenced input is code execution and so needs an isolated,
+offline, era-matched toolchain (#141). Lock files (`Cargo.lock`,
+`poetry.lock`) carry the `@generated` marker and mark under it, but are
+deliberately not in the autotools name set: they are dependency pins,
+and a malicious pin is exactly what a reviewer must see. The known exception is the libtool source package itself:
 its own `libtool.m4` / `ltmain.sh` / `libtool.texi` are hand-written
 upstream source, not copied generator output, so the name claim is
 wrong there by construction (n=3, no rule proposed — a reader of the

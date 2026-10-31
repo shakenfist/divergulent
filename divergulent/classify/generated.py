@@ -3,10 +3,12 @@
 Some carried patches are dominated by regenerated autotools output -- ``configure``,
 ``Makefile.in``, ``ltmain.sh`` -- committed into an old-style ``1.0`` source diff.  The
 hand-written residue is small and entirely reviewable, but buried.  This module scans a
-diff body and marks the files that *say* they are generator output, so later phases can
-show a reviewer the residue first and tell the LLM passes what they are not being shown.
+diff body and marks the files that *say* they are generator output, so the routing and
+display helpers below can show a reviewer the residue first and tell the LLM passes what
+they are not being shown.
 
-Posture (see ``docs/plans/PLAN-generated-marking.md``):
+Posture (documented with the other rules in ``docs/deterministic-rules.md``,
+"Generated-content mark"):
 
 * **A mark, never a verdict.**  The only claim made here is the checkable one: this file
   says it is generator output, by its name and -- where a hunk happens to touch the top
@@ -22,12 +24,16 @@ Posture (see ``docs/plans/PLAN-generated-marking.md``):
   get found.  ``Makefile.in`` is the one name that does NOT stand alone: roughly two
   thirds of its corpus matches are hand-written ``AC_OUTPUT`` templates, not automake
   output, so it marks only when a banner also corroborates it (see
-  ``_NAME_REQUIRES_BANNER`` and the findings doc's "The Makefile.in problem").
+  ``_NAME_REQUIRES_BANNER`` and the autotools findings' "The Makefile.in problem").
 * **Claims, not verification.**  Upgrading "claims generated" to "verified generated"
   (rebuilding the era's autotools output and subtracting it) is deliberately out of
   scope; the vocabulary here says "claims" and means it.
 
-Phase 5 promotes the **translations family**: a ``.ts``/``.po``/``.pot`` extension match
+Measurements cited below come from two corpus write-ups, the autotools findings and the
+translations findings, both linked from "Generated-content mark" in
+``docs/deterministic-rules.md``.
+
+Rule version 2 adds the **translations family**: a ``.ts``/``.po``/``.pot`` extension match
 corroborated by catalogue structure in the hunks marks ``family='translations'``, with
 the corroborator names as the file's signals.  The extension alone never marks -- ``.ts``
 measured 45% Qt Linguist / 55% TypeScript -- and the family name says "translations",
@@ -35,7 +41,7 @@ not "generated", because ``.po`` content is human-authored even though tool-mana
 
 The scanner is pure: no I/O, no network.  ``scan(text)`` is its whole public surface,
 plus ``candidate_banner_hits(text)`` which reports the unmeasured generic do-not-edit
-family for the phase-1 measurement tool WITHOUT ever marking on it, and
+family for the measurement tool (``tools/generated-marking/``) WITHOUT ever marking on it, and
 ``candidate_translation_hits(text)``, the measurement view of the translations family
 (every extension match, corroborated or not -- the uncorroborated ``.ts`` population is
 TypeScript, and the measurement tool sizes it).  Beside it sit the
@@ -44,13 +50,13 @@ supersedable ``generated-content`` observation per fingerprint (``observed_by=
 'generated-scan'``, ``rule_version=GENERATED_RULES_VERSION``), recorded by the
 deterministic record pass -- ``detail_for(scan)`` builds its compact ``'<family>/
 <percent>'`` detail, ``evidence_for(scan)`` its canonical-JSON per-file breakdown, and
-``generated_marks(conn)`` reads the live rows back for later phases.  A scan that marks
+``generated_marks(conn)`` reads the live rows back for the helpers below.  A scan that marks
 nothing records nothing: absence means "nothing claimed generation".  Recording the mark
 does not promote it -- it is still a mark and never a verdict, and nothing downstream may
 map it to a category.
 
-Phase 3 adds the two ROUTING helpers that consume the recorded mark, kept here beside it
-so both consumers (the triage driver and the risk gate) share one definition:
+The two ROUTING helpers that consume the recorded mark are kept here beside it so both
+consumers (the triage driver and the risk gate) share one definition:
 ``project_residue_first(body, files)`` reorders a diff body residue-first, replacing each
 marked file with a loud note about what is not being shown, and
 ``residue_unlocked_fingerprints(conn)`` composes ``reviewability``'s ``oversized`` set with
@@ -58,7 +64,7 @@ the mark's residue arithmetic to say which oversized patches are reviewable afte
 Neither is a verdict either: the first only changes what a model is shown (and says so in
 evidence), the second only changes which fingerprints reach one.
 
-Phase 4 adds the one DISPLAY helper the review UIs share, kept here for the same reason:
+The one DISPLAY helper the review UIs share is kept here for the same reason:
 ``construct_tally(body, marked_paths)`` re-runs the deterministic dangerous-construct scan
 per file (``rules.scan_dangerous_constructs_by_file`` -- rules' own tables, never a second
 copy) and splits the hits into marked files versus the hand-written residue, so a reviewer
@@ -77,7 +83,7 @@ from divergulent.classify import content
 from divergulent.classify import fingerprint as fp
 from divergulent.classify import rules as rules_mod
 
-# Folds the name set + banner patterns into a version the phase-2 observation records;
+# Folds the name set + banner patterns into a version the observation records;
 # bumping it supersedes prior observations and re-scans, like every deterministic rule.
 # v2: the translations family (corroborated ``.ts``/``.po``/``.pot`` catalogues) joins
 # the autotools name set and the banners.
@@ -104,7 +110,7 @@ BANNER_SIGNAL = 'banner'
 # path depth, and case-sensitively -- these names are case-sensitive on disk, and
 # ``Configure`` is somebody else's file.
 _NAME_SETS: dict[str, tuple[str, ...]] = {
-    # DROPPED (measured, phase-1 findings, "Per-name table" / "Proposed v1 signal set"):
+    # DROPPED (measured, autotools findings, "Per-name table" / "Proposed v1 signal set"):
     # ``GNUmakefile.in`` (7 of 7 distinct corpus paths hand-written, 0 of 10 carry a
     # banner -- 100% false-positive rate), ``config.status`` and ``configure.lineno``
     # (0 corpus hits each -- build-time products that never appear in a carried patch).
@@ -136,9 +142,11 @@ _NAME_SETS: dict[str, tuple[str, ...]] = {
     ),
     # DELIBERATELY ABSENT: ``acinclude.m4``.  By convention it is a maintainer-WRITTEN
     # input that aclocal reads, even though the historical practice of pasting
-    # ``libtool.m4`` into it means its content is often machine-copied.  It stays out
-    # pending the phase-1 measurement; the banner signal may still fire on its pasted
-    # content, which is exactly the number the findings need.
+    # ``libtool.m4`` into it means its content is often machine-copied.  It stays out:
+    # measured, 63 of 67 corpus regions are small hand-written m4 (median 13 changed
+    # lines), so the name would make 63 wrong claims to catch 4.  The pasted case is
+    # marked instead by the libtool-paste banner in ``BANNERS``, on what the content
+    # claims (autotools findings, "acinclude.m4 -- the deliberate-absence question").
 }
 
 # Basename -> family.  The lookup ``scan`` uses; one entry per name above.
@@ -153,7 +161,7 @@ GENERATED_NAME_FAMILY: dict[str, str] = {
 _BACKUP_SUFFIXES = ('.ori', '.orig', '.bak', '.rej')
 _BACKUP_TILDE = '~'
 
-# Corroboration tier (phase-1 findings, "The Makefile.in problem"): for a file whose
+# Corroboration tier (autotools findings, "The Makefile.in problem"): for a file whose
 # backup-stripped basename is in this tuple, the NAME signal counts ONLY when a banner
 # hit is also present in the file's region.  With no banner the file is not marked at
 # all -- no signals, not even 'name' alone.  Measured: ~880 of 1,280 corpus
@@ -169,7 +177,7 @@ _NAME_REQUIRES_BANNER = ('Makefile.in',)
 # the sentence's full stop -- and a version class that ran to the end of the run would
 # capture ``2.59.``, which then fails to compare equal to the same version read from
 # anywhere else.  The hyphen is needed for the automake <=1.4 banner form (measured:
-# ``1.4-p5``, ``1.4-p4``, ``1.4-p6`` -- findings doc, "Pattern tuning"); it never
+# ``1.4-p5``, ``1.4-p4``, ``1.4-p6`` -- autotools findings, "Pattern tuning"); it never
 # reaches a trailing hyphen because the mandatory final character is alphanumeric.
 _VERSION = r'([0-9](?:[0-9A-Za-z.-]*[0-9A-Za-z])?)'
 
@@ -184,7 +192,7 @@ BANNERS: tuple[tuple[str, str, re.Pattern], ...] = (
     ('autoconf', 'autotools', re.compile(r'Generated by GNU Autoconf(?: %s)?' % _VERSION)),
     ('automake', 'autotools', re.compile(r'generated by automake %s' % _VERSION)),
     # The automake <=1.4 banner form, measured separately from the entry above (57
-    # regions / 7 fingerprints, versions 1.4-p5 etc. -- findings doc, "Pattern tuning").
+    # regions / 7 fingerprints, versions 1.4-p5 etc. -- autotools findings, "Pattern tuning").
     # Its wording ("generated automatically by automake") never overlaps the aclocal
     # entry below ("generated automatically by aclocal"), so neither can shadow the
     # other.
@@ -196,14 +204,14 @@ BANNERS: tuple[tuple[str, str, re.Pattern], ...] = (
     # a separate entry and comes second (version capture must win when both could match).
     ('libtool', 'autotools', re.compile(r'ltmain\.sh \(GNU libtool\)(?: %s)?' % _VERSION)),
     # Narrowed from the bare product name (``\bGNU Libtool\b``), which fired on prose --
-    # a fortune cookie and libtool.texi's own manual text (findings doc, gap list). The
+    # a fortune cookie and libtool.texi's own manual text (autotools findings, gap list). The
     # boilerplate line keeps all 10 real hits and kills both false positives.
     ('libtool', 'autotools', re.compile(r'This file is part of GNU Libtool')),
     # The libtool-paste header: marks a file (often a maintainer-written ``acinclude.m4``
     # into which ``libtool.m4`` was historically pasted) on the strength of what its
     # CONTENT claims -- pasted libtool.m4 self-identifies with this header line. Measured
     # 11 regions corpus-wide, 3 new (gatos's two ``acinclude.m4`` regions, smpeg), zero
-    # false positives (findings doc, "acinclude.m4 -- the deliberate-absence question").
+    # false positives (autotools findings, "acinclude.m4 -- the deliberate-absence question").
     ('libtool', 'autotools',
      re.compile(r'libtool\.m4 - Configure libtool for the (?:target|host) system')),
     # The modern machine-readable convention, generator-agnostic: its own family.
@@ -218,8 +226,9 @@ _TIMESTAMP_RE = re.compile(r"timestamp='([0-9]{4}-[0-9]{2}-[0-9]{2})'")
 
 # CANDIDATE ONLY -- measured, never marking.  The generic do-not-edit family is too
 # broad to trust unmeasured (it appears in hand-written files warning against editing a
-# *different* file), so phase 1 reports its hits separately via
-# ``candidate_banner_hits`` and the findings decide whether it earns a family.
+# *different* file), so the measurement tool reports its hits separately via
+# ``candidate_banner_hits``.  Measured, it did not earn a family: 1,011 hits carrying no
+# generator or version, including hundreds of unrelated Perl timezone modules.
 # ``scan`` must never consult these.
 CANDIDATE_BANNERS: tuple[re.Pattern, ...] = (
     re.compile(r'DO NOT EDIT'),
@@ -227,7 +236,7 @@ CANDIDATE_BANNERS: tuple[re.Pattern, ...] = (
     re.compile(r'[Aa]utomatically generated'),
 )
 
-# The translations family (phase 5, promoted after the corpus measurement).  Translation
+# The translations family (rule version 2, promoted after the corpus measurement).  Translation
 # catalogues are tool-managed serialisations whose bulk drowns a patch's hand-written
 # residue (the motivating case: acetoneiso's ``translate.patch``, fingerprint
 # ``6b51f47b...`` -- 36 Qt catalogues, ~58k added lines, a ~70-line ``.pro``/``.qrc``
@@ -236,7 +245,8 @@ CANDIDATE_BANNERS: tuple[re.Pattern, ...] = (
 # ``content._CODE_EXTENSIONS`` already claims), so an extension match counts ONLY when a
 # content corroborator also fires -- the ``_NAME_REQUIRES_BANNER`` posture generalised,
 # with the corroborator names as the per-file signals.  The corroboration recall cost is
-# 591 changed lines corpus-wide (0.03% of corroborated ``.po`` lines; phase-5 findings).
+# 591 changed lines corpus-wide (0.03% of corroborated ``.po`` lines; translations
+# findings).
 # ``family='translations'``, not "generated": ``.po`` content is human-AUTHORED
 # (translators) even though tool-managed, and the family name must not overclaim.
 TRANSLATION_FAMILY = 'translations'
@@ -375,7 +385,7 @@ class GeneratedScan:
     """Changed lines across every touched file."""
 
     residue_changed: int
-    """Changed lines in UNMARKED files -- the hand-written residue phase 3 routes on.
+    """Changed lines in UNMARKED files -- the hand-written residue the routing acts on.
 
     Invariant: ``residue_changed + generated_changed == total_changed``.
     """
@@ -534,7 +544,7 @@ def _banner_hit(lines: list[str]) -> tuple[str, str, str | None] | None:
     This matters because the captured version is evidence about the file AS THE PATCH
     LEAVES IT, not as it was before the patch.  Measured over the corpus, 121 of 203
     banner regions previously reported a removed-line (pre-patch) version, and 59 of 61
-    multi-banner regions did the same (findings doc, "Multi-banner report") -- a
+    multi-banner regions did the same (autotools findings, "Multi-banner report") -- a
     regeneration that bumps a generator's version was systematically dated to the OLD
     version under first-hit-in-line-order.  Preferring added lines, then context, then
     removed fixes that without losing anything: a file whose only banner sits on a
@@ -677,7 +687,7 @@ def candidate_banner_hits(text: str) -> list[tuple[str, str]]:
 
     Measurement only: ``scan`` never consults ``CANDIDATE_BANNERS``, so nothing here can
     mark a file.  One entry per file (the first matching line, trimmed), which is what
-    the phase-1 report needs -- how often the generic do-not-edit family fires, and on
+    the measurement report needs -- how often the generic do-not-edit family fires, and on
     what basenames.
     """
     sections = content._parse_sections(text)
@@ -823,7 +833,7 @@ def project_residue_first(body: str, files: list[dict]) -> ProjectedDiff:
 
     The result is: a one-line preamble naming what is missing; every UNMARKED file's
     segment verbatim and in diff order (decoration lines included -- byte-identical text,
-    so an unmarked file reads exactly as it did before this phase); then one note per
+    so an unmarked file reads exactly as it would unprojected); then one note per
     marked file, in diff order.  The existing character cap applies AFTER this, so the cap
     now spends its budget on residue rather than on generator output.
 
@@ -914,8 +924,8 @@ def evidence_for(scan: GeneratedScan) -> str:
     """Canonical JSON evidence for a ``generated-content`` observation.
 
     The per-file breakdown in DIFF order (``path``, ``family``, ``signals`` as a list,
-    ``generator``, ``version``, ``added``, ``removed``) plus the arithmetic later phases
-    route on: ``generated_changed``, ``residue_changed``, ``total_changed``.
+    ``generator``, ``version``, ``added``, ``removed``) plus the arithmetic the routing
+    helpers act on: ``generated_changed``, ``residue_changed``, ``total_changed``.
 
     ``generator`` and ``version`` are always present, explicitly ``null`` where the file
     carries no version evidence, rather than omitted: a uniform schema means a consumer

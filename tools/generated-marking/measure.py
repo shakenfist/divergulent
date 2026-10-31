@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
 """Prototype: measure ``divergulent.classify.generated.scan`` over a whole patch corpus.
 
-Part of docs/plans/PLAN-generated-marking-phase-01-scanner.md (phase 1, step S2). This
-is an EVALUATION prototype, not shipped classifier code: it walks a fingerprint-indexed
+This is an EVALUATION prototype, not shipped classifier code: it walks a fingerprint-indexed
 corpus, runs the scanner (and its measurement-only candidate-banner sweep) over one
-representative body per fingerprint, and reports the numbers phase 1's findings document
-adjudicates -- per-name match/banner rates, the name-set gap list, the patch coverage
-distribution, a low-frequency-name adjudication list, the ``acinclude.m4`` check, a
-multi-banner report, and the candidate do-not-edit family. No ledger, no routing, no
-network: this is measurement only, feeding
-docs/plans/PLAN-generated-marking-phase-01-findings.md.
+representative body per fingerprint, and reports the numbers the signal set was adjudicated
+on -- per-name match/banner rates, the name-set gap list, the patch coverage distribution, a
+low-frequency-name adjudication list, the ``acinclude.m4`` check, a multi-banner report, and
+the candidate do-not-edit family. No ledger, no routing, no network: this is measurement
+only. Its results were written up as the autotools and translations findings, linked from
+tools/generated-marking/README.md.
 
-Phase 5 (docs/plans/PLAN-generated-marking-phase-05-translations.md) extends the walk
-with the corroborated translation-catalogue candidate (``generated.
+The walk also covers the corroborated translation-catalogue candidate (``generated.
 candidate_translation_hits``): per-extension corroboration rates for ``.ts``/``.po``/
 ``.pot``, the uncorroborated ``.ts`` population (TypeScript -- the collision that makes
 extension-only marking unsafe), how ``content._classify_file`` types the corroborated
@@ -275,7 +273,7 @@ class _Accumulator:
             })
 
     def _add_translations(self, fingerprint: str, text: str, scan, sections) -> None:
-        """Accumulate the phase-5 translation-candidate sections for one body."""
+        """Accumulate the translation-candidate sections for one body."""
         for section in sections:
             basename = generated.strip_backup_suffixes(content._basename(section.path))
             extension = content._extension(basename)
@@ -308,7 +306,7 @@ class _Accumulator:
         # catalogue.  Since promotion, ``scan`` itself marks the corroborated files
         # (``family='translations'``), so the residue is scan's own; the "newly
         # unlocked" figure compares it against the WITHOUT-translations counterfactual
-        # (what phase 3's autotools-and-banner marks alone would leave).
+        # (what the autotools-and-banner marks alone would leave).
         translation_marked = {
             entry.path for entry in scan.files
             if entry.family == generated.TRANSLATION_FAMILY}
