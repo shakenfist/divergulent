@@ -340,7 +340,13 @@ hit on an added line wins, then context, then a removed line —
 evidence about the file *as the patch leaves it*, not the version it
 is replacing. Line-order-only selection had reported the pre-patch,
 about-to-be-replaced version in 59 of 61 multi-banner regions
-measured.
+measured. The version is kept because it dates the regeneration
+(autoconf 2.59 puts gatos at about 2003-2006): it is the input a
+rebuild-and-subtract check
+([#141](https://github.com/shakenfist/divergulent/issues/141)) needs
+to pick a toolchain, and the strongest evidence a maintenance-health
+signal ([#142](https://github.com/shakenfist/divergulent/issues/142))
+would have of how stale a package's build machinery is.
 
 **What it records**: at most one `generated-content` observation per
 fingerprint (`observed_by='generated-scan'`, `rule_version=2`) —
@@ -427,11 +433,16 @@ is that a file *says* it is generator output, not that regeneration
 was verified — upgrading "claims" to "verified" is deliberately out
 of scope, and doing it means regenerating the output, which on
 attacker-influenced input is code execution and so needs an isolated,
-offline, era-matched toolchain (#141). Lock files (`Cargo.lock`,
-`poetry.lock`) carry the `@generated` marker and mark under it, but are
-deliberately not in the autotools name set: they are dependency pins,
-and a malicious pin is exactly what a reviewer must see. The known exception is the libtool source package itself:
-its own `libtool.m4` / `ltmain.sh` / `libtool.texi` are hand-written
+offline, era-matched toolchain
+([#141](https://github.com/shakenfist/divergulent/issues/141)). Lock
+files (`Cargo.lock`, `poetry.lock`) that carry the `@generated`
+marker mark under it, and are badged and collapsed like any other
+marked file; they are deliberately not in the autotools name set, so
+a lock file without the marker is never marked by name. They are
+dependency pins, and a malicious pin is exactly what a reviewer must
+see. The known exception to the name claim is the libtool source
+package itself: its own `libtool.m4` / `ltmain.sh` / `libtool.texi`
+are hand-written
 upstream source, not copied generator output, so the name claim is
 wrong there by construction (n=3, no rule proposed — a reader of the
 mark needs to know this). A broader generic `DO NOT EDIT` /
