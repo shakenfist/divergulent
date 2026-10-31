@@ -40,14 +40,14 @@ installed-package inventory never leaves the machine.
   `None`). `get_bytes` fetches a raw binary body (the cache bundle)
   throttled and size-capped but *not* through the value cache, since the
   caller stores it as a file. The throttle is a thread-safe per-host
-  "ticket" reservation,
-  so it stays correct when several worker threads fetch concurrently:
-  same-host requests stay spaced, different hosts overlap. Concurrency is
-  a thread pool (`cli._concurrent_map`) rather than asyncio, which keeps
-  the client stdlib-only; Repology is never queried faster than its
-  mandated 1 request/second in aggregate, however many workers run. A
-  `refresh` flag skips the cache read but still writes, so the cache builder can
-  force a clean recompute that repopulates the cache. Stdlib `urllib`;
+  "ticket" reservation, so it stays correct when several worker threads
+  fetch concurrently: same-host requests stay spaced, different hosts
+  overlap. Concurrency is a thread pool (`cli._concurrent_map`) rather
+  than asyncio, which keeps the client stdlib-only; Repology is never
+  queried faster than its mandated 1 request/second in aggregate, however
+  many workers run. A `refresh` flag skips the cache read but still
+  writes, so the cache builder can force a clean recompute that
+  repopulates the cache. Stdlib `urllib`;
   the urlopen/clock/sleep are injectable for offline tests.
 - `divergulent/dep3.py` — a pure parser/classifier for DEP-3 patch
   headers. Classifies a patch as FORWARDED, DEBIAN_ONLY, or UNKNOWN;

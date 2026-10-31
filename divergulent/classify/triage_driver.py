@@ -405,7 +405,7 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
     function is pure given a fake; ``now`` is caller-supplied so the path is
     deterministic.
 
-    Two phase-3 routing consumers of the ``generated-content`` mark live here, and
+    Two routing consumers of the ``generated-content`` mark live here, and
     both are INPUT/ROUTING decisions -- the mark is never a verdict.  An
     ``oversized`` fingerprint whose residue is small is unlocked (the shared
     ``generated.residue_unlocked_fingerprints`` composition) instead of routed
@@ -424,7 +424,7 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
     selected = pending_work[:limit]
     injection_fps = _fingerprints_with_injection_suspect(conn)
 
-    # The residue unlock (phase 3). An ``oversized`` fingerprint whose live
+    # The residue unlock. An ``oversized`` fingerprint whose live
     # generated-content mark reports a SMALL hand-written residue is triageable
     # after all: the projection below shows the model that residue instead of 19k
     # lines of ``configure``. Routing only -- reviewability keeps measuring the
@@ -485,7 +485,7 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
                 progress('[%d/%d]   -> oversized (not line-reviewable) -> needs_human' % (position, total))
             continue
 
-        # Residue-first projection (phase 3). A fingerprint carrying a live
+        # Residue-first projection. A fingerprint carrying a live
         # generated-content mark is shown its hand-written residue first, with one
         # loud note standing in for each generated file, instead of the generator
         # output itself. Input shaping and routing only -- the mark is never a
