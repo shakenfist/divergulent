@@ -79,8 +79,9 @@ def _repology():
 
     Resolves each installed source via the project-by API (small, fast, and
     cached per package for ~24h). This fetches only what is installed; a
-    whole-archive bulk sweep was tried (phase 2) and reverted as a cold-run
-    regression -- see docs/plans/PLAN-faster-full-run-phase-04-revert-bulk.md.
+    whole-archive bulk sweep was tried and reverted as a cold-run regression,
+    because its pages are latency-bound and it downloads the whole archive's
+    project data -- see "Staleness" in docs/usage.md.
     '''
     return RepologySource(_http_client())
 

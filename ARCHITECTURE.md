@@ -42,8 +42,11 @@ installed-package inventory never leaves the machine.
   caller stores it as a file. The throttle is a thread-safe per-host
   "ticket" reservation,
   so it stays correct when several worker threads fetch concurrently:
-  same-host requests stay spaced, different hosts overlap. A `refresh`
-  flag skips the cache read but still writes, so the cache builder can
+  same-host requests stay spaced, different hosts overlap. Concurrency is
+  a thread pool (`cli._concurrent_map`) rather than asyncio, which keeps
+  the client stdlib-only; Repology is never queried faster than its
+  mandated 1 request/second in aggregate, however many workers run. A
+  `refresh` flag skips the cache read but still writes, so the cache builder can
   force a clean recompute that repopulates the cache. Stdlib `urllib`;
   the urlopen/clock/sleep are injectable for offline tests.
 - `divergulent/dep3.py` — a pure parser/classifier for DEP-3 patch
@@ -60,9 +63,10 @@ installed-package inventory never leaves the machine.
   UNKNOWN (unresolved is UNKNOWN, never BEHIND). `RepologySource`
   resolves one package at a time via the `project-by` resolver,
   caching each result for ~24h; the whole-machine commands and `show`
-  both use it. (A whole-archive bulk sweep was tried and reverted as a
-  cold-run regression — see
-  `docs/plans/PLAN-faster-full-run-phase-04-revert-bulk.md`.) Also holds
+  both use it. A whole-archive sweep was tried in its place and reverted
+  as a cold-run regression; it belongs in the central cache builder
+  (`builder.build_staleness_map`) instead, for the measured reasons in
+  "Staleness" in `docs/usage.md`. Also holds
   `RepologyBulkSource`, which answers staleness from a prebuilt
   `{srcname: newest}` map (a published bundle) with no network, reusing
   the same version classification.

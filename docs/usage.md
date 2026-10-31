@@ -29,6 +29,18 @@ source package to an upstream project, and reports `unknown` (never
 cached locally (~24h), and Repology is queried politely (≤1
 request/second).
 
+Looking sources up one at a time is deliberate. A sweep of Repology's
+whole `debian_unstable` project set (`/api/v1/projects/`) was tried
+instead and reverted: measured in June 2026 on a cold CI sample run
+(34m23s, confirmed by direct probes), each bulk page is ~3.5 MB and
+takes ~7.8 s, so the ~170 pages took ~22 min and ~600 MB to answer the
+~570 sources one machine had installed, against ~9.5 min and ~3 MB for
+per-package lookups at the 1 request/second floor. Page latency, not the
+rate limit, bounds a sweep, and it only pays when its result is shared
+by many machines — which is why the published cache is built that way
+centrally, and why `divergulent cache pull` is the fast path for a cold
+run.
+
 ## Divergence
 
 Report how many patches each package carries (the divergence axis, via

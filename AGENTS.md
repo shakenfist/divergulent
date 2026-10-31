@@ -53,8 +53,8 @@ Whole-machine **staleness** uses the per-package `project-by` resolver
 (`RepologySource`), caching each result ~24h. A whole-archive bulk sweep
 (`/api/v1/projects/`) was tried and reverted: for one machine it
 downloaded ~600 MB to answer ~570 lookups and made a cold run *slower*
-(~22 min vs ~9.5 min) — see
-`docs/plans/PLAN-faster-full-run-phase-04-revert-bulk.md`. The real
+(~22 min vs ~9.5 min) — the measurements are under
+"Staleness" in `docs/usage.md`. The real
 cold-run win is the published precomputed cache
 (`docs/plans/PLAN-published-cache.md`), with concurrency covering the
 live fallback.
