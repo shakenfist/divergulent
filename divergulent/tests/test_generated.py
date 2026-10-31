@@ -1,7 +1,7 @@
 """Tests for divergulent.classify.generated -- the generated-output scanner.
 
 All offline (the scanner is pure: no I/O, no network).  Coverage follows the two
-independent signals and the arithmetic phase 3 will route on:
+independent signals and the arithmetic the routing acts on:
 
 * the NAME signal at each edge -- any path depth, exact basename never substring, case
   sensitivity, and backup suffixes in both directions (``Makefile.in.ori`` is marked,
@@ -23,7 +23,7 @@ alphabetical tie break and the empty-scan refusal), ``evidence_for``'s canonical
 uniformly-keyed JSON, and ``generated_marks`` reading live rows back out of a temporary
 ledger -- ignoring superseded rows, other kinds, and malformed evidence.
 
-The phase-3 routing helpers sit alongside them: ``project_residue_first``'s residue-first
+The routing helpers sit alongside them: ``project_residue_first``'s residue-first
 shape (verbatim segments in diff order ahead of every note, correct preamble arithmetic, no
 hunk content from a marked file) and its identity behaviour on a body with nothing to
 project, with a joint assertion tying its segmentation to ``content._parse_sections``' so
@@ -31,7 +31,7 @@ the two can never disagree; and ``residue_unlocked_fingerprints`` composing revi
 ``oversized`` set with the mark's residue, including the threshold edge and every way a
 fingerprint stays locked.
 
-The phase-4 DISPLAY helper follows them: ``construct_tally`` splitting one body's
+The DISPLAY helper follows them: ``construct_tally`` splitting one body's
 dangerous-construct hits into marked files versus the residue -- the marked hit, the residue
 hit with its ``(path, detail)``, the type gate honoured in both directions (a construct in a
 doc file, and one in build-typed ``configure``, count nowhere, exactly as neither flagged
@@ -135,7 +135,7 @@ class NameSignalTestCase(testtools.TestCase):
         self.assertIsNone(generated.name_family('MAKEFILE.IN'))
 
     def test_acinclude_is_deliberately_absent(self):
-        # A maintainer-written aclocal input, excluded pending the phase-1 measurement.
+        # A maintainer-written aclocal input: measured, the name would mostly be wrong.
         self.assertIsNone(generated.name_family('acinclude.m4'))
 
     def test_hand_written_build_inputs_are_not_marked(self):
@@ -225,7 +225,7 @@ class BannerSignalTestCase(testtools.TestCase):
 
     def test_automake_pre_1_5_banner_captures_version(self):
         # The automake <=1.4 form (measured: 57 regions / 7 fingerprints, versions
-        # 1.4-p5, 1.4, 1.4-p4, 1.4-p6, 1.5 -- findings doc, "Pattern tuning").
+        # 1.4-p5, 1.4, 1.4-p4, 1.4-p6, 1.5 -- autotools findings, "Pattern tuning").
         entry = self._banner('# Makefile.in generated automatically by automake 1.4-p6 from Makefile.am')
         self.assertEqual('automake', entry.generator)
         self.assertEqual('1.4-p6', entry.version)
@@ -264,7 +264,7 @@ class BannerSignalTestCase(testtools.TestCase):
 
     def test_bare_gnu_libtool_prose_is_not_a_banner(self):
         # Narrowed from the bare product name (``\bGNU Libtool\b``), which fired on
-        # prose: a fortune cookie and libtool.texi's own manual text (findings doc, gap
+        # prose: a fortune cookie and libtool.texi's own manual text (autotools findings, gap
         # list). The boilerplate line above keeps all 10 real hits; this kills both FPs.
         self._quiet('-- "GNU Libtool documentation"')
         self._quiet('This manual is for GNU Libtool (version @value{VERSION}).')
@@ -272,7 +272,7 @@ class BannerSignalTestCase(testtools.TestCase):
     def test_libtool_paste_header_fires_on_acinclude_m4(self):
         # The libtool-paste header: acinclude.m4 is maintainer-written, but pasted
         # libtool.m4 self-identifies -- marks it banner-only, on the strength of its
-        # content (findings doc, "acinclude.m4 -- the deliberate-absence question").
+        # content (autotools findings, "acinclude.m4 -- the deliberate-absence question").
         text = _file_diff('acinclude.m4', [
             ' ## libtool.m4 - Configure libtool for the target system. -*-Shell-script-*-',
             '+AC_SOMETHING'])
@@ -356,7 +356,7 @@ class CorroborationTestCase(testtools.TestCase):
 
     def test_bare_makefile_in_is_not_marked(self):
         # ~880 of 1,280 corpus Makefile.in matches are hand-written AC_OUTPUT templates
-        # in plain-autoconf projects (findings doc, "The Makefile.in problem"); with no
+        # in plain-autoconf projects (autotools findings, "The Makefile.in problem"); with no
         # banner corroborating the name, the file carries no signals at all.
         self.assertEqual({}, _marked(_edit('Makefile.in')))
         # ``name_family`` itself is unaffected -- corroboration is a scan()-level rule,
@@ -421,7 +421,7 @@ class TimestampVersionTestCase(testtools.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# A gatos-shaped patch: the arithmetic phase 3 routes on
+# A gatos-shaped patch: the arithmetic the routing acts on
 # ---------------------------------------------------------------------------
 
 GATOS_SHAPED = ''.join([
@@ -484,7 +484,7 @@ class GatosShapedPatchTestCase(testtools.TestCase):
         self.assertNotIn('src/foo.c', self.by_path)
 
     def test_residue_and_generated_sum_to_the_total(self):
-        # The identity phase 3's routing depends on.
+        # The identity the routing depends on.
         self.assertEqual(self.scan.total_changed,
                          self.scan.residue_changed + self.scan.generated_changed)
 
@@ -867,7 +867,7 @@ class CandidateBannerTestCase(testtools.TestCase):
         self.assertIn('DO NOT EDIT', snippet)
 
     def test_candidate_hit_does_not_mark(self):
-        # The whole point of "candidate": measured in phase 1, marking nothing.
+        # The whole point of "candidate": measured, marking nothing.
         self.assertEqual((), generated.scan(self.text).files)
 
     def test_other_candidate_patterns(self):
@@ -1126,7 +1126,7 @@ class ResidueUnlockedFingerprintsTestCase(testtools.TestCase):
         self._oversized(FP_BIG_RESIDUE, total=30000)
         self._mark(FP_BIG_RESIDUE, residue=5410, total=30000)
 
-        # Oversized and nothing claimed generation: stays locked, as before this phase.
+        # Oversized and nothing claimed generation: stays locked, as without a mark.
         self._oversized(FP_NO_MARK, total=9000)
 
         # Marked, but never locked in the first place -- the unlock has nothing to open.
@@ -1405,7 +1405,7 @@ class RecordRetractionTestCase(testtools.TestCase):
         self.assertEqual({}, generated.generated_marks(self.conn))
 
 
-# The phase-5 translation-catalogue candidate (measurement only -- never marks).
+# The translation-catalogue candidate (measurement only -- never marks).
 
 QT_TS_NEW_FILE = _file_diff('src/locale/app_de.ts', [
     '+<?xml version="1.0" encoding="utf-8"?>',

@@ -1,8 +1,8 @@
-"""Tests for tools/generated-marking/measure.py -- the phase-1 measurement tool.
+"""Tests for tools/generated-marking/measure.py -- the generated-marking measurement tool.
 
 All offline: a tiny fixture corpus (sqlite ``patch`` index + content-addressed bodies) is
 built in a tempdir per test, matching the real corpus layout described in
-docs/plans/PLAN-generated-marking-phase-01-scanner.md (phase 1, step S2). ``measure.py``
+tools/generated-marking/README.md. ``measure.py``
 is loaded via ``importlib`` (no subprocess) since it lives under ``tools/``, not the
 importable ``divergulent`` package.
 
@@ -287,7 +287,7 @@ class MeasureCliTestCase(testtools.TestCase):
         self.assertEqual(1, loaded['totals']['fingerprints_scanned'] + loaded['totals']['bodies_missing'])
 
 
-# --- phase-5 translation-candidate fixtures (their own corpus, so the phase-1
+# --- translation-candidate fixtures (their own corpus, so the autotools
 # fixture's exact-count assertions above stay untouched) -----------------------
 
 QT_TRANSLATION_TEXT = ''.join([
@@ -335,7 +335,7 @@ def _unlock_translation_text():
 
     total changed > REVIEWABILITY_OVERSIZED_LINES with a 2-line hand-written residue:
     the unlock arithmetic must count it as newly unlocked by the translation family
-    (nothing is generated-marked, so the phase-3 unlock alone would not reach it).
+    (nothing is generated-marked, so the autotools-and-banner unlock alone would not reach it).
     """
     lines = ['+<?xml version="1.0" encoding="utf-8"?>', '+<!DOCTYPE TS>', '+<TS version="2.1">']
     lines.extend(
@@ -420,7 +420,7 @@ class TranslationMeasureTestCase(testtools.TestCase):
             uncorroborated['examples'])
 
     def test_corroborated_files_are_typed_as_code_and_data_today(self):
-        # The collision this phase exists to measure: Qt catalogues type as CODE via
+        # The collision the translations measurement exists to size: Qt catalogues type as CODE via
         # content's ``.ts`` (TypeScript) extension; ``.po`` falls through to data.
         self.assertEqual({'code': 2, 'data': 1}, self.translations['corroborated_typed_as'])
 

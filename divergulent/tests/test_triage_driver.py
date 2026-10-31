@@ -18,7 +18,7 @@ Coverage:
   * a cluster of >= K identical verified verdicts surfaces a candidate rule, and
     nothing below the threshold does;
   * the CLI writes the findings note and prints the honest summary;
-  * the phase-3 residue routing: the generated-content mark unlocks an oversized
+  * the residue routing: the generated-content mark unlocks an oversized
     patch whose hand-written residue is small, the model reads a residue-first
     projection of every marked patch, an unmarked patch's prompt is byte-identical
     to what it always was, and the injection skip still outranks the unlock.
@@ -161,7 +161,7 @@ def _seed_ledger(conn, fingerprints):
     and a live dangerous-construct observation on the DANGER fingerprint.
 
     The dangerous-construct observation is written only when the corpus HAS that
-    patch, so the phase-3 projection fixture (a different, two-patch corpus) can
+    patch, so the residue-projection fixture (a different, two-patch corpus) can
     reuse the queue seeding without inheriting the dangerous flag.
     """
     ledger_mod.register_rules(conn, ledger_mod.default_registry())
@@ -745,7 +745,7 @@ class CrossBatchClusteringTestCase(DriverFixture, testtools.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Phase 3: the residue unlock + the residue-first projection.
+# Residue routing: the residue unlock + the residue-first projection.
 #
 # A separate, two-patch corpus (the five-patch one above is counted on by every
 # test there): one gatos-shaped generated-dominated patch -- a ``configure`` hunk
@@ -787,7 +787,7 @@ _PROJECTION_BODIES = {'generated.patch': GENERATED, 'plain.patch': PLAIN}
 def _build_projection_corpus(corpus_dir, bodies):
     """Lay down ``{patch_name: text}`` bodies + a one-row-per-patch phase-1 index.
 
-    The phase-3 sibling of :func:`_build_corpus`, which hard-codes the five-patch
+    The residue-projection sibling of :func:`_build_corpus`, which hard-codes the five-patch
     corpus (including a second provenance row so occurrence ordering can be
     asserted).  Returns ``(index_path, {patch_name: fingerprint})``.
     """
@@ -854,7 +854,7 @@ def _seed_oversized(conn, fingerprint_hex):
 
 
 class ProjectionFixture:
-    """Mixin: the two-patch phase-3 corpus, both fingerprints queued."""
+    """Mixin: the two-patch residue-projection corpus, both fingerprints queued."""
 
     def _setup(self):
         tmp = tempfile.TemporaryDirectory()

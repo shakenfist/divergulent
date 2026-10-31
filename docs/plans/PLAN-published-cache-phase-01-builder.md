@@ -111,7 +111,7 @@ Read, and reuse rather than reinvent:
   caches the patches-API result (`SERIES_NAMESPACE`, 30-day TTL).
 - `divergulent/sources/repology.py` — the per-package path that exists
   today. The bulk sweep (`build_staleness_map` / `RepologyBulkSource`)
-  was removed in `PLAN-faster-full-run` phase 4; recover it from git
+  was removed in [`PLAN-faster-full-run`](https://github.com/shakenfist/divergulent/blob/ddeaff68c701b0d2cb63459a1fb5809b8a318326/docs/plans/PLAN-faster-full-run.md) phase 4; recover it from git
   history (commit before `c6f91c7`) as the builder's staleness engine.
 - `divergulent/http.py` / `divergulent/cache.py` — the polite client
   (per-host throttle, concurrency-safe) and the persisted cache the

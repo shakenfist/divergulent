@@ -8,9 +8,9 @@ computations:
 * **Enumeration** — read the Debian release's deb-src ``Sources`` indices to
   learn every ``(source, version, format)`` in the archive, with no network.
 * **Bulk staleness** — page through Repology's whole-repo project set once to
-  build ``{srcname: newest upstream version}``. Doing this per-package per-user
-  was reverted as a cold-run regression (see
-  ``PLAN-faster-full-run-phase-04-revert-bulk.md``); centrally it is the right
+  build ``{srcname: newest upstream version}``. Doing this on each user's
+  machine was reverted as a cold-run regression (measurements under
+  "Staleness" in ``docs/usage.md``); centrally it is the right
   tool — one polite sweep feeds every user's bundle.
 
 The per-package client path in ``sources/repology.py`` is deliberately left

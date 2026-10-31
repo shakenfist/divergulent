@@ -29,6 +29,18 @@ source package to an upstream project, and reports `unknown` (never
 cached locally (~24h), and Repology is queried politely (≤1
 request/second).
 
+Looking sources up one at a time is deliberate. A sweep of Repology's
+whole `debian_unstable` project set (`/api/v1/projects/`) was tried
+instead and reverted: measured in June 2026 on a cold CI sample run
+(34m23s, confirmed by direct probes), each bulk page is ~3.5 MB and
+takes ~7.8 s, so the ~170 pages took ~22 min and ~600 MB to answer the
+~570 sources one machine had installed, against ~9.5 min and ~3 MB for
+per-package lookups at the 1 request/second floor. Page latency, not the
+rate limit, bounds a sweep, and it only pays when its result is shared
+by many machines — which is why the published cache is built that way
+centrally, and why `divergulent cache pull` is the fast path for a cold
+run.
+
 ## Divergence
 
 Report how many patches each package carries (the divergence axis, via
@@ -43,11 +55,16 @@ divergulent divergence --json     # machine-readable
 ```
 
 The whole-machine view reports a patch *count* per package, using one
-request per source so a full run stays fast and polite. sources.debian.org
-has no documented rate limit, so requests run concurrently — `--workers`
-(default 8) bounds how many are in flight at once and is the politeness
-control; `--workers 1` is fully serial. For the
-per-patch [DEP-3](https://dep-team.pages.debian.net/deps/dep3/)
+request per source so a full run stays fast and polite.
+sources.debian.org has no documented rate limit, so requests run
+concurrently — `--workers` (default 8) bounds how many are in flight at
+once and is the politeness control; `--workers 1` is fully serial. The
+count is deliberately not split into an estimated Debian-only share from
+patch filenames (`deb-*`, `debian-*`), although `dep3.classify` uses
+that heuristic once it has the patch: an estimate in the default view
+would disagree with the per-patch breakdown below, which reads each
+patch's DEP-3 metadata first, and the overview would then cry wolf. For
+the per-patch [DEP-3](https://dep-team.pages.debian.net/deps/dep3/)
 classification (forwarded-upstream vs Debian-only vs unknown), either
 drill into one package with `divergulent show <package>` (see below), or
 classify the whole machine with `--classify`:
@@ -60,7 +77,12 @@ divergulent score --classify        # ranked, weighting Debian-only patches
 `--classify` fetches each source package's packaging (the `.debian.tar.*`,
 not the upstream source) from your configured apt mirror — so it needs
 `deb-src` indices enabled (`apt-get update` after adding them). Without
-them it prints a notice and falls back to patch counts.
+them it prints a notice and falls back to patch counts. The mirror is
+used rather than sources.debian.org because the mirror network is built
+for bulk downloads and one `.debian.tar.*` carries every patch of a
+package, whereas classifying through sources.debian.org means one request
+per patch body against a single web service — thousands of requests on
+a real machine.
 
 ## Score
 

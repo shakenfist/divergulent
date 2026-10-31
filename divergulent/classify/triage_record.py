@@ -107,7 +107,7 @@ def _evidence(result: triage_mod.TriageResult, projection=None) -> str:
     reviewer reading the draft verdict can always reconstruct what the model was
     shown.  An unprojected fingerprint (no mark, or a mark whose paths are not in
     this body) gains no key at all: its evidence is byte-identical to what this
-    function wrote before phase 3.
+    function wrote before the mark existed.
     """
     payload = {
         'routing': result.routing,

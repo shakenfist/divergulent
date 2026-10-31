@@ -7,7 +7,7 @@ unparseable/out-of-scale responses to ``elevated`` (recall-safe, never buried),
 carries (model, prompt_version) + usage, and records a supersedable
 ``security-risk`` observation that re-scoring replaces (exactly one live).
 
-The phase-3 residue routing sits alongside: a marked fingerprint is scored on a
+The generated-content residue routing sits alongside: a marked fingerprint is scored on a
 residue-first PROJECTION of its diff (project, THEN cap, so the budget is spent on
 hand-written residue) whose facts land in the observation's payload; an unmarked one
 is byte-identical to before the mark existed; an ``oversized`` patch with a small
@@ -237,7 +237,7 @@ class RecordRiskObservationTestCase(testtools.TestCase):
         self.assertNotIn('omitted_changed', payload)
 
     def test_an_unmarked_payload_gains_no_keys(self):
-        # The phase-3 promise: an unmarked fingerprint's record is byte-identical.
+        # The residue-routing promise: an unmarked fingerprint's record is byte-identical.
         conn = self._ledger()
         risk.record_risk_observation(conn, 'fp1', self._score('low'), now=WHEN)
         evidence = next(o for o in ledger_mod.live_observations(conn)
@@ -625,7 +625,7 @@ class PrioritisationTestCase(testtools.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Phase 3: the gate reads the hand-written residue first
+# Residue routing: the gate reads the hand-written residue first
 # ---------------------------------------------------------------------------
 
 def _hunk(path, lines):
@@ -850,7 +850,7 @@ class ProjectedRunRiskGateTestCase(MarkedCorpusFixture, testtools.TestCase):
         # Its input is the diff body, untouched ...
         self.assertIn(risk.risk_user_message(triage_mod.diff_body(_patch())),
                       [user for _system, user, _model in recorder])
-        # ... and its payload carries no phase-3 key at all.
+        # ... and its payload carries no residue-routing key at all.
         payload = json.loads(self._live_risk(conn, fps['plain.patch'])['evidence'])
         self.assertEqual(['level', 'raw_response', 'reason'], sorted(payload))
 

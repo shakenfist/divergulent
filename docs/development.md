@@ -87,7 +87,9 @@ suppress a finding for a credential that still authorises something.
 `.github/workflows/sample-output.yml` runs a full `divergulent score`
 on a Debian 13 runner and uploads the rendered report as a build
 artifact, so reviewers can see how the output looks on a real machine
-(and as a live end-to-end check). A scheduled workflow
+(and as a live end-to-end check). It deliberately runs without `--limit`:
+a full run that cannot be done politely is a defect in the tool, and
+limiting the job would hide it rather than fix it. A scheduled workflow
 (`.github/workflows/build-cache.yml`) builds the whole-archive bundle on
 a Debian 13 runner (`tools/build-cache.sh`), signs it
 (`tools/sign-bundle.sh`), and publishes it (`tools/publish-cache.sh`) to

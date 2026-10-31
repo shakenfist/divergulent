@@ -266,7 +266,7 @@ def record_risk_observation(conn, fingerprint: str, score: RiskScore, *, now: st
     projection was a no-op (``projected: false``) -- its presence is what tells the
     re-risk selection this score has already been through the projecting gate (see
     :func:`rerisk_candidates`).  An unmarked fingerprint's payload gains no key at
-    all: it is byte-identical to what this function wrote before phase 3.
+    all: it is byte-identical to what this function wrote before the mark existed.
     """
     observed_by = RISK_OBSERVED_BY_PREFIX + score.model
     ledger_mod.supersede_observations_for_fingerprint(

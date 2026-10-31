@@ -9,7 +9,7 @@ per-host throttle, size cap, on-disk cache), `divergulent/cache.py`
 (the keyed TTL cache), `divergulent/sources/repology.py`
 (per-package staleness via `project-by`; note the
 `RepologyBulkSource`/`build_staleness_map` that
-`PLAN-faster-full-run` phase 4 removed and git history retains),
+[`PLAN-faster-full-run`](https://github.com/shakenfist/divergulent/blob/ddeaff68c701b0d2cb63459a1fb5809b8a318326/docs/plans/PLAN-faster-full-run.md) phase 4 removed and git history retains),
 `divergulent/sources/debian_patches.py` (divergence `summary()` per
 `(source, version)`), and `divergulent/cli.py` (how the
 whole-machine commands build sources and gather).
@@ -40,7 +40,7 @@ Execution table. One commit per logical change, ≥1 per phase.
 
 ## Situation
 
-`PLAN-faster-full-run` took a cold full `score` from ~34 min to
+[`PLAN-faster-full-run`](https://github.com/shakenfist/divergulent/blob/ddeaff68c701b0d2cb63459a1fb5809b8a318326/docs/plans/PLAN-faster-full-run.md) took a cold full `score` from ~34 min to
 ~7 min by reverting the per-user whole-archive Repology sweep
 (phases 4) and adding bounded concurrency on sources.debian.org
 (phase 5). What remains is the **Repology ≤1 req/s floor**: ~570
@@ -128,7 +128,7 @@ Compact (computed values, not raw API responses): ~1–2 MB gzipped.
 **Client consumption (prefer-bundle, fall back live):**
 
 - Staleness from the bundle reuses the **`RepologyBulkSource`**
-  abstraction `PLAN-faster-full-run` phase 4 removed from the
+  abstraction [`PLAN-faster-full-run`](https://github.com/shakenfist/divergulent/blob/ddeaff68c701b0d2cb63459a1fb5809b8a318326/docs/plans/PLAN-faster-full-run.md) phase 4 removed from the
   per-user path — resurrected here as the *consumer* of published
   data (the removal was about not *building* it per-user; consuming
   a published map is its right use).

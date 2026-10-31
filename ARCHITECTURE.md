@@ -40,11 +40,14 @@ installed-package inventory never leaves the machine.
   `None`). `get_bytes` fetches a raw binary body (the cache bundle)
   throttled and size-capped but *not* through the value cache, since the
   caller stores it as a file. The throttle is a thread-safe per-host
-  "ticket" reservation,
-  so it stays correct when several worker threads fetch concurrently:
-  same-host requests stay spaced, different hosts overlap. A `refresh`
-  flag skips the cache read but still writes, so the cache builder can
-  force a clean recompute that repopulates the cache. Stdlib `urllib`;
+  "ticket" reservation, so it stays correct when several worker threads
+  fetch concurrently: same-host requests stay spaced, different hosts
+  overlap. Concurrency is a thread pool (`cli._concurrent_map`) rather
+  than asyncio, which keeps the client stdlib-only; Repology is never
+  queried faster than its mandated 1 request/second in aggregate, however
+  many workers run. A `refresh` flag skips the cache read but still
+  writes, so the cache builder can force a clean recompute that
+  repopulates the cache. Stdlib `urllib`;
   the urlopen/clock/sleep are injectable for offline tests.
 - `divergulent/dep3.py` — a pure parser/classifier for DEP-3 patch
   headers. Classifies a patch as FORWARDED, DEBIAN_ONLY, or UNKNOWN;
@@ -58,14 +61,14 @@ installed-package inventory never leaves the machine.
   axis). Picks the newest stable upstream version and compares it
   against the installed *upstream* version; yields CURRENT / BEHIND /
   UNKNOWN (unresolved is UNKNOWN, never BEHIND). `RepologySource`
-  resolves one package at a time via the `project-by` resolver,
-  caching each result for ~24h; the whole-machine commands and `show`
-  both use it. (A whole-archive bulk sweep was tried and reverted as a
-  cold-run regression — see
-  `docs/plans/PLAN-faster-full-run-phase-04-revert-bulk.md`.) Also holds
-  `RepologyBulkSource`, which answers staleness from a prebuilt
-  `{srcname: newest}` map (a published bundle) with no network, reusing
-  the same version classification.
+  resolves one package at a time via the `project-by` resolver, caching
+  each result for ~24h; the whole-machine commands and `show` both use
+  it. A whole-archive sweep was tried in its place and reverted as a
+  cold-run regression; it belongs in the central cache builder
+  (`builder.build_staleness_map`) instead, for the measured reasons in
+  "Staleness" in `docs/usage.md`. Also holds `RepologyBulkSource`, which
+  answers staleness from a prebuilt `{srcname: newest}` map (a published
+  bundle) with no network, reusing the same version classification.
 - `divergulent/sources/debian_patches.py` — the sources.debian.org
   adapter (divergence axis). Reads a source package's quilt series from
   the patches API, fetches each patch under its pool `raw_url`, and
@@ -183,8 +186,8 @@ installed-package inventory never leaves the machine.
     hand-written otherwise) and generator banners with versions
     captured as the-file-as-the-patch-leaves-it evidence — plus the
     residue arithmetic (changed lines outside marked files) that the
-    routing helpers below consume. See
-    [its plan](docs/plans/PLAN-generated-marking.md). The
+    routing helpers below consume. See "Generated-content mark" in
+    [the deterministic rules](docs/deterministic-rules.md). The
     observation helpers (`detail_for`, `evidence_for`,
     `generated_marks`) and the record-pass integration, so a marked
     scan now rides alongside the category as ONE supersedable
