@@ -46,7 +46,13 @@ The whole-machine view reports a patch *count* per package, using one
 request per source so a full run stays fast and polite. sources.debian.org
 has no documented rate limit, so requests run concurrently — `--workers`
 (default 8) bounds how many are in flight at once and is the politeness
-control; `--workers 1` is fully serial. For the
+control; `--workers 1` is fully serial. The count is deliberately not
+split into an estimated Debian-only share from patch filenames
+(`deb-*`, `debian-*`), although `dep3.classify` uses that heuristic once
+it has the patch: an estimate in the default view would disagree with
+the per-patch breakdown below, which reads each patch's DEP-3 metadata
+first, and the overview would then cry wolf.
+For the
 per-patch [DEP-3](https://dep-team.pages.debian.net/deps/dep3/)
 classification (forwarded-upstream vs Debian-only vs unknown), either
 drill into one package with `divergulent show <package>` (see below), or
@@ -60,7 +66,12 @@ divergulent score --classify        # ranked, weighting Debian-only patches
 `--classify` fetches each source package's packaging (the `.debian.tar.*`,
 not the upstream source) from your configured apt mirror — so it needs
 `deb-src` indices enabled (`apt-get update` after adding them). Without
-them it prints a notice and falls back to patch counts.
+them it prints a notice and falls back to patch counts. The mirror is
+used rather than sources.debian.org because the mirror network is built
+for bulk downloads and one `.debian.tar.*` carries every patch of a
+package, whereas classifying through sources.debian.org means one request
+per patch body against a single web service — thousands of requests on
+a real machine.
 
 ## Score
 

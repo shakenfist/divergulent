@@ -279,7 +279,7 @@ implemented because:
   deterministic, verifiable signals so it never muddies the
   no-cry-wolf core.
 - **CI sample-output artifact** — *done*, via
-  [PLAN-full-machine-run.md](PLAN-full-machine-run.md): a
+  [PLAN-full-machine-run.md](https://github.com/shakenfist/divergulent/blob/ddeaff68c701b0d2cb63459a1fb5809b8a318326/docs/plans/PLAN-full-machine-run.md): a
   self-hosted Debian 13 runner runs a full Tier-1 `score`
   (made polite by the count-based overview rather than scoping
   with `--limit`) and uploads the rendered report as an
