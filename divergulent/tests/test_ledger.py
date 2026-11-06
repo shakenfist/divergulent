@@ -10,7 +10,7 @@ from divergulent.classify.rules import RULES_VERSION, _CATEGORY_RULES
 
 
 # A fixed caller-supplied timestamp.  The module never reads a clock; the
-# recorder (step 3b) supplies these, so the tests pass them explicitly.
+# recorder in record.py supplies these, so the tests pass them explicitly.
 WHEN = '2026-06-14T00:00:00Z'
 LATER = '2026-06-15T00:00:00Z'
 
@@ -61,7 +61,7 @@ class SchemaTestCase(LedgerFixture, testtools.TestCase):
 
     def test_decision_reserves_external_columns(self):
         # The pure vs external distinction is modelled now: the columns exist
-        # and are nullable (unused until phase 6).
+        # and are nullable (unused by the pure deterministic rules).
         conn, _path = self._ledger()
         cols = {row[1] for row in conn.execute('PRAGMA table_info(decision)')}
         self.assertIn('input_snapshot', cols)
@@ -75,7 +75,8 @@ class SchemaTestCase(LedgerFixture, testtools.TestCase):
 
     def test_decision_has_verified_and_signature_columns(self):
         # Schema v2: an LLM decision carries an explicit verified flag; signature
-        # / signed_by are reserved for signed human ManualDecisions (step 4e).
+        # / signed_by are reserved for the signed human ManualDecisions review.py
+        # writes.
         conn, _path = self._ledger()
         cols = {row[1] for row in conn.execute('PRAGMA table_info(decision)')}
         self.assertIn('verified', cols)
@@ -176,7 +177,7 @@ class RegistryTestCase(LedgerFixture, testtools.TestCase):
     def test_registry_covers_exactly_the_phase2_deciders(self):
         # The drift guard: the registry must enumerate EXACTLY the
         # _CATEGORY_RULES ids plus the dangerous-construct scan and the claim
-        # classifier.  Adding a phase-2 content rule without registering it here
+        # classifier.  Adding a content rule without registering it here
         # FAILS this test.
         registry = ledger.default_registry()
         ids = {r.rule_id for r in registry}

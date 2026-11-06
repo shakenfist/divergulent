@@ -1,6 +1,6 @@
 """The append-only decision ledger — schema, rule registry, and primitives.
 
-This module is the *provenance backbone* of classification (phase 3, step 3a).
+This module is the *provenance backbone* of classification.
 It defines the curation-side sqlite data model in which every classification
 verdict lives, and the small set of primitives that maintain its one
 load-bearing invariant: **the ledger is append-only**.
@@ -11,7 +11,7 @@ Two ideas govern the design:
    ``decision`` row is written exactly once and is thereafter *immutable*.  It
    is never edited and never deleted — it can only be *superseded* (a
    ``superseded_at`` timestamp set on it).  The current verdict for a
-   fingerprint is computed (in step 3c) from the live, non-superseded decisions
+   fingerprint is computed by ``verdict.py`` from the live, non-superseded decisions
    at ``verdict.decision_rank`` precedence (``human`` > verified-``llm`` >
    ``heuristic`` > unverified-``llm``); it is never stored.  Because the
    audit trail is complete, retiring or bumping a rule is a surgical redo:
@@ -24,18 +24,20 @@ Two ideas govern the design:
    queue without ever becoming a category.  This keeps "never pronounce malice"
    structural — there is no code path here that turns a flag into a verdict.
 
-This step is the **data model only**: the schema, the registry that mirrors the
-phase-2 deciders in ``rules.py``, and the append-only/supersede primitives.  It
-runs no rules and derives no verdicts — that is steps 3b and 3c.
+This module is the **data model only**: the schema, the registry that mirrors
+the deterministic deciders in ``rules.py``, and the append-only/supersede
+primitives.  It runs no rules and derives no verdicts — ``record.py`` runs them
+and ``verdict.py`` derives the view.
 
 Timestamps are **passed in by the caller**, never generated here.  The recorder
-(step 3b) supplies a ``decided_at`` / ``observed_at`` / ``superseded_at``
+in ``record.py`` supplies a ``decided_at`` / ``observed_at`` / ``superseded_at``
 string; this module never reads a wall clock, keeping its paths deterministic
 and re-runnable.
 
 Pure vs external is modelled now: ``input_snapshot`` / ``input_fresh_until`` are
-reserved for ``purity='external'`` rules (phase 6) and are nullable and unused
-by every phase-2 (``purity='pure'``) rule.
+reserved for ``purity='external'`` rules -- the ones that consult Debian's
+Security Tracker and BTS -- and are nullable and unused by every
+``purity='pure'`` rule, which is a function of the diff alone.
 
 Curation-side only: no client command imports ``classify/``.
 """
@@ -59,10 +61,10 @@ from divergulent.classify.rules import RULES_VERSION, _CATEGORY_RULES
 LEDGER_SCHEMA_VERSION = 2
 """The on-disk schema version, recorded in the ``meta`` table.
 
-Version 2 (phase 4, step 4c) adds three columns to ``decision`` -- ``verified``
+Version 2 adds three columns to ``decision`` -- ``verified``
 (an LLM decision counts only once an adversarial pass or a human confirms it),
-``signature`` / ``signed_by`` (reserved for signed human ManualDecisions in
-step 4e) -- and a ``review_queue`` table backing the human-review worklist.
+``signature`` / ``signed_by`` (reserved for the signed human ManualDecisions
+``review.py`` writes) -- and a ``review_queue`` table backing the human-review worklist.
 Every bump is a tracked migration, never a silent reinterpretation."""
 
 CATEGORY_ENUM_VERSION = 2
@@ -77,10 +79,11 @@ Every bump is a tracked migration, applied when the ledger is next rebuilt."""
 # ---------------------------------------------------------------------------
 # The decision kinds and rule purities.
 #
-# ``kind`` records WHO decided.  Phase-2 decisions are all ``heuristic``; the
-# ``llm`` and ``human`` seats are reserved so phases 4+ slot in without a schema
-# change.  The PRECEDENCE that ranks kinds lives in ``verdict.decision_rank``,
-# not here: it folds the ``verified`` flag into the ranking (``human`` >
+# ``kind`` records WHO decided.  Deterministic-rule decisions are all
+# ``heuristic``; the ``llm`` and ``human`` seats are reserved so the triage and
+# human-review tiers slot in without a schema change.  The PRECEDENCE that ranks
+# kinds lives in ``verdict.decision_rank``, not here: it folds the ``verified``
+# flag into the ranking (``human`` >
 # verified-``llm`` > ``heuristic`` > unverified-``llm``) so an unreviewed LLM
 # draft can never outrank a deterministic heuristic.
 # ---------------------------------------------------------------------------
@@ -90,16 +93,16 @@ KINDS: frozenset[str] = frozenset({'heuristic', 'llm', 'human'})
 
 PURITIES: frozenset[str] = frozenset({'pure', 'external'})
 """Valid ``purity`` values.  ``pure`` is a function of the diff alone (no clock,
-no network); ``external`` consults the world and so records an input snapshot +
-freshness (phase 6)."""
+no network); ``external`` consults the world -- Debian's Security Tracker and BTS -- and so
+records an input snapshot + freshness."""
 
 # ---------------------------------------------------------------------------
 # The rule registry.
 #
 # A ``RegisteredRule`` is one row of the ``rule`` table: a versioned, described
-# decider.  ``default_registry()`` enumerates every phase-2 decider by READING
-# ``rules.py`` (it iterates ``_CATEGORY_RULES`` rather than re-listing the ids),
-# so adding a phase-2 rule without registering it here is caught by the
+# decider.  ``default_registry()`` enumerates every deterministic decider by
+# READING ``rules.py`` (it iterates ``_CATEGORY_RULES`` rather than re-listing
+# the ids), so adding a rule without registering it here is caught by the
 # cross-check test rather than drifting silently.
 # ---------------------------------------------------------------------------
 
@@ -139,12 +142,12 @@ _CATEGORY_RULE_DESCRIPTIONS: dict[str, str] = {
     'doc-only': 'all touched files are documentation -> documentation',
     'build-only': 'all touched files are build-system / packaging -> packaging',
     'test-only': 'all touched files are tests (non-shipping) -> test',
-    'substantive': 'not settled by deterministic content rules -> unknown (phase-4 residue)',
+    'substantive': 'not settled by deterministic content rules -> unknown (LLM-triage residue)',
 }
 
 
 def default_registry() -> list[RegisteredRule]:
-    """Every phase-2 decider as a list of :class:`RegisteredRule` rows.
+    """Every deterministic decider as a list of :class:`RegisteredRule` rows.
 
     Built by reading ``rules.py`` so the registry cannot drift from the deciders
     it describes:
@@ -158,7 +161,7 @@ def default_registry() -> list[RegisteredRule]:
     * the claim-category classifier (``rule_id='claim-category'``, version
       ``CLAIM_RULE_VERSION``).
 
-    All phase-2 rules are ``kind='heuristic'``, ``purity='pure'``.  Raises
+    All deterministic rules are ``kind='heuristic'``, ``purity='pure'``.  Raises
     ``KeyError`` if ``_CATEGORY_RULES`` grows a rule with no description here —
     the drift guard.
     """
@@ -291,13 +294,13 @@ def create_schema(conn: sqlite3.Connection) -> None:
     # The append-only decision ledger.  A row is written once and only ever
     # superseded (superseded_at set); never edited, never deleted.
     # input_snapshot / input_fresh_until are reserved for purity='external'
-    # rules (phase 6) — nullable and unused now.
+    # rules (the Security Tracker and BTS tiers) — nullable and unused now.
     #
     # verified (schema v2): an LLM decision counts only once an adversarial pass
     # (or a human) confirms it; a heuristic decision is always unverified (0) and
     # the precedence treats an unverified LLM as below a heuristic.  signature /
-    # signed_by (schema v2) are reserved for signed human ManualDecisions
-    # (step 4e) — nullable and unused now.
+    # signed_by (schema v2) are reserved for the signed human ManualDecisions
+    # ``review.py`` writes — nullable and unused now.
     conn.execute(
         'CREATE TABLE decision ('
         'id INTEGER PRIMARY KEY AUTOINCREMENT, '
@@ -320,10 +323,10 @@ def create_schema(conn: sqlite3.Connection) -> None:
         'CREATE INDEX idx_decision_decided_by_version ON decision (decided_by, rule_version)')
 
     # The human-review queue (schema v2): a ledger-backed worklist of fingerprints
-    # the LLM tier routed to a human (step 4b).  An item is "pending" while
+    # the LLM tier could not self-certify.  An item is "pending" while
     # reviewed_at IS NULL; the index on reviewed_at makes that filter fast.  The
     # queue is a worklist, not a verdict store — a human's verdict is a signed
-    # kind='human' decision (step 4e), and recording it is what clears the item.
+    # kind='human' decision, and recording it is what clears the item.
     conn.execute(
         'CREATE TABLE review_queue ('
         'id INTEGER PRIMARY KEY AUTOINCREMENT, '
@@ -450,13 +453,13 @@ def append_decision(conn: sqlite3.Connection, *, fingerprint: str, category: str
     INSERT only — this never edits or replaces an existing row.  ``decided_at``
     is supplied by the caller (this module never reads a clock).
     ``input_snapshot`` / ``input_fresh_until`` are reserved for external rules
-    (phase 6) and default to ``None`` for the pure phase-2 rules.
+    and default to ``None`` for the pure deterministic rules.
 
     ``verified`` (schema v2) defaults to ``False`` so every existing caller is
     preserved: a heuristic decision is unverified, and only an LLM decision the
     adversarial pass confirmed (or a human) is recorded ``verified=True``.
     ``signature`` / ``signed_by`` (schema v2) default to ``None`` and are
-    reserved for signed human ManualDecisions (step 4e).
+    reserved for signed human ManualDecisions.
 
     ``commit`` defaults to True (each append is durable on its own).  A bulk
     caller (the recorder appending ~60k rows) passes ``commit=False`` and
@@ -587,8 +590,8 @@ def supersede_observations_for_fingerprint(conn: sqlite3.Connection, *, fingerpr
 
 
 # ---------------------------------------------------------------------------
-# Read helpers.  Pure SELECTs; the derived current-verdict view is step 3c and
-# is deliberately NOT built here.
+# Read helpers.  Pure SELECTs; the derived current-verdict view is
+# ``verdict.py``'s and is deliberately NOT built here.
 # ---------------------------------------------------------------------------
 
 
@@ -612,7 +615,7 @@ def live_decision_exists(conn: sqlite3.Connection, *, fingerprint: str, decided_
     """Whether a LIVE decision already exists for ``(fingerprint, decided_by,
     rule_version)``.
 
-    The idempotency check for the recorder (step 3b): a pure decision is
+    The idempotency check for the recorder: a pure decision is
     reproducible from this triple, so one that already exists live must not be
     appended again.  SELECT-only; never mutates.
     """
@@ -629,7 +632,7 @@ def live_decision_for_rule(conn: sqlite3.Connection, *, fingerprint: str, decide
     """The LIVE decision for ``(fingerprint, decided_by, rule_version)``, or ``None``.
 
     Unlike :func:`live_decision_exists` this returns the whole row, so an external
-    rule (phase 6) can read the stored ``input_snapshot`` / ``input_fresh_until``
+    rule can read the stored ``input_snapshot`` / ``input_fresh_until``
     and decide whether its prior verdict is stale or has changed.  The newest such
     live row is returned (there is normally at most one).
     """
@@ -699,8 +702,8 @@ def live_observation_exists(conn: sqlite3.Connection, *, fingerprint: str, obser
     """Whether a LIVE observation already exists for ``(fingerprint, observed_by,
     rule_version, detail, evidence)``.
 
-    The idempotency check for recording dangerous-construct observations
-    (step 3b): an identical live observation must not be appended twice.
+    The idempotency check for recording dangerous-construct observations: an
+    identical live observation must not be appended twice.
     ``evidence`` is matched with ``IS`` so a ``NULL`` evidence compares equal to
     ``NULL``.  SELECT-only; never mutates.
     """
@@ -727,11 +730,11 @@ def meta(conn: sqlite3.Connection) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 # The human-review queue (schema v2).
 #
-# A small worklist: the LLM tier (step 4b) routes a fingerprint here when it
+# A small worklist: the LLM tier routes a fingerprint here when it
 # cannot self-certify (verifier refuted, low confidence, claim mismatch, or a
 # dangerous construct).  An item is "pending" while ``reviewed_at IS NULL``.
 # The queue is NOT a verdict store: a human's verdict is a signed kind='human'
-# decision (step 4e), and :func:`mark_reviewed` is what closes the item.
+# decision, and :func:`mark_reviewed` is what closes the item.
 # ---------------------------------------------------------------------------
 
 
@@ -883,7 +886,7 @@ def reopen_review_items(conn: sqlite3.Connection, *, fingerprint: str,
 
 
 # ---------------------------------------------------------------------------
-# Supersession / redo (step 3d).
+# Supersession / redo.
 #
 # These are the surgical-redo operations.  They are built ENTIRELY on the
 # append-only-safe primitives above: ``supersede_rule`` only ever sets a
@@ -891,7 +894,7 @@ def reopen_review_items(conn: sqlite3.Connection, *, fingerprint: str,
 # :func:`supersede_observations`) and flips a registry flag (``retire_rule``);
 # no decision or observation content is ever edited or deleted.  The re-queue is
 # NOT stored here: superseding a rule's live decisions simply leaves the affected
-# fingerprints with no live decision, and ``verdict.queue`` (step 3c) derives the
+# fingerprints with no live decision, and ``verdict.queue`` derives the
 # re-queue from that on the next recompute.  This keeps the queue a view, never a
 # stored list that could drift from the ledger.
 # ---------------------------------------------------------------------------
@@ -1058,7 +1061,7 @@ def _popcon_arg(corpus_dir: str) -> str | None:
 def _security_tracker_arg(corpus_dir: str) -> str | None:
     """The pinned Security Tracker snapshot path if one exists, else None.
 
-    The phase-6 CVE cross-reference is opt-in on a pulled snapshot, exactly like
+    The Security Tracker CVE cross-reference is opt-in on a pulled snapshot, exactly like
     reach: an operator who has not run ``security-tracker`` records exactly as
     before, with no external decisions or provenance observations.
     """
@@ -1070,7 +1073,7 @@ def _security_tracker_arg(corpus_dir: str) -> str | None:
 def _bts_arg(corpus_dir: str) -> str | None:
     """The pinned BTS bug-index snapshot path if one exists, else None.
 
-    The phase-6 bug cross-reference is opt-in on a pulled snapshot, like the CVE
+    The BTS bug cross-reference is opt-in on a pulled snapshot, like the CVE
     tier: an operator who has not run ``bts`` records exactly as before.
     """
     from divergulent.classify import bts as bts_mod
@@ -1241,7 +1244,7 @@ def _cmd_supersede(args: argparse.Namespace) -> int:
         print('superseded rule %s v%d: decisions=%d observations=%d retired=%s' % (
             result.rule_id, result.version, result.decisions_superseded,
             result.observations_superseded, result.retired))
-        print('queue size (phase-4 residue): %d' % queue_size)
+        print('queue size (LLM-triage residue): %d' % queue_size)
     finally:
         conn.close()
     return 0
@@ -1262,7 +1265,7 @@ def _build_parser() -> argparse.ArgumentParser:
         'build', help='create a ledger from a corpus and print the verdict report')
     build.add_argument('corpus_dir', help='directory of a corpus built by classify.corpus')
     build.add_argument('--index', default=None,
-                       help='path to the phase-1 sqlite fingerprint index (default: '
+                       help='path to the sqlite fingerprint index (default: '
                             '<corpus_dir>/fingerprints.sqlite)')
     build.add_argument('--out', default=None,
                        help='path for the ledger sqlite (default: <corpus_dir>/ledger.sqlite)')
@@ -1278,7 +1281,7 @@ def _build_parser() -> argparse.ArgumentParser:
     record_cmd.add_argument('ledger', help='path to a ledger sqlite built by `build`')
     record_cmd.add_argument('corpus_dir', help='directory of a corpus built by classify.corpus')
     record_cmd.add_argument('--index', default=None,
-                            help='path to the phase-1 sqlite fingerprint index (default: '
+                            help='path to the sqlite fingerprint index (default: '
                                  '<corpus_dir>/fingerprints.sqlite)')
     record_cmd.set_defaults(func=_cmd_record)
 

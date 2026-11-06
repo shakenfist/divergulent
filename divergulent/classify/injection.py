@@ -31,7 +31,7 @@ Posture (see ``docs/plans/PLAN-prompt-injection-screening.md``):
   (:data:`SCAN_TRUNCATED_FAMILY`) rather than reporting a clean result it did
   not earn.
 
-The family set is deliberately TUNED (phase-3 findings): the raw evaluation
+The family set is deliberately TUNED by the screening evaluation: the raw
 prototype's ``large-base64-blob`` family (embedded assets, not instruction-
 shaped) is dropped, and the invisible-Unicode family is split into the strong
 ``invisible-tag-block`` (near-zero legitimate use in a Debian patch) and a

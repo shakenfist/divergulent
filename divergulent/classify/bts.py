@@ -1,4 +1,4 @@
-"""A pinned Debian BTS bug index -- the bug-existence input for phase 6.
+"""A pinned Debian BTS bug index -- the bug-existence input for cross-reference.
 
 The cross-reference tier also verifies the *bug* references a patch declares
 (DEP-3 ``Bug-Debian: #NNNNNN``) against Debian's own records: does the bug exist,
@@ -174,7 +174,7 @@ def main(argv=None) -> int:
     """``python -m divergulent.classify.bts <corpus_dir> --url URL`` -- pull a snapshot."""
     parser = argparse.ArgumentParser(
         prog='divergulent.classify.bts',
-        description='Download and pin a Debian BTS bug index for the phase-6 cross-reference.')
+        description='Download and pin a Debian BTS bug index for the external cross-reference.')
     parser.add_argument('corpus_dir', help='corpus directory; the snapshot is written to bts.sqlite there')
     parser.add_argument('--url', default=BTS_URL, help='bug-index export URL (default: %(default)s)')
     parser.add_argument('--date', default=None, help='snapshot date to pin (default: today, UTC)')

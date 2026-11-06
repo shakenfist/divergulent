@@ -1,11 +1,11 @@
-"""Drive the extractors over the phase-1 index and measure the classification.
+"""Drive the extractors over the fingerprint index and measure the result.
 
-This is step 2d: the driver that ties together the claim (``claim.py``),
-content (``content.py``), and rule (``rules.py``) extractors over the phase-1
-fingerprint index (``measure.py``) and emits the measurement that matters now
-that dedup gave nothing -- *of the distinct patches, how many settle
-deterministically (packaging/documentation) and how big is the substantive
-residue handed to phase 4, and how many carry a review flag.*
+The driver that ties together the claim (``claim.py``), content
+(``content.py``), and rule (``rules.py``) extractors over the fingerprint
+index (``measure.py``) and emits the measurement that matters now that dedup
+gave nothing -- *of the distinct patches, how many settle deterministically
+(packaging/documentation) and how big is the substantive residue left for the
+LLM triage tier, and how many carry a review flag.*
 
 For each DISTINCT fingerprint in the index it:
 
@@ -210,7 +210,7 @@ class ClassifiedFingerprint:
     """The shared per-fingerprint pass result: counts + the raw extractor output.
 
     One record per distinct fingerprint, carrying everything BOTH callers (the
-    measurement in ``classify_index`` and the phase-3 recorder in ``record.py``)
+    measurement in ``classify_index`` and the ledger recorder in ``record.py``)
     need: the recurrence counts and representative provenance, plus the raw
     ``claim`` / ``profile`` / ``verdict`` objects so neither caller re-runs the
     extractors.  Factoring the per-fingerprint work here keeps the
@@ -243,12 +243,12 @@ class ClassifiedFingerprint:
 def iter_classified(corpus_dir: str, index_path: str):
     """Yield one :class:`ClassifiedFingerprint` per distinct fingerprint.
 
-    The single shared per-fingerprint pass over the phase-1 index: for each
+    The single shared per-fingerprint pass over the fingerprint index: for each
     distinct fingerprint (sorted for determinism) it reads the representative
     body once via ``measure.read_body`` and runs ``extract_claim`` +
     ``content.profile`` + ``classify_content``, yielding the raw extractor
     objects alongside the recurrence counts.  Both ``classify_index`` (the
-    phase-2 measurement) and the phase-3 ledger recorder consume this generator,
+    deterministic measurement) and the ledger recorder consume this generator,
     so the diff is read and classified exactly once per fingerprint and in one
     place.  Pure apart from reading the index and the body files (no network, no
     subprocess).
@@ -280,7 +280,7 @@ def iter_classified(corpus_dir: str, index_path: str):
 def classify_index(corpus_dir: str, index_path: str) -> ClassifyResult:
     """Classify every distinct fingerprint in ``index_path`` against ``corpus_dir``.
 
-    Builds the phase-2 ``Classification`` list from the shared
+    Builds the deterministic ``Classification`` list from the shared
     :func:`iter_classified` pass, deriving consistency + review flag from each
     record's raw extractor output.  Pure apart from reading the index and the
     body files (no network, no subprocess).
@@ -331,7 +331,7 @@ def write_classification(result: ClassifyResult, out_path: str) -> int:
     """Write the ``classification`` sqlite table; overwrite any stale file.
 
     One row per distinct fingerprint.  A ``meta`` table records the
-    claim/content/rules versions so phase 3 can detect stale verdicts.  Returns
+    claim/content/rules versions so the ledger can detect stale verdicts.  Returns
     the number of rows written.
     """
     if os.path.exists(out_path):
@@ -477,7 +477,7 @@ def summarise(result: ClassifyResult, *, samples: int = DEFAULT_SAMPLES) -> Summ
 # ---------------------------------------------------------------------------
 
 # The content categories a deterministic verdict can produce, in report order.
-# ``unknown`` is the substantive phase-4 residue.
+# ``unknown`` is the substantive residue the LLM triage tier works through.
 _REPORT_CATEGORIES = ('packaging', 'documentation', 'test', 'unknown')
 
 
@@ -491,9 +491,9 @@ def _sorted_by_count(counts: dict[str, int]) -> list[str]:
 
 
 def _category_label(category: str) -> str:
-    """Human label; ``unknown`` is the substantive residue handed to phase 4."""
+    """Human label; ``unknown`` is the substantive residue for the LLM tier."""
     if category == 'unknown':
-        return 'unknown-substantive (phase-4 residue)'
+        return 'unknown-substantive (LLM-triage residue)'
     return category
 
 
@@ -501,17 +501,17 @@ def render_findings(summary: Summary) -> str:
     """Render the markdown findings note: the headline deterministic-settlement
     measurement plus the review-flag and dangerous-construct accounting."""
     lines: list[str] = []
-    lines.append('# Phase 2 findings: deterministic patch classification')
+    lines.append('# Findings: deterministic patch classification')
     lines.append('')
     lines.append(
         'Headline: of **%d distinct fingerprints** (%d carried-patch occurrences), '
         '**%.1f%% settle deterministically** (packaging + documentation); the rest '
-        'is the substantive residue handed to phase 4.' % (
+        'is the substantive residue the LLM triage tier works through.' % (
             summary.total_fingerprints, summary.total_occurrences,
             100.0 * summary.settled_fraction()))
     lines.append('')
 
-    lines.append('## Content category (how much settles vs the phase-4 residue)')
+    lines.append('## Content category (how much settles vs the residue)')
     lines.append('')
     lines.append('| content category | fingerprints | % fp | occurrences | % occ |')
     lines.append('| --- | ---: | ---: | ---: | ---: |')
@@ -640,12 +640,12 @@ def main(argv: list[str] | None = None) -> int:
     """``python -m divergulent.classify.classify``: classify a corpus offline."""
     parser = argparse.ArgumentParser(
         prog='python -m divergulent.classify.classify',
-        description='Classify each distinct fingerprint in a phase-1 index by what its '
+        description='Classify each distinct fingerprint in a fingerprint index by what its '
                     'diff does (curation-side; offline). Emits a classification sqlite '
                     'table and a markdown findings note. No malice is ever pronounced.')
     parser.add_argument('corpus_dir', help='directory of a corpus built by classify.corpus')
     parser.add_argument('--index', default=None,
-                        help='path to the phase-1 sqlite fingerprint index (default: '
+                        help='path to the sqlite fingerprint index (default: '
                              '<corpus_dir>/fingerprints.sqlite)')
     parser.add_argument('--out', default=None,
                         help='path for the classification sqlite table (default: '

@@ -4,7 +4,8 @@ Everything this module produces is a CLAIM — metadata written by the patch
 author and never verified against the diff content.  The ``Claim`` dataclass
 is deliberately named to make that provenance obvious at every call site.
 
-Claim classification is independent of content classification (step 2b).
+Claim classification is independent of content classification
+(``content.py``).
 Disagreement between the two is the loudest signal in the pipeline; a patch
 that claims to fix a typo but touches executable code deserves review.
 
@@ -23,7 +24,7 @@ from divergulent import dep3
 from divergulent.dep3 import BugRef
 
 # ---------------------------------------------------------------------------
-# Version tag — phase-3 ledger keys on this to detect stale verdicts.
+# Version tag — the ledger keys on this to detect stale verdicts.
 # ---------------------------------------------------------------------------
 
 CLAIM_RULE_VERSION = 1
@@ -125,7 +126,7 @@ class Claim:
     """Author-controlled metadata extracted from a patch header.
 
     Every field is a CLAIM by the patch author; nothing here is verified
-    against the diff body.  Use alongside ``ContentProfile`` (step 2b) and
+    against the diff body.  Use alongside ``ContentProfile`` (``content.py``) and
     compare the two before acting on any field.
     """
 
@@ -161,7 +162,7 @@ class Claim:
     rule_version: int
     """The ``CLAIM_RULE_VERSION`` that produced this ``Claim``.
 
-    Phase-3 can compare this against the current version to decide whether to
+    The ledger compares this against the current version to decide whether to
     re-extract.
     """
 

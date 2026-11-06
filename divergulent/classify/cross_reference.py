@@ -1,4 +1,4 @@
-"""Phase 6 -- verify a patch's *claimed* CVE references against Debian's records.
+"""The external tier -- check a patch's *claimed* CVEs against Debian's records.
 
 Every earlier tier treats a header's ``CVE-YYYY-NNNN`` as a CLAIM and never checks
 it. This module is the first that cross-references the claim against the pinned
@@ -67,7 +67,7 @@ def registered_rule() -> ledger_mod.RegisteredRule:
 
 
 def provenance_by_fingerprint(conn) -> dict:
-    """``{fingerprint: detail}`` from the live phase-6 provenance observations.
+    """``{fingerprint: detail}`` from the live cross-reference provenance observations.
 
     ``detail`` is ``cve-confirmed`` or ``claim-unconfirmed``. Backs the review UI's
     provenance badge; a fingerprint with no CVE reference is simply absent.

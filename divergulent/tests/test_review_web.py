@@ -332,7 +332,7 @@ class ReviewPageTestCase(ReviewWebFixture, testtools.TestCase):
 
     def test_resolvable_fingerprint_without_index_row_shows_no_patch(self):
         # A fingerprint present in the ledger (so it resolves) but absent from the
-        # phase-1 index has no representative patch -> the no-patch page, not a 500.
+        # fingerprint index has no representative patch -> the no-patch page, not a 500.
         client, _conn, _fp = self._client(extra_items=[dict(
             fingerprint='d' * 64, draft_category='bugfix', priority=1)])
         resp = client.get('/review/' + 'd' * 64)

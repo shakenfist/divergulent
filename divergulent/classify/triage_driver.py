@@ -1,14 +1,14 @@
-"""The bounded triage driver + rule discovery (phase 4, step 4d).
+"""The bounded triage driver + rule discovery.
 
-This is the curation-side driver that pulls the substantive residue, orders it by
-value, triages a *bounded* slice with the claim-blind LLM tier (steps 4a/4b),
-records each result into the ledger (step 4c), and -- as a side product --
-surfaces **candidate deterministic rules** for human approval.  It is the
-machinery the operational sample run exercises; the full 42,907-fingerprint sweep
-is the operator's call, taken iteratively with eyes on cost (see the plan's
-"Bounded by prioritisation and rule discovery" and operational note).
+This is the curation-side driver that pulls the substantive residue, orders it
+by value, triages a *bounded* slice with the claim-blind LLM tier (``triage.py``
+drafts and verifies), records each result into the ledger
+(``triage_record.py``), and -- as a side product -- surfaces **candidate
+deterministic rules** for human approval.  The full 42,907-fingerprint sweep is
+the operator's call, taken iteratively with eyes on cost: see
+docs/classification-runbook.md.
 
-Three disciplines from the plan are load-bearing here:
+Three disciplines are load-bearing here:
 
 * **Prioritised, not blind.**  The work-list is the ``verdict.queue`` residue,
   ordered highest-value first: a live dangerous-construct observation, then by
@@ -23,9 +23,10 @@ Three disciplines from the plan are load-bearing here:
   clusters the triaged fingerprints by ``(verified LLM category, structural
   key)`` and surfaces a cluster of >= K identical *verified* verdicts as a
   candidate deterministic rule for a human to approve.  Nothing here writes a
-  rule; an approved rule is a separate, deliberate phase-2/3 act.
+  rule; approving one means adding it to ``rules.py`` and its registry entry
+  in ``ledger.py``, which is a separate, deliberate act.
 
-The LLM ``call`` is INJECTED, exactly as in steps 4a/4b, so the driver is pure
+The LLM ``call`` is INJECTED, exactly as in ``triage.py``, so the driver is pure
 given a fake and the test suite runs fully offline and free.  Timestamps are
 caller-supplied (``now``); only the CLI entry point (in ``triage.main``) reads a
 clock, once, and threads it down.
@@ -61,7 +62,7 @@ from divergulent.classify.triage import DEFAULT_MODEL, triage_and_verify
 # handler backstops anything that slips through.
 MAX_DIFF_CHARS_FOR_LLM = 400_000
 
-# The dangerous-construct observation kind the phase-2 scan writes (see
+# The dangerous-construct observation kind the deterministic scan writes (see
 # ``record.py`` / the ledger).  A live observation of this kind on a fingerprint
 # both raises its triage priority and forces the result to human review.
 _DANGEROUS_CONSTRUCT_KIND = 'dangerous-construct'
@@ -89,7 +90,7 @@ DEFAULT_RULE_MIN_MEMBERS = 3
 class WorkItem:
     """One prioritised fingerprint to triage, with the facts the driver needs.
 
-    Built from the queue + the phase-1 index + the live observations: the
+    Built from the queue + the fingerprint index + the live observations: the
     representative ``raw_sha256`` (to load the body), the recurrence counts (for
     priority and the report), ``has_dangerous_construct`` (which both raises
     priority and routes the result to a human), ``risk_rank`` -- the security-risk
@@ -109,7 +110,7 @@ class WorkItem:
     risk_rank: int = 0
     reach_rank: int = 0
     has_claim_unconfirmed: bool = False
-    """A live phase-6 ``claim-unconfirmed`` provenance observation -- the patch
+    """A live ``claim-unconfirmed`` provenance observation -- the patch
     declared a CVE/bug that did not survive cross-reference. A review nudge (a
     band below risk, above reach): a failed provenance claim is worth a human look
     ahead of a merely widely-run patch, but never crosses a risk boundary."""
@@ -149,7 +150,8 @@ def _fingerprints_with_dangerous_construct(conn: sqlite3.Connection) -> set[str]
 def _fingerprints_with_claim_unconfirmed(conn: sqlite3.Connection) -> set[str]:
     """Fingerprints carrying a LIVE ``claim-unconfirmed`` provenance observation.
 
-    The phase-6 contradiction set: a declared CVE/bug that failed cross-reference.
+    The cross-reference contradiction set: a declared CVE/bug that Debian's own
+    records did not confirm.
     A review nudge (below risk, above reach) -- not a verdict of malice.
     """
     from divergulent.classify import cross_reference as xref_mod  # lazy: import hygiene
@@ -160,12 +162,13 @@ def _fingerprints_with_claim_unconfirmed(conn: sqlite3.Connection) -> set[str]:
 
 
 def _index_groups(index_path: str) -> dict[str, dict]:
-    """Group the phase-1 ``patch`` index by fingerprint: rep sha + counts.
+    """Group the ``patch`` index by fingerprint: rep sha + counts.
 
     Returns ``{fingerprint: {'rep_sha', 'rep_patch_name', 'n_occurrences',
     'packages'}}``.  The representative is the FIRST row seen for a fingerprint in
     row order (stable for a given index build), matching ``classify._read_
-    fingerprint_groups`` so the driver reads the diff exactly as phase 2 did.
+    fingerprint_groups`` so the driver reads the diff exactly as the
+    deterministic pass does.
     """
     connection = sqlite3.connect(index_path)
     try:
@@ -210,7 +213,7 @@ def _priority_key(item: WorkItem) -> tuple:
     The security-risk gate's level is the top signal -- the scariest patches are
     triaged and reviewed first -- then a live injection-suspect observation (a
     possible attack on the classifier, routed to a human ahead of the rest), then a
-    live dangerous-construct observation, then a phase-6 provenance contradiction (a
+    live dangerous-construct observation, then a provenance contradiction (a
     declared CVE/bug that failed cross-reference), then the install-base reach (a
     widely-run patch ahead of an obscure one), then a high occurrence count (one
     recurring fingerprint stands for many carried patches), then package count, with
@@ -291,7 +294,7 @@ def build_work_list(conn: sqlite3.Connection, index_path: str, *,
     """A prioritised work-list (ordered, NOT capped).
 
     ``scope='residue'`` (default) is the ``verdict.queue`` residue -- the patches
-    triage works on. ``scope='all'`` is EVERY fingerprint in the phase-1 index --
+    triage works on. ``scope='all'`` is EVERY fingerprint in the fingerprint index --
     used by the security-risk gate, which scores the whole corpus (a settled
     ``packaging`` patch can still be security-relevant, e.g. a ``debian/rules``
     hardening-flag change), not just the residue.
@@ -862,8 +865,8 @@ def render_run_report(stats: TriageRunStats, scan: RuleScan) -> str:
     and -- explicitly -- ``untriaged_remaining``, the residue the budget did NOT
     cover.  The cap is a headline, never a footnote.
     """
-    lines: list[str] = ['# Phase 4 triage run findings', '']
-    lines.append('- Queue size (phase-4 residue): %d' % stats.queue_size)
+    lines: list[str] = ['# LLM triage run findings', '']
+    lines.append('- Queue size (substantive residue): %d' % stats.queue_size)
     lines.append('- Triaged this run: %d' % stats.triaged)
     lines.append('- Verified: %d' % stats.verified)
     lines.append('- Needs human review: %d' % stats.needs_human)

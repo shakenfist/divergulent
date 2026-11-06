@@ -3,8 +3,8 @@
 All tests are OFFLINE: the LLM ``call`` boundary is injected as a fake that
 returns canned triage / verify JSON (routed on the verify-prompt marker, exactly
 as ``test_verify_triage`` does), so no real LLM and no ``claude -p`` subprocess
-ever runs.  A small synthetic corpus (content-addressed bodies + a phase-1
-fingerprint index) and a ledger seeded with heuristic ``unknown`` decisions (so
+ever runs.  A small synthetic corpus (content-addressed bodies + a fingerprint
+index) and a ledger seeded with heuristic ``unknown`` decisions (so
 the fingerprints are queued) plus one dangerous-construct observation are built
 by hand.
 
@@ -112,7 +112,7 @@ def _fp(text):
 
 
 def _build_corpus(corpus_dir):
-    """Lay down the content-addressed bodies + a phase-1 fingerprint index.
+    """Lay down the content-addressed bodies + a fingerprint index.
 
     Returns ``(index_path, {patch_name: fingerprint})``.  ``bug-a`` is given two
     provenance rows (two packages) so it has a higher occurrence count than its
@@ -498,7 +498,7 @@ class ReportTestCase(DriverFixture, testtools.TestCase):
             conn, corpus_dir, index_path, call=call, now=WHEN, limit=2)
         scan = triage_driver.candidate_rules(corpus_dir, triaged, min_members=1)
         report = triage_driver.render_run_report(stats, scan)
-        self.assertIn('# Phase 4 triage run findings', report)
+        self.assertIn('# LLM triage run findings', report)
         self.assertIn('Untriaged remaining', report)
         self.assertIn('3', report)  # 5 queued - 2 triaged
         self.assertIn('Candidate deterministic rules', report)
@@ -577,7 +577,7 @@ class CliTestCase(DriverFixture, testtools.TestCase):
         # The findings note was written.
         self.assertTrue(os.path.exists(findings_path))
         with open(findings_path, encoding='utf-8') as handle:
-            self.assertIn('# Phase 4 triage run findings', handle.read())
+            self.assertIn('# LLM triage run findings', handle.read())
 
         # The run recorded llm decisions and rebuilt the verdict cache.
         check = sqlite3.connect(ledger_path)
@@ -785,7 +785,7 @@ _PROJECTION_BODIES = {'generated.patch': GENERATED, 'plain.patch': PLAIN}
 
 
 def _build_projection_corpus(corpus_dir, bodies):
-    """Lay down ``{patch_name: text}`` bodies + a one-row-per-patch phase-1 index.
+    """Lay down ``{patch_name: text}`` bodies + a one-row-per-patch fingerprint index.
 
     The residue-projection sibling of :func:`_build_corpus`, which hard-codes the five-patch
     corpus (including a second provenance row so occurrence ordering can be

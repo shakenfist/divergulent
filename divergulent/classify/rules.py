@@ -2,14 +2,15 @@
 
 This module maps a patch to a *content verdict*: a deterministic, evidence-
 bearing statement about what the diff DOES, derived from the ``ContentProfile``
-(step 2b) and never from the author's ``Claim`` (step 2a).  Two design promises
+(``content.py``) and never from the author's ``Claim`` (``claim.py``).  Two
+design promises
 govern everything here:
 
 1. **Deterministic rules settle only the structurally-determined categories.**
    ``packaging``, ``documentation`` and ``test`` are confirmable from content
    alone (a change touching only build/doc/test files IS that thing); everything
-   substantive is left as ``unknown`` with a ``substantive`` signal for phase 4
-   to triage.  We deliberately do **not** split ``bugfix``/``feature``/
+   substantive is left as ``unknown`` with a ``substantive`` signal for the LLM
+   tier to triage.  We deliberately do **not** split ``bugfix``/``feature``/
    ``security`` from content — those are about intent, and claiming them from
    structure would cry wolf.
 
@@ -25,10 +26,11 @@ construct scan runs only over ``content.code_added_lines`` (added lines in
 cannot flag.  See ``scan_dangerous_constructs``.
 
 Rules are a small **registry of pure functions**, each with an ``id`` and
-``version``, applied in a documented precedence order — the seed of phase 3's
-registry.  The content verdict must NOT depend on the claim; the claim/content
-comparison is step 2d's job (``classify_content`` accepts the claim for
-symmetry but does not consult it — see its docstring).
+``version``, applied in a documented precedence order, which is what the
+ledger's rule registry mirrors.  The content verdict must NOT depend on the
+claim; the claim/content comparison belongs to ``classify.py``
+(``classify_content`` accepts the claim for symmetry but does not consult it —
+see its docstring).
 
 Curation-side only: no client command imports ``classify/``.
 """
@@ -42,7 +44,7 @@ from divergulent.classify.claim import Claim
 from divergulent.classify.content import ContentProfile
 
 # ---------------------------------------------------------------------------
-# Version tag — phase-3 ledger keys on this to detect stale verdicts.
+# Version tag — the ledger keys on this to detect stale verdicts.
 #
 # 2: the ``shell-out`` backtick pair is bounded (200 chars a side, no newline).
 #    The pattern now REJECTS inputs version 1 flagged, so a live ``shell-out``
@@ -64,7 +66,7 @@ class Flag:
     """An evidence-bearing candidate for review — explicitly NOT a verdict.
 
     A ``Flag`` records that a potentially-interesting construct was added to a
-    code file.  It is a pointer for a human or the phase-4 LLM tier to look at,
+    code file.  It is a pointer for a human or the LLM triage tier to look at,
     never a pronouncement of malice or even of "this is a security patch".  Most
     flags will turn out benign; the value is that the few worth a look are
     surfaced rather than lost in the residue.
@@ -118,7 +120,7 @@ class ContentVerdict:
 # Each rule is a pure function ``(ContentProfile) -> _RuleHit | None``.  Rules
 # are applied in the PRECEDENCE order of ``_CATEGORY_RULES`` below; the first
 # rule that returns a hit wins and its category becomes the verdict.  Every
-# rule carries an ``id`` and ``version`` so phase 3 can track provenance.
+# rule carries an ``id`` and ``version`` so the ledger can track provenance.
 #
 # Precedence (first match wins), most-specific / most-confidently-trivial
 # first:
@@ -139,7 +141,7 @@ class ContentVerdict:
 # whitespace.  ``doc_only`` / ``build_only`` / ``test_only`` are mutually
 # exclusive file-type rules (a diff cannot be all-doc and all-build, etc.), so
 # their relative order is immaterial.  The final ``substantive`` rule always
-# matches, producing the phase-4 residue.
+# matches, producing the residue the LLM tier triages.
 # ---------------------------------------------------------------------------
 
 
@@ -229,7 +231,7 @@ def _rule_test_only(profile: ContentProfile) -> _RuleHit | None:
 def _rule_substantive(profile: ContentProfile) -> _RuleHit | None:
     """The residue: anything not settled above → unknown / substantive (low).
 
-    Always matches, so it is last.  This is the genuine work handed to phase 4;
+    Always matches, so it is last.  This is the genuine work left to the LLM tier;
     deterministic rules deliberately do NOT guess bugfix/feature/security here.
     """
     return _RuleHit(
@@ -280,7 +282,7 @@ _CATEGORY_RULES: tuple[tuple[str, int, object], ...] = (
 
 # Shell file extensions.  Backtick command substitution only flags here:
 # elsewhere a backtick is a JavaScript template literal or an Emacs Lisp
-# quasiquote, and the phase-2 corpus run confirmed those cry wolf
+# quasiquote, and the first full corpus run confirmed those cry wolf
 # (PLAN-patch-classification-phase-02-findings.md).
 _SHELL_EXTENSIONS = frozenset({'.sh', '.bash'})
 
@@ -400,11 +402,12 @@ def classify_content(claim: Claim, profile: ContentProfile, text: str) -> Conten
     (category, confidence, signals, rule_ids), then attaches any
     dangerous-construct flags from ``scan_dangerous_constructs(text)``.
 
-    ``claim`` is accepted for symmetry with step 2d and possible future use, but
-    is deliberately NOT consulted: the content verdict must depend on the diff
-    alone.  Comparing the claim against the content (the loudest signal in the
-    pipeline) is step 2d's job, not this module's.  Keeping content independent
-    here is what lets 2d treat a claim/content disagreement as meaningful.
+    ``claim`` is accepted for symmetry with ``classify.py`` and possible future
+    use, but is deliberately NOT consulted: the content verdict must depend on
+    the diff alone.  Comparing the claim against the content (the loudest signal
+    in the pipeline) belongs to ``classify.py``, not this module.  Keeping
+    content independent here is what lets that comparison treat a claim/content
+    disagreement as meaningful.
 
     ``text`` is the full patch body; ``profile`` must be ``content.profile(text)``
     for the same body.

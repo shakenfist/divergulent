@@ -1,4 +1,4 @@
-"""Tests for divergulent.classify.cross_reference -- the phase-6 CVE rule.
+"""Tests for divergulent.classify.cross_reference -- the external CVE rule.
 
 Offline and pure: a small snapshot is built with ``security_tracker.write_snapshot``
 and ``verify_cve`` is checked at every boundary -- confirmed (for this source),

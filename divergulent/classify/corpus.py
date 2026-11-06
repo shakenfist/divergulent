@@ -1,11 +1,12 @@
 """Central, resumable corpus of raw carried-patch bodies (curation-side only).
 
-This is the acquisition half of phase 1: it crawls a work-list of
+This is the acquisition half of fingerprinting: it crawls a work-list of
 ``(source_package, version)`` pairs, fetches the FULL ``debian/patches`` series
 for each via the apt-source lean fetch (``.dsc`` + ``.debian.tar.*`` only, never
 the ``.orig``), and lays the raw bodies down in a content-addressed store with
-two append-only manifests. It does NO fingerprinting or classification -- step
-1c reads this corpus OFFLINE, so re-normalising never re-crawls the archive.
+two append-only manifests. It does NO fingerprinting or classification --
+``measure.py`` reads this corpus OFFLINE, so re-normalising never re-crawls the
+archive.
 
 Layout under ``<corpus_dir>``::
 

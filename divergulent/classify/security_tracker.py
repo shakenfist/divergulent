@@ -1,4 +1,4 @@
-"""A pinned Debian Security Tracker snapshot -- the CVE input for phase 6.
+"""A pinned Debian Security Tracker snapshot -- the CVE input for cross-reference.
 
 The cross-reference tier (``cross_reference.py``) verifies the CVE references a
 patch *claims* in its header against Debian's own records rather than trusting
@@ -224,7 +224,7 @@ def main(argv=None) -> int:
     """``python -m divergulent.classify.security_tracker <corpus_dir>`` -- pull a snapshot."""
     parser = argparse.ArgumentParser(
         prog='divergulent.classify.security_tracker',
-        description='Download and pin a Debian Security Tracker snapshot for the phase-6 cross-reference.')
+        description='Download and pin a Debian Security Tracker snapshot for the external cross-reference.')
     parser.add_argument('corpus_dir',
                         help='corpus directory; the snapshot is written to security_tracker.sqlite there')
     parser.add_argument('--url', default=SECURITY_TRACKER_URL, help='tracker JSON URL (default: %(default)s)')

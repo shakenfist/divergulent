@@ -4,14 +4,14 @@ All tests are offline (no I/O, no network).  Coverage centres on the two
 promises the module makes:
 
   * Deterministic rules settle only ``packaging``/``documentation`` at high
-    confidence; everything substantive is ``unknown``/low (the phase-4 residue),
+    confidence; everything substantive is ``unknown``/low (the substantive residue),
     never a guessed bugfix/feature/security.
   * Dangerous constructs are evidence-bearing CANDIDATE flags, never a category.
     The scan runs only over code added lines, so a construct in a manpage stays
     clean while the same construct added to a ``.c``/``.sh`` file fires — and
     even then the category is ``unknown``/substantive, not ``security``.
 
-The phase-1 recurring-tail taxonomy (mode-only → packaging; ``.gitignore``
+The recurring-tail taxonomy (mode-only → packaging; ``.gitignore``
 adding ``.pc`` → packaging; doc-only → documentation) is an explicit acceptance
 test here too.
 """
@@ -160,7 +160,8 @@ class DangerousConstructInCodeTestCase(testtools.TestCase):
         self.assertEqual(['shell-out'], [f.detail for f in flags])
 
     def test_js_template_literal_does_not_cry_wolf(self):
-        # The phase-2 false positive: a JavaScript template literal uses
+        # The false positive the first corpus run found: a JavaScript template
+        # literal uses
         # backticks but is not command substitution, so it must not flag.
         diff = _add('build.js', 'banner: `// ${meta.homepage} v${meta.version}`,')
         self.assertEqual([], scan_dangerous_constructs(diff))
@@ -206,7 +207,7 @@ class PrecisionTestCase(testtools.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Phase-1 recurring-tail taxonomy — explicit acceptance tests.
+# Recurring-tail taxonomy — explicit acceptance tests.
 # ---------------------------------------------------------------------------
 
 class RecurringTailTestCase(testtools.TestCase):
@@ -306,7 +307,7 @@ class RecurringTailTestCase(testtools.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Substantive residue — the phase-4 hand-off.
+# Substantive residue — the hand-off to the LLM triage tier.
 # ---------------------------------------------------------------------------
 
 class SubstantiveResidueTestCase(testtools.TestCase):

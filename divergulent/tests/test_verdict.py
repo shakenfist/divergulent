@@ -355,7 +355,7 @@ class ReportTestCase(VerdictFixture, testtools.TestCase):
         report = verdict_mod.render_report(verdict_mod.summarise_ledger(conn))
         self.assertIn('# Ledger report', report)
         self.assertIn('Fingerprints with a live verdict: 7', report)
-        self.assertIn('Queue size (phase-4 residue): 3', report)
+        self.assertIn('Queue size (substantive residue): 3', report)
         self.assertIn('Superseded decisions (audit trail): 1', report)
         self.assertIn('- packaging: 3', report)
         self.assertIn('- shell-out: 1', report)

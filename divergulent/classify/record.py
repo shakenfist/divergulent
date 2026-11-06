@@ -1,8 +1,9 @@
-"""The decision recorder — drive the registered rules into the ledger (step 3b).
+"""The decision recorder — drive the registered rules into the ledger.
 
-This is the bridge between the deterministic rules (phase 2) and the append-only
-decision ledger (phase 3, step 3a).  It runs the shared per-fingerprint pass
-(``classify.iter_classified``) over the phase-1 index and writes its verdicts
+This is the bridge between the deterministic rules (``rules.py``) and the
+append-only decision ledger (``ledger.py``).  It runs the shared
+per-fingerprint pass (``classify.iter_classified``) over the fingerprint index
+and writes its verdicts
 into the ledger, honouring the two structural promises the ledger encodes:
 
 1. **A category verdict is a decision; a dangerous-construct flag is an
@@ -114,7 +115,7 @@ class RecordStats:
     generated_appended: int = 0
     generated_skipped: int = 0
     generated_superseded: int = 0
-    # The phase-6 external CVE cross-reference (only when a Security Tracker
+    # The external CVE cross-reference (only when a Security Tracker
     # snapshot is supplied). ``external_decisions_*`` count the settled ``security``
     # category decision; ``external_obs_*`` count the provenance observation
     # (confirmed / unconfirmed) recorded alongside it.
@@ -139,7 +140,7 @@ def _category_rule_versions(registry: list[ledger_mod.RegisteredRule]) -> dict[s
 
 def _record_external_cve(conn, record, tracker_conn, tracker_date, now, stats,
                          bts_conn=None, bts_date=None):
-    """Record the phase-6 CVE (and BTS bug) cross-reference for one fingerprint.
+    """Record the external CVE (and BTS bug) cross-reference for one fingerprint.
 
     Two outputs, both supersede-on-change so a re-run over an unchanged snapshot
     writes nothing:
@@ -284,7 +285,7 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
                     if popcon_path else {})
     existing_reach = reach_mod.reach_by_fingerprint(conn) if popcon_path else {}
 
-    # The phase-6 external CVE cross-reference is opt-in on a pinned Security
+    # The external CVE cross-reference is opt-in on a pinned Security
     # Tracker snapshot, exactly like reach is opt-in on a popcon snapshot: with no
     # snapshot the pass is skipped and the recorder behaves exactly as before. When
     # supplied, open the snapshot once and register the external rule so its
@@ -553,7 +554,7 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
                     rule_version=reach_mod.REACH_VERSION, observed_at=now, commit=False)
                 stats.reach_appended += 1
 
-        # The phase-6 external CVE cross-reference -- only when a Security Tracker
+        # The external CVE cross-reference -- only when a Security Tracker
         # snapshot was supplied. Verifies the fingerprint's claimed CVEs against the
         # snapshot and records the outcome as a provenance observation (always) plus,
         # for a code-touching confirmed CVE over the unknown residue, a settled

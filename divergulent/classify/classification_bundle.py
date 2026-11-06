@@ -95,7 +95,7 @@ def _reason(v: verdict_mod.Verdict) -> str:
     JSONL export for anyone who wants it.
     """
     if v.decided_by == cross_reference.EXTERNAL_CVE_RULE_ID:
-        # The phase-6 external CVE cross-reference: surface the confirmed-CVE phrase
+        # The external CVE cross-reference: surface the confirmed-CVE phrase
         # (the CVE id + snapshot date it recorded as evidence), not a generic
         # "deterministic rule". Still evidence-free of any raw model response.
         return v.evidence or ('confirmed CVE via Debian Security Tracker (v%d)' % v.rule_version)

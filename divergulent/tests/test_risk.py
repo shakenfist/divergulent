@@ -740,7 +740,7 @@ class ProjectedScoreRiskTestCase(testtools.TestCase):
 
 
 def _build_marked_corpus(corpus_dir, bodies):
-    """Content-addressed bodies + a phase-1 fingerprint index; returns ``(index, {name: fp})``.
+    """Content-addressed bodies + a fingerprint index; returns ``(index, {name: fp})``.
 
     The sibling of ``test_triage_driver._build_corpus``, taking its own ``{name: text}`` so
     the projection cases can carry generator output.  One occurrence per patch: these tests

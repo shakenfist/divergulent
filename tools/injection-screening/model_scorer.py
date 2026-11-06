@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prototype: score patch diffs with a learned prompt-injection classifier.
 
-Part of docs/plans/PLAN-prompt-injection-screening.md (phase 2). Runs an
+Part of docs/plans/PLAN-prompt-injection-screening.md. Runs an
 encoder-classifier (default: LLM Guard's underlying model,
 ``protectai/deberta-v3-base-prompt-injection-v2``; pass
 ``--model meta-llama/Llama-Prompt-Guard-2-86M`` once its license gate is

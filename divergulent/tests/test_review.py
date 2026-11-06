@@ -5,7 +5,7 @@ returns a canned original file (no network), the ``signer`` returns a fixed
 ``('FAKE-SIG', 'reviewer@example.org')`` (no browser/OIDC, no real sigstore), the
 ``ask`` returns a scripted choice (no real stdin), and ``now`` is a fixed
 timestamp (no clock).  A small synthetic corpus (a content-addressed body + a
-phase-1 fingerprint index) and a ledger seeded with a pending review item and the
+fingerprint index) and a ledger seeded with a pending review item and the
 matching ``kind='llm'`` draft decision are built by hand.
 
 Coverage:
@@ -144,7 +144,7 @@ def _fp(text):
 
 
 def _build_corpus(corpus_dir, patch=PATCH):
-    """Lay down the content-addressed body + a phase-1 fingerprint index.
+    """Lay down the content-addressed body + a fingerprint index.
 
     Returns ``(index_path, fingerprint_hex)`` for the single seeded patch.
     """
@@ -415,7 +415,7 @@ class BuildReviewContextTestCase(ReviewFixture, testtools.TestCase):
     """The fingerprint-keyed context builder review_one and the web UI share."""
 
     def test_returns_none_for_missing_representative_row(self):
-        # A fingerprint with no row in the phase-1 index has no body to show.
+        # A fingerprint with no row in the fingerprint index has no body to show.
         conn, corpus_dir, index_path, _fp = self._setup()
         context = review.build_review_context(
             conn, corpus_dir, index_path, fingerprint='a' * 64,

@@ -1,4 +1,4 @@
-"""The security-risk gate (phase 4) -- a claim-blind, advisory risk score.
+"""The security-risk gate -- a claim-blind, advisory risk score.
 
 A cheap LLM pass that scores each carried patch's SECURITY RISK on a coarse
 ordinal (``none < low < elevated < high``) from the diff alone, so the expensive
@@ -380,7 +380,7 @@ def _benign_data_path(path: str) -> bool:
 def provably_benign(patch_text: str) -> str | None:
     """A short reason if the patch is provably security-irrelevant, else ``None``.
 
-    Uses the phase-2 :func:`content.profile` (built from the diff, never the
+    Uses the deterministic :func:`content.profile` (built from the diff, never the
     claim). Every check is conservative -- a change that does not execute
     (empty/whitespace/comment-only) or touches only documentation or
     translation/changelog/copyright metadata. Anything that touches code, build
