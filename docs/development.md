@@ -67,6 +67,16 @@ request:
 | `@shakenfist-bot please re-review` | Request a fresh review of a pull request the bot has already reviewed |
 | `@shakenfist-bot please retest` | Re-run the CI checks without pushing a commit |
 
+`pr-retest.yml` and `pr-re-review.yml` are copied byte-for-byte from
+`templates/ci-review-automation/` in
+[shakenfist/development](https://github.com/shakenfist/development), so
+neither names a workflow of this repository's. A retest dispatches the
+workflow the `RETEST_WORKFLOW` repository variable names, which here is
+`unit-tests.yml` -- the CI gate, running every pre-commit hook and the
+unit suite. That is why `unit-tests.yml` carries a `workflow_dispatch`
+trigger, and why the trigger has to be on `develop`: `gh workflow run`
+reads it from the copy on the default branch.
+
 Neither runs on a pull request from a fork: the reviewer runs Claude
 Code with a write-capable token over a diff it did not write, so fork
 pull requests are reviewed only on an explicit human request.
