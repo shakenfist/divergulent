@@ -1,4 +1,4 @@
-"""Tests for divergulent.classify.classify — the step-2d driver.
+"""Tests for divergulent.classify.classify — the deterministic driver.
 
 All tests are offline.  A small synthetic corpus + fingerprint index is
 laid down by hand (the test_measure approach), then classified end to end.  The

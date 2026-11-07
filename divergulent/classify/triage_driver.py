@@ -497,7 +497,7 @@ def run_triage(conn, corpus_dir, index_path, *, call, now, limit,
         # to EVERY marked fingerprint reaching the LLM, not just the unlocked ones,
         # so the input format never depends on a threshold. An unmarked
         # fingerprint (the overwhelming majority) does not even build one, so its
-        # prompt is byte-identical to what it was before this phase. This is the
+        # prompt is byte-identical to what it was before marks existed. This is the
         # same pure function of the same input that ``triage_and_verify`` applies
         # to both passes, so the facts recorded here describe exactly the text the
         # model read.

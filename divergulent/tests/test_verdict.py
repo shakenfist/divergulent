@@ -1,4 +1,4 @@
-"""Tests for divergulent.classify.verdict — the step-3c derived view + queue.
+"""Tests for divergulent.classify.verdict — the derived view + queue.
 
 All offline.  Each test hand-builds a small ledger with ``ledger.create_ledger``
 and ``append_decision`` / ``append_observation`` directly — no corpus, no rule
@@ -86,7 +86,7 @@ class PrecedenceTestCase(VerdictFixture, testtools.TestCase):
         self.assertEqual('documentation', winner.category)
 
     def test_unverified_llm_never_outranks_heuristic(self):
-        # The step-4c headline: an UNVERIFIED llm draft is recorded (audit trail,
+        # The LLM-triage headline: an UNVERIFIED llm draft is recorded (audit trail,
         # cache) but must NEVER win over the deterministic heuristic -- no cry
         # wolf from an unreviewed guess.  Even though the llm decision is newer
         # and higher confidence, the heuristic wins.

@@ -1,4 +1,4 @@
-"""Tests for the step-3d supersession/redo operations and the ledger CLI.
+"""Tests for the supersession/redo operations and the ledger CLI.
 
 All offline.  The supersession cases hand-build a small ledger with
 ``ledger.create_ledger`` + ``register_rules`` + ``append_decision`` /

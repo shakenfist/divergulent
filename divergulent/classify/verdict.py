@@ -53,7 +53,7 @@ from divergulent.classify import ledger as ledger_mod
 # so ``max(..., key=...)`` selects the winner.  ``decided_at`` is an ISO-8601
 # string and sorts correctly lexically; we guard ``None`` to the bottom.
 #
-# The step-4c refinement: kind alone is no longer the top component.  An LLM
+# The LLM-triage refinement: kind alone is no longer the top component.  An LLM
 # draft does not count until an adversarial pass (or a human) verifies it, so an
 # UNVERIFIED llm decision must NEVER outrank a heuristic — no cry wolf from an
 # unreviewed guess.  ``decision_rank`` folds the ``verified`` flag into the

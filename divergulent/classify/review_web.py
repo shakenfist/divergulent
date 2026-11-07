@@ -339,7 +339,7 @@ def diff_segments(rows: list[dict], files: list[dict], entries: dict[str, dict])
 
     With nothing marked the whole diff is one unmarked chunk, so an unmarked fingerprint's
     page is byte-identical to the one this UI rendered before collapse existed -- the
-    do-no-harm bar every phase of this work has held.
+    do-no-harm bar this work has held throughout.
 
     ``files`` is :func:`file_rows`'s output (its 1-based diff-order ``index`` is
     ``diff_lines``'s ``file_index``, and it carries the path and counts the summary

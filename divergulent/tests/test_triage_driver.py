@@ -1,4 +1,4 @@
-"""Tests for divergulent.classify.triage_driver -- the step-4d bounded driver.
+"""Tests for divergulent.classify.triage_driver -- the bounded LLM driver.
 
 All tests are OFFLINE: the LLM ``call`` boundary is injected as a fake that
 returns canned triage / verify JSON (routed on the verify-prompt marker, exactly

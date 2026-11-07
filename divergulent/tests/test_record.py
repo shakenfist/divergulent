@@ -1,4 +1,4 @@
-"""Tests for divergulent.classify.record — the step-3b decision recorder.
+"""Tests for divergulent.classify.record — the decision recorder.
 
 All offline.  A small synthetic corpus + fingerprint index is laid down
 by hand (the test_classify / test_measure approach), a fresh ledger is created,

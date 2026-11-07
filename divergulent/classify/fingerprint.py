@@ -21,7 +21,7 @@ separately downstream; it must not be part of the fingerprint, so two patches
 with identical diffs but different descriptions share a fingerprint.
 
 The normalisation is *versioned*: a fingerprint is ``(version, digest)``
-because every later classification phase keys off it. Only ``version == 1`` is
+because every later classification stage keys off it. Only ``version == 1`` is
 defined; any other value raises ``ValueError``. The structure keeps adding a
 future version easy.
 
@@ -179,7 +179,7 @@ def fingerprint(
     """Return ``(version, sha256_hexdigest)`` of the normalised diff body.
 
     The digest is taken over ``normalise(...)`` encoded as UTF-8. The version
-    travels with the digest because every later phase keys off it.
+    travels with the digest because every later stage keys off it.
     """
     normalised = normalise(
         diff_text, version=version, strip_path=strip_path, drop_context=drop_context)

@@ -68,7 +68,7 @@ class SchemaTestCase(LedgerFixture, testtools.TestCase):
         self.assertIn('input_fresh_until', cols)
 
     def test_schema_version_is_two(self):
-        # The step-4c migration bumped the schema to 2.
+        # The LLM-triage migration bumped the schema to 2.
         conn, _path = self._ledger()
         self.assertEqual(2, ledger.LEDGER_SCHEMA_VERSION)
         self.assertEqual('2', ledger.meta(conn)['schema_version'])
@@ -174,7 +174,7 @@ class EnumsTestCase(testtools.TestCase):
 
 class RegistryTestCase(LedgerFixture, testtools.TestCase):
 
-    def test_registry_covers_exactly_the_phase2_deciders(self):
+    def test_registry_covers_exactly_the_deterministic_deciders(self):
         # The drift guard: the registry must enumerate EXACTLY the
         # _CATEGORY_RULES ids plus the dangerous-construct scan and the claim
         # classifier.  Adding a content rule without registering it here

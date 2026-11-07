@@ -27,7 +27,7 @@ dangerous-construct observations, which come from the single whole-scan rule,
 carry ``RULES_VERSION``.
 
 Timestamps are **caller-supplied**: ``now`` is an ISO-8601 string the caller
-(e.g. the step-3d CLI) passes in.  This module never reads a clock, keeping the
+(e.g. the ledger CLI) passes in.  This module never reads a clock, keeping the
 build deterministic and re-runnable.
 
 Curation-side only: no client command imports ``classify/``; nothing here runs
@@ -501,7 +501,7 @@ def record_to_ledger(conn, corpus_dir, index_path, *, now, registry=None, progre
         # output, never one per file: gatos's 21 regenerated files are a single claim
         # about a single patch. The detail is the compact ``<family>/<percent>`` badge and
         # the evidence the canonical-JSON per-file breakdown plus the residue arithmetic
-        # later phases route on. A fingerprint whose scan marks nothing records NOTHING --
+        # later stages route on. A fingerprint whose scan marks nothing records NOTHING --
         # absence means "nothing claimed generation", which keeps the ledger quiet for the
         # overwhelming majority of the corpus. Desired-vs-live, exactly as the injection
         # block above: the body is fingerprint-stable and the helpers are pure, so an

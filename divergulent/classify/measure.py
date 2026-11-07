@@ -21,7 +21,7 @@ The deliverables, all produced by ``measure_corpus`` / the CLI:
   recurring boilerplate), the TOP-RECURRING list with sample bodies, and the
   PER-PACKAGE patches-vs-distinct comparison.
 * A self-describing sqlite FINGERPRINT INDEX (the canonical variant) that later
-  phases join on by ``fingerprint``.
+  stages join on by ``fingerprint``.
 * A markdown FINDINGS NOTE summarising all of the above plus the honest
   accounting (packages by state, fetch failures, non-quilt skips).
 
@@ -324,7 +324,7 @@ def write_index(corpus_dir: str, index_path: str) -> int:
     """Write the self-describing sqlite fingerprint index for the canonical variant.
 
     One ``patch`` row per patch-provenance row, carrying the canonical
-    fingerprint that later phases join on; a ``meta`` table records the
+    fingerprint that later stages join on; a ``meta`` table records the
     normalisation version and the variant knobs so the index is self-describing.
     Returns the number of patch rows written.
     """

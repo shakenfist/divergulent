@@ -1,4 +1,4 @@
-"""Tests for divergulent.classify.review -- the step-4e signed human-review tool.
+"""Tests for divergulent.classify.review -- the signed human-review tool.
 
 All tests are OFFLINE: every external boundary is injected.  The source ``fetch``
 returns a canned original file (no network), the ``signer`` returns a fixed
