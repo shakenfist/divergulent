@@ -493,7 +493,7 @@ def _sorted_by_count(counts: dict[str, int]) -> list[str]:
 def _category_label(category: str) -> str:
     """Human label; ``unknown`` is the substantive residue for the LLM tier."""
     if category == 'unknown':
-        return 'unknown-substantive (LLM-triage residue)'
+        return 'unknown-substantive (substantive residue)'
     return category
 
 

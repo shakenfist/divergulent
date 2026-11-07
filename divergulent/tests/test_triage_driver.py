@@ -1,10 +1,10 @@
 """Tests for divergulent.classify.triage_driver -- the bounded LLM driver.
 
 All tests are OFFLINE: the LLM ``call`` boundary is injected as a fake that
-returns canned triage / verify JSON (routed on the verify-prompt marker, exactly
-as ``test_verify_triage`` does), so no real LLM and no ``claude -p`` subprocess
-ever runs.  A small synthetic corpus (content-addressed bodies + a fingerprint
-index) and a ledger seeded with heuristic ``unknown`` decisions (so
+returns canned triage / verify JSON (routed on the verify-prompt marker,
+exactly as ``test_verify_triage`` does), so no real LLM and no ``claude -p``
+subprocess ever runs.  A small synthetic corpus (content-addressed bodies + a
+fingerprint index) and a ledger seeded with heuristic ``unknown`` decisions (so
 the fingerprints are queued) plus one dangerous-construct observation are built
 by hand.
 

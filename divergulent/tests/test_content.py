@@ -2,8 +2,8 @@
 
 All tests are offline (no I/O, no network).  Coverage: file typing for every
 type (with explicit emphasis on the code-vs-prose split — a ``*.1`` manpage is
-doc, a ``*.c`` is code), multi-file mixed-type diffs, ``touches_code``, and each
-trivial-only flag — including the recurring-tail real examples (a
+doc, a ``*.c`` is code), multi-file mixed-type diffs, ``touches_code``, and
+each trivial-only flag — including the recurring-tail real examples (a
 mode-only patch is ``is_empty``; a ``.gitignore`` adding ``.pc`` is
 ``ignore_file_only``; a whitespace reindent is ``whitespace_only``).
 """

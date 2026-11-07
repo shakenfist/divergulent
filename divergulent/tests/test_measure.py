@@ -277,7 +277,9 @@ class FindingsNoteTestCase(testtools.TestCase):
         self.assertTrue(os.path.exists(findings_path))
         with open(findings_path, encoding='utf-8') as handle:
             text = handle.read()
-        # The master plan's success-criterion phrasing, with the real numbers.
+        # The heading, so a rename has to come through a test.
+        self.assertIn('# Findings: the distinct-patch count', text)
+        # The success-criterion phrasing, with the real numbers.
         self.assertIn('≈6 carried patches → 3 distinct', text)
         # The sensitivity table lists all four variants.
         self.assertIn('strip_path,keep_context', text)

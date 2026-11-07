@@ -2,12 +2,12 @@
 
 This module is the ledger's *read side*.  The append-only ``decision`` table
 that ``ledger.py`` defines and ``record.py`` fills is the source of truth; the
-**current verdict**
-for a fingerprint is **never stored** there — it is *computed* from the live
-(non-superseded) decisions every time it is needed.  This is the load-bearing
-design choice: because the view is derived, it cannot drift from the ledger, and
-a supersession (a future rule retirement or an LLM/human override) is picked up
-automatically the next time the view is computed.
+**current verdict** for a fingerprint is **never stored** there — it is
+*computed* from the live (non-superseded) decisions every time it is needed.
+This is the load-bearing design choice: because the view is derived, it cannot
+drift from the ledger, and a supersession (a future rule retirement or an
+LLM/human override) is picked up automatically the next time the view is
+computed.
 
 Three things live here:
 
@@ -23,8 +23,7 @@ Three things live here:
 
 3. :func:`queue`, :func:`summarise_ledger`, :func:`render_report` — the
    substantive residue (fingerprints still needing work) and a lean markdown
-   report of how
-   the current view splits and how big the audit trail is.
+   report of how the current view splits and how big the audit trail is.
 
 Curation-side only: no client command imports ``classify/``; nothing here runs
 an LLM.  Import-time clean — it pulls in only ``ledger`` and stdlib.

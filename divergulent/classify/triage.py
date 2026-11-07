@@ -146,8 +146,8 @@ class LlmVerdict:
     """One claim-blind LLM read of a diff body.
 
     Every field is the LLM's *content* judgement; nothing here has been through
-    the adversarial verifier, and nothing reflects the author's claim. Use alongside the
-    ``Claim`` -- their disagreement is the loudest signal.
+    the adversarial verifier, and nothing reflects the author's claim. Use
+    alongside the ``Claim`` -- their disagreement is the loudest signal.
     """
 
     category: str

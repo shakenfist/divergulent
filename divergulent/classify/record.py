@@ -3,8 +3,8 @@
 This is the bridge between the deterministic rules (``rules.py``) and the
 append-only decision ledger (``ledger.py``).  It runs the shared
 per-fingerprint pass (``classify.iter_classified``) over the fingerprint index
-and writes its verdicts
-into the ledger, honouring the two structural promises the ledger encodes:
+and writes its verdicts into the ledger, honouring the two structural promises
+the ledger encodes:
 
 1. **A category verdict is a decision; a dangerous-construct flag is an
    observation.**  For each distinct fingerprint the recorder appends exactly

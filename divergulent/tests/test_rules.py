@@ -11,9 +11,9 @@ promises the module makes:
     clean while the same construct added to a ``.c``/``.sh`` file fires — and
     even then the category is ``unknown``/substantive, not ``security``.
 
-The recurring-tail taxonomy (mode-only → packaging; ``.gitignore``
-adding ``.pc`` → packaging; doc-only → documentation) is an explicit acceptance
-test here too.
+The recurring-tail taxonomy (mode-only → packaging; ``.gitignore`` adding
+``.pc`` → packaging; doc-only → documentation) is an explicit acceptance test
+here too.
 """
 import testtools
 

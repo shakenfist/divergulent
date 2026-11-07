@@ -81,10 +81,10 @@ def should_settle_security(content_category: str, touches_code: bool) -> bool:
     """Whether a confirmed CVE may settle ``security`` for this fingerprint.
 
     Two guards: DEFER to a settled pure-content category (only the ``unknown``
-    residue is eligible -- a manpage that merely cites a CVE
-    classifies as high-confidence ``documentation`` and must stay there), and
-    require the patch to TOUCH CODE (a confirmed CVE over non-code content is not
-    a code security fix). Both must hold.
+    residue is eligible -- a manpage that merely cites a CVE classifies as
+    high-confidence ``documentation`` and must stay there), and require the
+    patch to TOUCH CODE (a confirmed CVE over non-code content is not a code
+    security fix). Both must hold.
     """
     return content_category == 'unknown' and touches_code
 

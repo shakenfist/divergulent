@@ -95,10 +95,25 @@ jobs:
           npm install --prefix "${RUNNER_TEMP}/renovate-bin" --ignore-scripts --no-audit --no-fund \
               "renovate@${PINNED_RENOVATE_VERSION}"
           npm rebuild --prefix "${RUNNER_TEMP}/renovate-bin" re2
+          # npm rebuild exits 0 when no package matched, so a Renovate
+          # major that drops or renames re2 would silently leave every
+          # run on the RegExp fallback this step exists to avoid.
+          # Assert the build product instead of trusting the exit code.
+          test -f "${RUNNER_TEMP}/renovate-bin/node_modules/re2/build/Release/re2.node"
 
+      # Renovate's lockfile/artifact refresh runs package managers of
+      # its own as subprocesses. In the container form those ran inside
+      # the image; here they run directly on the shared `static` runner,
+      # in a process tree that holds RENOVATE_TOKEN -- which writes to
+      # every repository Renovate manages. What keeps that acceptable is
+      # Renovate's own refusal to run dependency scripts, so pin it
+      # rather than inheriting the default: `allowScripts` is the
+      # admin-level gate and defaults to false, and stating it here
+      # means a future default change cannot quietly widen this.
       - name: Self-hosted Renovate
         env:
           RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+          RENOVATE_ALLOW_SCRIPTS: "false"
           RENOVATE_AUTODISCOVER: "true"
           RENOVATE_AUTODISCOVER_FILTER: ${{ github.repository }}
           # A clone and cache per job, so a long-lived runner behaves

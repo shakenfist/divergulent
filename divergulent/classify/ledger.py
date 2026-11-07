@@ -81,11 +81,11 @@ Every bump is a tracked migration, applied when the ledger is next rebuilt."""
 #
 # ``kind`` records WHO decided.  Deterministic-rule decisions are all
 # ``heuristic``; the ``llm`` and ``human`` seats are reserved so the triage and
-# human-review tiers slot in without a schema change.  The PRECEDENCE that ranks
-# kinds lives in ``verdict.decision_rank``, not here: it folds the ``verified``
-# flag into the ranking (``human`` >
-# verified-``llm`` > ``heuristic`` > unverified-``llm``) so an unreviewed LLM
-# draft can never outrank a deterministic heuristic.
+# human-review tiers slot in without a schema change.  The PRECEDENCE that
+# ranks kinds lives in ``verdict.decision_rank``, not here: it folds the
+# ``verified`` flag into the ranking (``human`` > verified-``llm`` >
+# ``heuristic`` > unverified-``llm``) so an unreviewed LLM draft can never
+# outrank a deterministic heuristic.
 # ---------------------------------------------------------------------------
 
 KINDS: frozenset[str] = frozenset({'heuristic', 'llm', 'human'})
@@ -142,7 +142,7 @@ _CATEGORY_RULE_DESCRIPTIONS: dict[str, str] = {
     'doc-only': 'all touched files are documentation -> documentation',
     'build-only': 'all touched files are build-system / packaging -> packaging',
     'test-only': 'all touched files are tests (non-shipping) -> test',
-    'substantive': 'not settled by deterministic content rules -> unknown (LLM-triage residue)',
+    'substantive': 'not settled by deterministic content rules -> unknown (substantive residue)',
 }
 
 
@@ -615,9 +615,9 @@ def live_decision_exists(conn: sqlite3.Connection, *, fingerprint: str, decided_
     """Whether a LIVE decision already exists for ``(fingerprint, decided_by,
     rule_version)``.
 
-    The idempotency check for the recorder: a pure decision is
-    reproducible from this triple, so one that already exists live must not be
-    appended again.  SELECT-only; never mutates.
+    The idempotency check for the recorder: a pure decision is reproducible
+    from this triple, so one that already exists live must not be appended
+    again.  SELECT-only; never mutates.
     """
     row = conn.execute(
         'SELECT 1 FROM decision '
@@ -631,10 +631,11 @@ def live_decision_for_rule(conn: sqlite3.Connection, *, fingerprint: str, decide
                            rule_version: int) -> sqlite3.Row | None:
     """The LIVE decision for ``(fingerprint, decided_by, rule_version)``, or ``None``.
 
-    Unlike :func:`live_decision_exists` this returns the whole row, so an external
-    rule can read the stored ``input_snapshot`` / ``input_fresh_until``
-    and decide whether its prior verdict is stale or has changed.  The newest such
-    live row is returned (there is normally at most one).
+    Unlike :func:`live_decision_exists` this returns the whole row, so an
+    external rule can read the stored ``input_snapshot`` /
+    ``input_fresh_until`` and decide whether its prior verdict is stale or has
+    changed.  The newest such live row is returned (there is normally at most
+    one).
     """
     conn.row_factory = sqlite3.Row
     return conn.execute(
@@ -1244,7 +1245,7 @@ def _cmd_supersede(args: argparse.Namespace) -> int:
         print('superseded rule %s v%d: decisions=%d observations=%d retired=%s' % (
             result.rule_id, result.version, result.decisions_superseded,
             result.observations_superseded, result.retired))
-        print('queue size (LLM-triage residue): %d' % queue_size)
+        print('queue size (substantive residue): %d' % queue_size)
     finally:
         conn.close()
     return 0

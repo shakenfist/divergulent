@@ -1,7 +1,7 @@
 """Tests for divergulent.classify.classify — the deterministic driver.
 
-All tests are offline.  A small synthetic corpus + fingerprint index is
-laid down by hand (the test_measure approach), then classified end to end.  The
+All tests are offline.  A small synthetic corpus + fingerprint index is laid
+down by hand (the test_measure approach), then classified end to end.  The
 known patches exercise every category and the load-bearing logic:
 
   * a mode-only change      -> packaging (empty-after-normalisation)
@@ -386,11 +386,13 @@ class FindingsNoteTestCase(testtools.TestCase):
         self.assertTrue(os.path.exists(findings_path))
         with open(findings_path, encoding='utf-8') as handle:
             text = handle.read()
+        # The heading, so a rename has to come through a test.
+        self.assertIn('# Findings: deterministic patch classification', text)
         # The headline deterministic-settlement measurement.
         self.assertIn('4 distinct fingerprints', text)
         self.assertIn('50.0% settle deterministically', text)
         # The residue label and the review-flag accounting.
-        self.assertIn('unknown-substantive (LLM-triage residue)', text)
+        self.assertIn('unknown-substantive (substantive residue)', text)
         self.assertIn('Review-flagged', text)
         # The dangerous-construct detail breakdown names shell-out.
         self.assertIn('shell-out', text)

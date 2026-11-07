@@ -33,9 +33,14 @@ jobs:
     # is model-generated text posted to the pull request, and a review
     # quoting a trigger phrase would re-fire the lane -- contains()
     # does not care that the phrase sits inside a quote.
+    # The type test catches github-actions[bot]. shakenfist-bot is a
+    # User-type account with admin rights, so a comment it posts
+    # through a token passes both that test and pr-bot-trigger's
+    # permission check, and needs its login named.
     if: |
       github.event.issue.pull_request &&
       github.event.comment.user.type != 'Bot' &&
+      github.event.comment.user.login != 'shakenfist-bot' &&
       contains(github.event.comment.body, '@shakenfist-bot please retest')
     runs-on: [self-hosted, static]
     # Just a few gh API calls, so anything beyond this is a hang.
@@ -127,7 +132,18 @@ jobs:
             echo "Dispatching ${RETEST_WORKFLOW} failed"
           fi
 
+      # Runs even when Dispatch failed outright. Dispatch folds a
+      # refused `gh workflow run` into dispatched=false itself, but any
+      # other error in that step -- gh missing, a shell error -- would
+      # otherwise skip this step and leave the requester with a rocket
+      # reaction and silence. An unset DISPATCHED takes the failure
+      # branch below, which is the right answer for both.
+      #
+      # Not always(): this job sets cancel-in-progress, so a superseded
+      # run would otherwise report a failure the requester did not
+      # cause.
       - name: Post confirmation
+        if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_REF: ${{ needs.trigger-retest.outputs.pr_ref }}

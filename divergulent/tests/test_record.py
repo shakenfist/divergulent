@@ -1,9 +1,9 @@
 """Tests for divergulent.classify.record — the decision recorder.
 
-All offline.  A small synthetic corpus + fingerprint index is laid down
-by hand (the test_classify / test_measure approach), a fresh ledger is created,
-and ``record_to_ledger`` is run over it.  The known patches exercise the
-mapping the recorder must get right:
+All offline.  A small synthetic corpus + fingerprint index is laid down by hand
+(the test_classify / test_measure approach), a fresh ledger is created, and
+``record_to_ledger`` is run over it.  The known patches exercise the mapping
+the recorder must get right:
 
   * a mode-only change      -> ONE 'packaging' decision, decided_by 'empty'
   * a doc-only change       -> ONE 'documentation' decision, decided_by 'doc-only'
