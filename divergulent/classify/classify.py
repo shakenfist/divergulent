@@ -18,17 +18,16 @@ For each DISTINCT fingerprint in the index it:
   signal -- a benign claim over a substantive code change, or any
   dangerous-construct flag).
 
-**Simplification (an open question in the plan).**  Content is well-defined per
+**Simplification: one claim per fingerprint.**  Content is well-defined per
 fingerprint -- the normalised diff is byte-identical across every occurrence --
 so we classify content exactly once per fingerprint.  The CLAIM, however, is
 taken from the *representative occurrence's* body only.  The DEP-3 header can
 differ across occurrences of one fingerprint because canonical normalisation
 strips it before fingerprinting, so two packages can carry the same diff under
 different descriptions/filenames.  A fuller per-occurrence claim pass (claim
-summarised across occurrences with the mismatch noted) is future work; the
-plan's open question ``One body per fingerprint`` records this.  We surface the
-representative's ``patch_name`` and ``source_package`` so a reviewer can tell
-which occurrence the claim came from.
+summarised across occurrences with the mismatch noted) is future work.  We
+surface the representative's ``patch_name`` and ``source_package`` so a
+reviewer can tell which occurrence the claim came from.
 
 Curation-side only: no client command imports ``classify/``.  Heavy work and any
 I/O stay out of import time.
@@ -68,7 +67,8 @@ class Classification:
 
     Content is classified once per fingerprint (the normalised diff is
     identical across occurrences); the claim is taken from the representative
-    occurrence only (see the module docstring -- an open question in the plan).
+    occurrence only (see the module docstring -- a fuller per-occurrence claim
+    pass is future work).
     """
 
     fingerprint: str

@@ -181,9 +181,10 @@ def current_verdict(conn: sqlite3.Connection) -> dict[str, Verdict]:
 # The materialised cache.
 #
 # ``current_verdict`` (the table) is a CACHE of the derived view, for the fast
-# export the signed bundle is built from.  It is always DROP/CREATE-d and rebuilt from ``current_verdict()``
-# (the function) — never hand-edited — so it is guaranteed to mirror the ledger
-# at rebuild time.  Columns mirror the winning decision.
+# export the signed bundle is built from.  It is always DROP/CREATE-d and
+# rebuilt from ``current_verdict()`` (the function) — never hand-edited — so
+# it is guaranteed to mirror the ledger at rebuild time.  Columns mirror the
+# winning decision.
 # ---------------------------------------------------------------------------
 
 

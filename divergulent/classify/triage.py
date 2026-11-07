@@ -3,8 +3,9 @@
 Fingerprinting, the deterministic extractors and the ledger settle what content
 can prove and leave a queue of *substantive* fingerprints whose category
 (bugfix / feature / security / ...) the deterministic rules deliberately do not
-guess. This module triages that residue with an LLM -- the one non-deterministic, non-free, off-box decider in the
-system -- under strict discipline:
+guess. This module triages that residue with an LLM -- the one
+non-deterministic, non-free, off-box decider in the system -- under strict
+discipline:
 
 * **Curation-side, with two backends, neither a runtime import.** The default
   ``claude_cli_call`` shells out to the local ``claude`` CLI (``claude -p``), so
@@ -31,7 +32,7 @@ system -- under strict discipline:
   ``LlmVerdict`` carries the full ``raw_response`` verbatim for the ledger to
   keep as evidence, and ``model`` + ``prompt_version`` form the ``rule_version``
   (bumping either supersedes and re-triages, through the ledger's supersede
-primitives).
+  primitives).
 
 The LLM is the *last* tier and is **always verified** by the adversarial
 verifier below before it counts; a ``security`` verdict here is a *candidate for

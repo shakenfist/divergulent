@@ -43,7 +43,7 @@ from divergulent.classify import fingerprint as fingerprint_module
 # The canonical v1 variant, frozen after the first full crawl measured the
 # sensitivity matrix (the distinct count varies <2.5% across all four cells, so
 # the choice is settled). The matrix below still reports all four for any future
-# re-measure. See docs/plans/PLAN-patch-classification-phase-01-findings.md.
+# re-measure.
 NORMALISATION_VERSION = 1
 CANONICAL_STRIP_PATH = True
 CANONICAL_DROP_CONTEXT = False

@@ -8,9 +8,9 @@ the code as it exists today; see `docs/plans/` for where it is going.
 ## Overview
 
 For its first swing divergulent is a local-only Python CLI. It reads the
-installed-package set from `dpkg` and, in later phases, compares it
-against external data sources, caching their responses on disk. The
-installed-package inventory never leaves the machine.
+installed-package set from `dpkg` and compares it against external data
+sources, caching their responses on disk. The installed-package inventory
+never leaves the machine.
 
 ## Modules
 
@@ -106,7 +106,7 @@ installed-package inventory never leaves the machine.
     description synopsis for review-time display.
   - `fingerprint.py` — the pure, versioned `normalise()`/`fingerprint()`
     (canonical v1 = `strip_path`, `keep_context`); the identity every
-    later phase keys on.
+    later stage keys on.
   - `measure.py` — deduplicates into a sqlite fingerprint index (a
     `patch` table plus a `package` table carrying the changelog date,
     `.dsc` binary names and control synopsis). Measured ≈61.5k carried
@@ -122,7 +122,7 @@ installed-package inventory never leaves the machine.
     `content.py`'s path-carrying `code_added_lines_by_file` (of which
     the by-ext view is now a projection) single-source the same
     pattern tables and code-vs-prose gate as the whole-patch scan —
-    the review UI's phase-4 construct tally reuses them rather than
+    the review UI's construct tally reuses them rather than
     keeping a second copy. Measured 29.2% of patches deterministically
     settled before `test-only` was added.
   - `ledger.py` — the append-only provenance schema: a `rule` registry,
@@ -136,12 +136,12 @@ installed-package inventory never leaves the machine.
   - `record.py` — drives the deterministic tiers into the ledger
     idempotently (category decisions, dangerous-construct observations,
     reviewability, the prompt-injection tripwire, the generated-content
-    mark, reach, and the opt-in phase-6 cross-reference), with an
+    mark, reach, and the opt-in external cross-reference), with an
     opt-in `reconcile` mode for in-place re-records.
   - `verdict.py` — the **derived** current verdict: precedence
     `human > verified-llm > heuristic > unverified-llm`
     (`decision_rank`), then recency, confidence, and id; plus the
-    phase-4 residue queue. Never stored, so it cannot drift, and
+    substantive residue queue. Never stored, so it cannot drift, and
     retiring a rule re-queues exactly its fingerprints.
   - `triage.py` / `triage_record.py` / `triage_driver.py` — the
     claim-blind LLM draft + adversarial verification over a
@@ -260,8 +260,8 @@ installed-package inventory never leaves the machine.
     (`risk_rank * 1e9 + reach_rank * 1e6 + occurrence`, non-overlapping
     bands), never across one; re-records only when a bucket changes.
   - `cross_reference.py` / `security_tracker.py` / `bts.py` — the
-    phase-6 **external** tier (`purity='external'`): claimed CVEs
-    verified against a pinned Security Tracker snapshot
+    **external** tier (`purity='external'`): claimed CVEs verified
+    against a pinned Security Tracker snapshot
     (`corpus/security_tracker.sqlite`) and claimed Debian bugs against
     a BTS index snapshot (`corpus/bts.sqlite`, a gzipped
     `bug→source,status` TSV built weekly from UDD

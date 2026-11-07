@@ -3,8 +3,7 @@
 This module maps a patch to a *content verdict*: a deterministic, evidence-
 bearing statement about what the diff DOES, derived from the ``ContentProfile``
 (``content.py``) and never from the author's ``Claim`` (``claim.py``).  Two
-design promises
-govern everything here:
+design promises govern everything here:
 
 1. **Deterministic rules settle only the structurally-determined categories.**
    ``packaging``, ``documentation`` and ``test`` are confirmable from content
@@ -282,8 +281,7 @@ _CATEGORY_RULES: tuple[tuple[str, int, object], ...] = (
 
 # Shell file extensions.  Backtick command substitution only flags here:
 # elsewhere a backtick is a JavaScript template literal or an Emacs Lisp
-# quasiquote, and the first full corpus run confirmed those cry wolf
-# (PLAN-patch-classification-phase-02-findings.md).
+# quasiquote, and the first full corpus run confirmed those cry wolf.
 _SHELL_EXTENSIONS = frozenset({'.sh', '.bash'})
 
 # Language-agnostic patterns: applied to added lines in every code file.

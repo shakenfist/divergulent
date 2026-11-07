@@ -55,16 +55,16 @@ from divergulent.classify.rules import RULES_VERSION, _CATEGORY_RULES
 
 # ---------------------------------------------------------------------------
 # Versioning — every schema/enum bump is a tracked migration, never a silent
-# reinterpretation (see the plan's "Versioning is explicit").
+# reinterpretation.
 # ---------------------------------------------------------------------------
 
 LEDGER_SCHEMA_VERSION = 2
 """The on-disk schema version, recorded in the ``meta`` table.
 
-Version 2 adds three columns to ``decision`` -- ``verified``
-(an LLM decision counts only once an adversarial pass or a human confirms it),
-``signature`` / ``signed_by`` (reserved for the signed human ManualDecisions
-``review.py`` writes) -- and a ``review_queue`` table backing the human-review worklist.
+Version 2 adds three columns to ``decision`` -- ``verified`` (an LLM decision
+counts only once an adversarial pass or a human confirms it), ``signature`` /
+``signed_by`` (reserved for the signed human ManualDecisions ``review.py``
+writes) -- and a ``review_queue`` table backing the human-review worklist.
 Every bump is a tracked migration, never a silent reinterpretation."""
 
 CATEGORY_ENUM_VERSION = 2

@@ -16,7 +16,7 @@ attacker-authored instructions are never fed to the model they target, and a
 tier that cannot ask the model records the recall-safe disposition rather than
 leaving the patch unranked.
 
-Posture (see ``docs/plans/PLAN-prompt-injection-screening.md``):
+Posture:
 
 * **Tripwire, not shield.**  The patterns are public, so a targeted attacker can
   iterate offline until a payload scores clean.  What the tripwire still buys:

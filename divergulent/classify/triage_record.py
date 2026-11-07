@@ -19,7 +19,8 @@ the ledger, honouring the same structural promises the deterministic recorder
    identity whose old decisions can be superseded), while ``rule_version`` is
    the integer ``prompt_version`` (so a prompt bump moves the version and
    re-triages cleanly).  Both drive supersession through the ledger's existing
-   supersede primitives, and ``rule_version`` stays the INTEGER the schema requires.
+   supersede primitives, and ``rule_version`` stays the INTEGER the schema
+   requires.
 
 3. **A ``needs_human`` result is enqueued for human review.**  When the routing
    is ``needs_human`` the result is also appended to the ``review_queue`` so the

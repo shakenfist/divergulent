@@ -31,8 +31,7 @@ crawl measured the sensitivity matrix (path in/out x context in/out) over the re
 variants, so the choice is settled and the knobs remain first-class only for
 re-measuring. ``keep_context`` is the conservative choice (two patches with
 identical changes but different surrounding code are different changes);
-``strip_path`` merges the same change applied to differently-named files. See
-docs/plans/PLAN-patch-classification-phase-01-findings.md.
+``strip_path`` merges the same change applied to differently-named files.
 """
 from __future__ import annotations
 

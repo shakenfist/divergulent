@@ -48,8 +48,7 @@ content-addressed store later if a single week ever gets fat.
 
 Round-trip is the trust anchor: ``import(export(L))`` reproduces ``L`` row for row
 (ids preserved, so verdict precedence -- which tie-breaks on ``decision.id`` -- is
-identical), and re-export is byte-identical.  See
-docs/plans/PLAN-patch-classification-phase-05-bundle.md.
+identical), and re-export is byte-identical.
 """
 from __future__ import annotations
 
