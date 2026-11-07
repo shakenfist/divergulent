@@ -1,10 +1,11 @@
 """Injectable, claim-blind LLM triage of the substantive patch residue.
 
-Phases 1-3 settle what content can prove deterministically and leave a queue of
-*substantive* fingerprints whose category (bugfix / feature / security / ...)
-the deterministic rules deliberately do not guess. Phase 4 triages that residue
-with an LLM -- the one non-deterministic, non-free, off-box decider in the
-system -- under strict discipline:
+Fingerprinting, the deterministic extractors and the ledger settle what content
+can prove and leave a queue of *substantive* fingerprints whose category
+(bugfix / feature / security / ...) the deterministic rules deliberately do not
+guess. This module triages that residue with an LLM -- the one
+non-deterministic, non-free, off-box decider in the system -- under strict
+discipline:
 
 * **Curation-side, with two backends, neither a runtime import.** The default
   ``claude_cli_call`` shells out to the local ``claude`` CLI (``claude -p``), so
@@ -14,7 +15,7 @@ system -- under strict discipline:
   separately-billed alternative whose SDK is imported *lazily* exactly as
   ``verify.py`` imports ``sigstore`` (``pip install divergulent[triage]``). No
   client command imports this module; the runtime never triages -- clients
-  consume a signed bundle (phase 5).
+  consume a signed bundle.
 
 * **Injectable.** ``triage`` takes a ``call`` callable (the model backend) so
   the test suite runs offline against a fake and the model is swappable. Given
@@ -30,11 +31,12 @@ system -- under strict discipline:
 * **Auditable despite non-determinism.** An LLM verdict is not reproducible, so
   ``LlmVerdict`` carries the full ``raw_response`` verbatim for the ledger to
   keep as evidence, and ``model`` + ``prompt_version`` form the ``rule_version``
-  (bumping either supersedes and re-triages, the phase-3 machinery).
+  (bumping either supersedes and re-triages, through the ledger's supersede
+  primitives).
 
-The LLM is the *last* tier and is **always verified** before it counts
-(step 4b); a ``security`` verdict here is a *candidate for human confirmation*,
-never a final judgement.
+The LLM is the *last* tier and is **always verified** by the adversarial
+verifier below before it counts; a ``security`` verdict here is a *candidate for
+human confirmation*, never a final judgement.
 """
 from __future__ import annotations
 
@@ -72,7 +74,7 @@ VERIFY_PROMPT_VERSION = 1
 
 # A capable, cost-conscious default for a large (~43k) residue: Sonnet triages
 # the bulk well within budget, leaving Opus available for the riskier
-# dangerous-construct / security candidates later (step 4d's prioritised slice).
+# dangerous-construct / security candidates in the driver's prioritised slice.
 DEFAULT_MODEL = 'claude-sonnet-4-6'
 
 # The provisional triage enum the LLM may return. Versioned with PROMPT_VERSION;
@@ -143,9 +145,9 @@ class CallResult:
 class LlmVerdict:
     """One claim-blind LLM read of a diff body.
 
-    Every field is the LLM's *content* judgement; nothing here is verified
-    (step 4b) and nothing reflects the author's claim. Use alongside the
-    ``Claim`` -- their disagreement is the loudest signal.
+    Every field is the LLM's *content* judgement; nothing here has been through
+    the adversarial verifier, and nothing reflects the author's claim. Use
+    alongside the ``Claim`` -- their disagreement is the loudest signal.
     """
 
     category: str
@@ -154,7 +156,7 @@ class LlmVerdict:
 
     confidence: str
     """``'high'`` / ``'medium'`` / ``'low'`` -- the model's stated confidence.
-    Low confidence routes to human review (step 4b)."""
+    Low confidence routes to human review."""
 
     reasoning: str
     """The model's one/two-sentence justification, drawn from the diff alone."""
@@ -385,7 +387,7 @@ def triage(patch_text: str, *, call, model: str = DEFAULT_MODEL,
 
 
 # ---------------------------------------------------------------------------
-# The adversarial verifier (step 4b)
+# The adversarial verifier
 #
 # An LLM draft does not count until an INDEPENDENT pass confirms it. The verify
 # pass is itself claim-blind (it sees only the diff body + the proposed
@@ -563,17 +565,18 @@ def verify(patch_text: str, proposed_category: str, *, call,
 
 
 # ---------------------------------------------------------------------------
-# Routing: draft + verify -> verified | needs_human (step 4b)
+# Routing: draft + verify -> verified | needs_human
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class TriageResult:
     """A draft, its adversarial verification, and the resulting routing.
 
-    The whole point of step 4b: the ``draft`` (an ``LlmVerdict``) does not count
-    on its own -- only a ``routing`` of ``'verified'`` lets it stand as a
-    verified LLM decision (step 4c). ``'needs_human'`` enqueues it for the local
-    interactive review tool (step 4e), with ``reason`` recording why.
+    The whole point of the adversarial pass: the ``draft`` (an ``LlmVerdict``)
+    does not count on its own -- only a ``routing`` of ``'verified'`` lets it
+    stand as a ``verified`` decision in the ledger. ``'needs_human'`` enqueues
+    it for ``review.py``, the local interactive review tool, with ``reason``
+    recording why.
     """
 
     draft: LlmVerdict
@@ -622,7 +625,7 @@ def triage_and_verify(patch_text: str, *, call, claim_category: str | None = Non
     Note the security rule: a ``security`` draft ALWAYS routes to
     ``'needs_human'``, however cleanly the verifier confirms it -- the LLM never
     finalises a security call on its own, so ``security`` from the LLM is only
-    ever a *candidate for human confirmation* (step 4e).
+    ever a *candidate for human confirmation* in ``review.py``.
 
     ``mark_files`` (the fingerprint's live ``generated-content`` mark, threaded by
     the driver from a marks dict read once per run) is passed to BOTH passes, so
@@ -652,7 +655,7 @@ def triage_and_verify(patch_text: str, *, call, claim_category: str | None = Non
     if draft.category == 'security':
         # The LLM never finalises a security call, however clean the verification:
         # a security verdict is expensive to be wrong about in either direction,
-        # so it is only ever a candidate for human confirmation (step 4e).
+        # so it is only ever a candidate for human confirmation in review.py.
         reasons.append('a security draft is only ever a candidate for human confirmation')
 
     usage = draft.usage + verification.usage
@@ -831,7 +834,7 @@ def _cli_now() -> str:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='python -m divergulent.classify.triage',
-        description='Run a BOUNDED, prioritised LLM triage pass over the phase-4 '
+        description='Run a BOUNDED, prioritised LLM triage pass over the substantive '
                     'residue (curation-side; off-box). Drafts a category blind to the '
                     "author's claim, verifies it adversarially, records each result in "
                     'the ledger, and surfaces candidate deterministic rules for human '
@@ -839,7 +842,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument('ledger', help='path to a ledger sqlite built by classify.ledger')
     parser.add_argument('corpus_dir', help='directory of a corpus built by classify.corpus')
     parser.add_argument('--index', default=None,
-                        help='path to the phase-1 sqlite fingerprint index (default: '
+                        help='path to the sqlite fingerprint index (default: '
                              '<corpus_dir>/fingerprints.sqlite)')
     parser.add_argument('--limit', type=int, default=DEFAULT_LIMIT,
                         help='max fingerprints to triage this run -- the budget cap, so '

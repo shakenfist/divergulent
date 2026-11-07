@@ -4,7 +4,7 @@ Where ``claim.py`` reads what the author SAYS about a patch, this module reads
 what the diff DOES.  ``profile(text)`` is a pure function over a unified-diff /
 quilt patch body: no I/O, no network.  It produces a ``ContentProfile`` — a
 structured, factual description of what files the diff touches and how — which
-step 2c's rules consume.
+the deterministic rules in ``rules.py`` consume.
 
 The most important thing this module gets right is **file typing** (code vs
 prose).  The whole "no cry wolf" promise rides on it: a construct mentioned in
@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from divergulent.classify import fingerprint as fp
 
 # ---------------------------------------------------------------------------
-# Version tag — phase-3 ledger keys on this to detect stale verdicts.
+# Version tag — the ledger keys on this to detect stale verdicts.
 # ---------------------------------------------------------------------------
 
 CONTENT_RULE_VERSION = 1
@@ -41,7 +41,8 @@ CONTENT_RULE_VERSION = 1
 FILE_TYPES = ('test', 'build', 'doc', 'code', 'data')
 
 # ---------------------------------------------------------------------------
-# File-typing tables.  Tuned against the phase-1 recurring-tail taxonomy.
+# File-typing tables.  Tuned against the recurring-tail taxonomy the first
+# full corpus crawl measured.
 # Precedence is documented in ``_classify_file``; the tables here are the raw
 # membership sets each precedence step consults.
 # ---------------------------------------------------------------------------
@@ -152,7 +153,7 @@ class ContentProfile:
     """Ground-truth description of what a diff body touches.
 
     Built from the diff alone — never from the author's claim.  Use alongside
-    ``Claim`` (step 2a); their disagreement is the loudest signal.
+    ``Claim`` (``claim.py``); their disagreement is the loudest signal.
     """
 
     files: list[tuple[str, str]]
@@ -541,7 +542,7 @@ def code_added_lines_by_ext(text: str) -> list[tuple[str, str]]:
 def code_added_lines(text: str) -> list[str]:
     """Return the text of ``+`` lines in *code*-typed files only.
 
-    The semantic level that step 2c's dangerous-construct scan runs at: added
+    The semantic level the dangerous-construct scan in ``rules.py`` runs at: added
     lines in genuine source files, never prose.  A construct that appears in a
     manpage or other doc/build/data file is deliberately excluded, so a manpage
     mentioning ``system("/bin/sh")`` does not surface — only the same string

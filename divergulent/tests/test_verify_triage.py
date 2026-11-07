@@ -280,7 +280,7 @@ class TriageAndVerifyTestCase(testtools.TestCase):
         # The security rule: an otherwise SPOTLESS security draft -- agreeing
         # verifier, high confidence on both passes, matching claim, no dangerous
         # construct -- must still go to a human. The LLM never finalises a
-        # security call on its own (step 4e).
+        # security call on its own; a human confirms it in review.py.
         call = _routing_call(
             triage_response=_triage_json(category='security', confidence='high'),
             verify_response=_verify_json(agrees=True, confidence='high'))

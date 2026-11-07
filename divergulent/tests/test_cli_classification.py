@@ -1,4 +1,4 @@
-"""Client-side classification display + pull (phase 5, P3).
+"""Client-side classification display + pull.
 
 The client HASHES a patch it already fetched and looks the verdict up in the
 published bundle -- it runs no classifier and no LLM. These assert the join key

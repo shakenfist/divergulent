@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prototype: a deterministic prompt-injection tripwire over the patch corpus.
 
-Part of docs/plans/PLAN-prompt-injection-screening.md (phase 1). This is an
+Part of docs/plans/PLAN-prompt-injection-screening.md. This is an
 EVALUATION prototype, not shipped classifier code: it scans every deduplicated
 patch body in a corpus for injection-shaped text and reports hit rates per
 pattern family, so the plan's go/no-go decision rests on measured numbers.

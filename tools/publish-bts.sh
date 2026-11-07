@@ -32,7 +32,7 @@ ensure_gh
 
 ensure_rolling_release "$tag" \
     "BTS bug index" \
-    "Rolling, auto-updated Debian BTS bug index (bug -> source, status) for divergulent's phase-6 patch cross-reference. Not a software release."
+    "Rolling, auto-updated Debian BTS bug index (bug -> source, status) for divergulent's external patch cross-reference. Not a software release."
 
 echo "Publishing to release '$tag':"
 publish_assets "$tag" "$asset"

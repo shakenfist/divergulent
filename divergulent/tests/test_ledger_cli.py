@@ -1,4 +1,4 @@
-"""Tests for the step-3d supersession/redo operations and the ledger CLI.
+"""Tests for the supersession/redo operations and the ledger CLI.
 
 All offline.  The supersession cases hand-build a small ledger with
 ``ledger.create_ledger`` + ``register_rules`` + ``append_decision`` /
@@ -200,7 +200,7 @@ DOC_ONLY = (
 
 
 def _build_synthetic_corpus(corpus_dir):
-    """Lay down two bodies + a phase-1 fingerprint index for a known-answer run."""
+    """Lay down two bodies + a fingerprint index for a known-answer run."""
     bodies = {'mode.patch': MODE_ONLY, 'doc.patch': DOC_ONLY}
     for text in bodies.values():
         sha = body_sha256(text)

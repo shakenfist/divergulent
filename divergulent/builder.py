@@ -1,9 +1,8 @@
 '''Central cache builder: enumerate the archive and sweep staleness.
 
-This is the *builder* side of the published cache (see
-``docs/plans/PLAN-published-cache.md``) — code that runs once, centrally, in
-CI, not on a user's machine. It does the two expensive, fully shareable
-computations:
+This is the *builder* side of the published cache — code that runs once,
+centrally, in CI, not on a user's machine. It does the two expensive, fully
+shareable computations:
 
 * **Enumeration** — read the Debian release's deb-src ``Sources`` indices to
   learn every ``(source, version, format)`` in the archive, with no network.

@@ -68,9 +68,10 @@ the archive from deb-src `Sources` indices with `debian.deb822.Sources`
 same `_concurrent_map`. `HttpClient(refresh=True)` (the `--refresh` flag)
 skips cache reads but still writes, so a periodic full rebuild can bound
 how long a once-bad cached value lives in the bundle. Bundles are written
-by `divergulent.bundle` as gzipped JSON; the client-side consumer is a
-later phase, so the builder must not import or alter the per-package
-client path in `repology.py` (it imports only `_select_newest`).
+by `divergulent.bundle` as gzipped JSON; the builder must not import or
+alter the per-package client path in `repology.py` (it imports only
+`_select_newest`), so building a bundle cannot perturb per-package
+lookups.
 
 **Bundle-backed consumption (`--bundle`).** When `--bundle PATH` points
 at a recognised, release-matched bundle (`cli._usable_bundle` checks
@@ -93,7 +94,7 @@ with `HttpClient.get_bytes` (raw bytes, throttled and size-capped but not
 value-cached), validates it with `bundle.loads` + schema/release checks,
 and stores the **downloaded bytes verbatim** at `bundle.stored_path`
 (`cache-<release>.json.gz` under the cache dir) via an atomic
-temp-file+rename — verbatim so a phase-4 signature verifies against
+temp-file+rename — verbatim so the Sigstore signature verifies against
 exactly what was published; a download that fails to parse, is
 unrecognised, or is for another release is refused and nothing is stored.
 A failed *download* is survivable with `--keep-existing`, which keeps an
@@ -251,7 +252,7 @@ persists `DIVERGULENT_CACHE_DIR` via `actions/cache`.
 
 `divergulent/classify/injection.py` is the shipped deterministic
 prompt-injection tripwire over LLM-bound patch text (see
-`docs/plans/PLAN-prompt-injection-screening.md` and its phase-3 findings).
+`docs/plans/PLAN-prompt-injection-screening.md` and its findings).
 `scan_injection` returns evidence-bearing `llm-injection-suspect` flags
 from a tuned family set (instruction phrases, chat-template markers, the
 Unicode tag block, long zero-width runs, bidi controls; the noisy base64

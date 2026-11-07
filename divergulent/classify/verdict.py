@@ -1,12 +1,13 @@
 """The derived current-verdict view, the work queue, and the ledger report.
 
-This module is step 3c of the ledger: the *read side*.  The append-only
-``decision`` table (step 3a/3b) is the source of truth; the **current verdict**
-for a fingerprint is **never stored** there — it is *computed* from the live
-(non-superseded) decisions every time it is needed.  This is the load-bearing
-design choice: because the view is derived, it cannot drift from the ledger, and
-a supersession (a future rule retirement or an LLM/human override) is picked up
-automatically the next time the view is computed.
+This module is the ledger's *read side*.  The append-only ``decision`` table
+that ``ledger.py`` defines and ``record.py`` fills is the source of truth; the
+**current verdict** for a fingerprint is **never stored** there — it is
+*computed* from the live (non-superseded) decisions every time it is needed.
+This is the load-bearing design choice: because the view is derived, it cannot
+drift from the ledger, and a supersession (a future rule retirement or an
+LLM/human override) is picked up automatically the next time the view is
+computed.
 
 Three things live here:
 
@@ -18,11 +19,11 @@ Three things live here:
 2. :func:`rebuild_current_verdict` — *materialises* the view into a
    ``current_verdict`` cache table (DROP/CREATE then one row per fingerprint).
    The cache is **always rebuilt from** :func:`current_verdict`, never
-   hand-edited, so it stays a faithful snapshot for fast export (phase 5).
+   hand-edited, so it stays a faithful snapshot for the bundle export.
 
-3. :func:`queue`, :func:`summarise_ledger`, :func:`render_report` — the phase-4
-   residue (fingerprints still needing work) and a lean markdown report of how
-   the current view splits and how big the audit trail is.
+3. :func:`queue`, :func:`summarise_ledger`, :func:`render_report` — the
+   substantive residue (fingerprints still needing work) and a lean markdown
+   report of how the current view splits and how big the audit trail is.
 
 Curation-side only: no client command imports ``classify/``; nothing here runs
 an LLM.  Import-time clean — it pulls in only ``ledger`` and stdlib.
@@ -51,7 +52,7 @@ from divergulent.classify import ledger as ledger_mod
 # so ``max(..., key=...)`` selects the winner.  ``decided_at`` is an ISO-8601
 # string and sorts correctly lexically; we guard ``None`` to the bottom.
 #
-# The step-4c refinement: kind alone is no longer the top component.  An LLM
+# The LLM-triage refinement: kind alone is no longer the top component.  An LLM
 # draft does not count until an adversarial pass (or a human) verifies it, so an
 # UNVERIFIED llm decision must NEVER outrank a heuristic — no cry wolf from an
 # unreviewed guess.  ``decision_rank`` folds the ``verified`` flag into the
@@ -178,10 +179,11 @@ def current_verdict(conn: sqlite3.Connection) -> dict[str, Verdict]:
 # ---------------------------------------------------------------------------
 # The materialised cache.
 #
-# ``current_verdict`` (the table) is a CACHE of the derived view for fast export
-# (phase 5).  It is always DROP/CREATE-d and rebuilt from ``current_verdict()``
-# (the function) — never hand-edited — so it is guaranteed to mirror the ledger
-# at rebuild time.  Columns mirror the winning decision.
+# ``current_verdict`` (the table) is a CACHE of the derived view, for the fast
+# export the signed bundle is built from.  It is always DROP/CREATE-d and
+# rebuilt from ``current_verdict()`` (the function) — never hand-edited — so
+# it is guaranteed to mirror the ledger at rebuild time.  Columns mirror the
+# winning decision.
 # ---------------------------------------------------------------------------
 
 
@@ -192,7 +194,8 @@ def rebuild_current_verdict(conn: sqlite3.Connection) -> int:
     :func:`current_verdict`.  Because it is rebuilt from the query every time, a
     second rebuild over an unchanged ledger reproduces the same rows — the cache
     can never silently drift from the source-of-truth decisions.  This is the
-    fast-export snapshot for phase 5; it is never the source of truth.
+    fast-export snapshot the signed bundle is built from; it is never the source
+    of truth.
     """
     verdicts = current_verdict(conn)
     conn.execute('DROP TABLE IF EXISTS current_verdict')
@@ -225,12 +228,12 @@ def rebuild_current_verdict(conn: sqlite3.Connection) -> int:
 
 
 def queue(conn: sqlite3.Connection) -> list[str]:
-    """Fingerprints that still need work — the phase-4 residue.  Sorted, unique.
+    """Fingerprints that still need work — the substantive residue.  Sorted, unique.
 
     Two sources, unioned:
 
     * fingerprints whose current (winning live) verdict ``category == 'unknown'``
-      — the substantive residue the LLM tier (phase 4) consumes; and
+      — the substantive residue the LLM triage tier consumes; and
     * fingerprints that have decisions in the ledger but **none live** (every
       decision superseded) — re-queued, because a supersession (a retired rule)
       left them with no verdict until something new is appended.
@@ -282,8 +285,8 @@ def summarise_ledger(conn: sqlite3.Connection) -> LedgerSummary:
 
     * ``fingerprints_with_verdict`` — fingerprints with a live (winning) verdict;
     * ``verdicts_by_category`` — how the current view splits (should reproduce
-      the phase-2 packaging / documentation / unknown distribution);
-    * ``queue_size`` — the phase-4 residue size (see :func:`queue`);
+      the deterministic packaging / documentation / unknown distribution);
+    * ``queue_size`` — the substantive residue size (see :func:`queue`);
     * ``decisions_by_rule`` — live decisions counted by ``decided_by`` rule;
     * ``observations_by_detail`` — live observations counted by ``detail``;
     * ``superseded_decisions`` — the size of the superseded audit trail.
@@ -330,14 +333,14 @@ def render_report(summary: LedgerSummary) -> str:
     """Render a :class:`LedgerSummary` as a markdown report string.
 
     A lean, fingerprint-weighted report: the headline counts, the
-    current-view category split (the phase-2 distribution reproduced through the
-    ledger), the queue size, decisions by rule, live observations by detail, and
+    current-view category split (the deterministic distribution reproduced
+    through the ledger), the queue size, decisions by rule, live observations by detail, and
     the superseded-audit-trail size.
     """
     lines = ['# Ledger report', '']
     lines.append('- Fingerprints with a live verdict: %d'
                  % summary.fingerprints_with_verdict)
-    lines.append('- Queue size (phase-4 residue): %d' % summary.queue_size)
+    lines.append('- Queue size (substantive residue): %d' % summary.queue_size)
     lines.append('- Superseded decisions (audit trail): %d'
                  % summary.superseded_decisions)
     lines.append('')

@@ -1,4 +1,4 @@
-"""Tests for divergulent.classify.triage_record -- the step-4c LLM recorder.
+"""Tests for divergulent.classify.triage_record -- the LLM decision recorder.
 
 All OFFLINE: the ledger is built directly with ``create_ledger`` /
 ``append_decision``, and the :class:`triage.TriageResult` is constructed by hand

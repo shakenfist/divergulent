@@ -16,7 +16,7 @@ attacker-authored instructions are never fed to the model they target, and a
 tier that cannot ask the model records the recall-safe disposition rather than
 leaving the patch unranked.
 
-Posture (see ``docs/plans/PLAN-prompt-injection-screening.md``):
+Posture:
 
 * **Tripwire, not shield.**  The patterns are public, so a targeted attacker can
   iterate offline until a payload scores clean.  What the tripwire still buys:
@@ -31,7 +31,7 @@ Posture (see ``docs/plans/PLAN-prompt-injection-screening.md``):
   (:data:`SCAN_TRUNCATED_FAMILY`) rather than reporting a clean result it did
   not earn.
 
-The family set is deliberately TUNED (phase-3 findings): the raw evaluation
+The family set is deliberately TUNED by the screening evaluation: the raw
 prototype's ``large-base64-blob`` family (embedded assets, not instruction-
 shaped) is dropped, and the invisible-Unicode family is split into the strong
 ``invisible-tag-block`` (near-zero legitimate use in a Debian patch) and a

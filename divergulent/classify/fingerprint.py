@@ -21,18 +21,17 @@ separately downstream; it must not be part of the fingerprint, so two patches
 with identical diffs but different descriptions share a fingerprint.
 
 The normalisation is *versioned*: a fingerprint is ``(version, digest)``
-because every later classification phase keys off it. Only ``version == 1`` is
+because every later classification stage keys off it. Only ``version == 1`` is
 defined; any other value raises ``ValueError``. The structure keeps adding a
 future version easy.
 
-The v1 canonical is ``strip_path=True, drop_context=False``. The phase-1 crawl
-measured the sensitivity matrix (path in/out x context in/out) over the real
+The v1 canonical is ``strip_path=True, drop_context=False``. The first full
+crawl measured the sensitivity matrix (path in/out x context in/out) over the real
 ~61.5k-patch corpus and found the distinct count varies <2.5% across all four
 variants, so the choice is settled and the knobs remain first-class only for
 re-measuring. ``keep_context`` is the conservative choice (two patches with
 identical changes but different surrounding code are different changes);
-``strip_path`` merges the same change applied to differently-named files. See
-docs/plans/PLAN-patch-classification-phase-01-findings.md.
+``strip_path`` merges the same change applied to differently-named files.
 """
 from __future__ import annotations
 
@@ -180,7 +179,7 @@ def fingerprint(
     """Return ``(version, sha256_hexdigest)`` of the normalised diff body.
 
     The digest is taken over ``normalise(...)`` encoded as UTF-8. The version
-    travels with the digest because every later phase keys off it.
+    travels with the digest because every later stage keys off it.
     """
     normalised = normalise(
         diff_text, version=version, strip_path=strip_path, drop_context=drop_context)

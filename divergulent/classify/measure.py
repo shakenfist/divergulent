@@ -1,6 +1,6 @@
 """Fingerprint, deduplicate, and measure a carried-patch corpus (curation-side).
 
-This is the measurement half of phase 1. It reads a corpus built by
+This is the measurement half of fingerprinting. It reads a corpus built by
 ``corpus.py`` -- the content-addressed bodies plus the ``patches.jsonl`` /
 ``packages.jsonl`` manifests -- applies ``fingerprint.py`` ACROSS THE
 NORMALISATION MATRIX, deduplicates, and emits the headline number that reframes
@@ -21,7 +21,7 @@ The deliverables, all produced by ``measure_corpus`` / the CLI:
   recurring boilerplate), the TOP-RECURRING list with sample bodies, and the
   PER-PACKAGE patches-vs-distinct comparison.
 * A self-describing sqlite FINGERPRINT INDEX (the canonical variant) that later
-  phases join on by ``fingerprint``.
+  stages join on by ``fingerprint``.
 * A markdown FINDINGS NOTE summarising all of the above plus the honest
   accounting (packages by state, fetch failures, non-quilt skips).
 
@@ -40,10 +40,10 @@ from dataclasses import dataclass, field
 
 from divergulent.classify import fingerprint as fingerprint_module
 
-# The canonical v1 variant, frozen after the phase-1 crawl measured the
+# The canonical v1 variant, frozen after the first full crawl measured the
 # sensitivity matrix (the distinct count varies <2.5% across all four cells, so
 # the choice is settled). The matrix below still reports all four for any future
-# re-measure. See docs/plans/PLAN-patch-classification-phase-01-findings.md.
+# re-measure.
 NORMALISATION_VERSION = 1
 CANONICAL_STRIP_PATH = True
 CANONICAL_DROP_CONTEXT = False
@@ -123,7 +123,7 @@ class Accounting:
 
 @dataclass
 class Measurement:
-    """The full phase-1 measurement of a corpus (canonical + matrix)."""
+    """The full fingerprint measurement of a corpus (canonical + matrix)."""
 
     patch_rows: int
     distinct_bodies: int
@@ -219,7 +219,7 @@ def _fingerprint_body(raw_text: str, *, strip_path: bool, drop_context: bool) ->
 
 
 def measure_corpus(corpus_dir: str, *, top_n: int = DEFAULT_TOP_N) -> Measurement:
-    """Read ``corpus_dir`` and compute the full phase-1 measurement.
+    """Read ``corpus_dir`` and compute the full fingerprint measurement.
 
     Bodies are fingerprinted ONCE per distinct raw body per matrix variant (the
     content-addressed store means thousands of provenance rows collapse to far
@@ -324,7 +324,7 @@ def write_index(corpus_dir: str, index_path: str) -> int:
     """Write the self-describing sqlite fingerprint index for the canonical variant.
 
     One ``patch`` row per patch-provenance row, carrying the canonical
-    fingerprint that later phases join on; a ``meta`` table records the
+    fingerprint that later stages join on; a ``meta`` table records the
     normalisation version and the variant knobs so the index is self-describing.
     Returns the number of patch rows written.
     """
@@ -400,7 +400,7 @@ def render_findings(measurement: Measurement) -> str:
     """Render the markdown findings note from a measurement."""
     canonical = measurement.canonical
     lines: list[str] = []
-    lines.append('# Phase 1 findings: the distinct-patch count')
+    lines.append('# Findings: the distinct-patch count')
     lines.append('')
     lines.append(
         'Headline: **≈%d carried patches → %d distinct** '

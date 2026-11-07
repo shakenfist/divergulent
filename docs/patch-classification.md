@@ -37,8 +37,8 @@ patches as deterministically settled (packaging/documentation), ~43k
 substantive residue for triage — of which the `test-only` rule (a patch
 touching only test files → the structural `test` category, CATEGORY_ENUM v2)
 deterministically settles a further ~15%, since test churn cannot change the
-shipped artifact. The run surfaced (and the same phase then
-fixed) a backtick false-positive source by making the dangerous-construct scan
+shipped artifact. The run surfaced (and the same change then fixed) a
+backtick false-positive source by making the dangerous-construct scan
 language-aware (shell-only backtick), and showed 58% of patches carry no usable
 claim. See
 `docs/plans/PLAN-patch-classification-phase-02-findings.md`.

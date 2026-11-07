@@ -28,7 +28,7 @@ _FORWARDING_VERBS = ('record', 'triage', 'risk', 'review', 'requeue', 'history',
 
 # Verbs that forward but operate on the CORPUS only (no ledger needed) -- e.g.
 # pulling a popcon snapshot for the reach axis, which writes corpus/popcon.sqlite,
-# or the Security Tracker / BTS snapshots for the phase-6 cross-reference.
+# or the Security Tracker / BTS snapshots for the external cross-reference.
 _CORPUS_VERBS = ('popcon', 'security-tracker', 'bts')
 
 # Verbs that CREATE the ledger, so must not require one to already exist -- e.g.
@@ -193,13 +193,13 @@ def _forward(verb: str, ws: workspace.Workspace, rest: list[str]) -> int:
         return popcon.main([corpus, *rest])
     if verb == 'security-tracker':
         # Pull + pin a Debian Security Tracker snapshot into
-        # corpus/security_tracker.sqlite (the phase-6 CVE cross-reference input).
+        # corpus/security_tracker.sqlite (the external CVE cross-reference input).
         # Corpus-only: no ledger required.
         from divergulent.classify import security_tracker
         return security_tracker.main([corpus, *rest])
     if verb == 'bts':
         # Pull + pin a Debian BTS bug-index snapshot into corpus/bts.sqlite (the
-        # phase-6 bug cross-reference input). Corpus-only: no ledger required.
+        # external bug cross-reference input). Corpus-only: no ledger required.
         from divergulent.classify import bts
         return bts.main([corpus, *rest])
     if verb == 'export':

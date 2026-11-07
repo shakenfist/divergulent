@@ -1,4 +1,4 @@
-"""The local, signed human-review tool (phase 4, step 4e).
+"""The local, signed human-review tool.
 
 The deterministic tiers and the LLM triage are batch, curation-side, and belong
 in CI; **human review is interactive and identity-bound and does not**. This
@@ -9,15 +9,15 @@ human's verdict, and records it as a **signed ManualDecision**
 (``kind='human'``) -- non-repudiation, reusing the project's existing Sigstore
 posture.
 
-Four design decisions from the plan are load-bearing here:
+Four design decisions are load-bearing here:
 
 * **A human verdict is a *signed* ManualDecision.**  A ``kind='human'`` decision
   is the top of the precedence (``verdict.decision_rank``), so it is the most
   trusted verdict in the system; it is also the most *accountable*.  The
   reviewer signs a canonical decision record with their keyless Sigstore OIDC
   identity, and the ``decision`` row gains a ``signature`` (the bundle JSON) and
-  a verified ``signed_by`` (the OIDC identity).  Phase 5 can then *prove* "this
-  patch was human-reviewed by <identity>".
+  a verified ``signed_by`` (the OIDC identity).  A consumer of the published
+  bundle can then *prove* "this patch was human-reviewed by <identity>".
 
 * **Human review runs locally and interactively -- never in CI.**  A GitHub
   Actions job cannot sit a person in front of a diff, and the reviewer's signing
@@ -68,8 +68,8 @@ _DEV_NULL = '/dev/null'
 
 # The human-review "rule version".  A human decision is not produced by a
 # versioned rule the way a heuristic is, but the schema requires an integer
-# rule_version; this pins the review-tool/record format so phase-5 re-verifies
-# the canonical record under a known shape.  Bumping it is a tracked change to
+# rule_version; this pins the review-tool/record format so a later verifier
+# reads the canonical record under a known shape.  Bumping it is a tracked change to
 # what the signature covers.
 REVIEW_RULE_VERSION = 1
 
@@ -539,7 +539,7 @@ def canonical_record(fingerprint: str, category: str, decided_at: str, *,
     ``fingerprint`` reviewed, the ``category`` they chose, the ``decided_at``
     timestamp, the ``rule_version`` (so the record shape is versioned), and an
     optional free-text ``note``.  ``sort_keys`` + ``separators`` make the bytes
-    deterministic so phase 5 can reconstruct exactly these bytes and re-verify
+    deterministic so a verifier can reconstruct exactly these bytes and re-verify
     the Sigstore signature over them.  No clock, no environment, nothing
     non-deterministic -- the signed artifact is a pure function of its inputs.
     """
@@ -560,7 +560,7 @@ def canonical_note(fingerprint: str, body: str, created_at: str) -> bytes:
     A stable JSON serialisation of exactly what the reviewer attests to: the
     ``fingerprint`` annotated, the note ``body``, the ``created_at`` timestamp, and
     the ``rule_version`` (record shape).  Mirrors :func:`canonical_record` --
-    ``sort_keys`` + ``separators`` make the bytes deterministic so phase 5 can
+    ``sort_keys`` + ``separators`` make the bytes deterministic so a verifier can
     reconstruct exactly these bytes and re-verify the Sigstore signature.
     """
     record = {
@@ -756,7 +756,7 @@ def _llm_draft(conn: sqlite3.Connection, fingerprint: str) -> sqlite3.Row | None
     """The most recent LIVE ``kind='llm'`` decision for ``fingerprint``, or None.
 
     The review tool shows the LLM draft the reviewer accepts or overrides.  The
-    triage recorder (step 4c) appended it; we read the latest live llm row from
+    triage recorder (``triage_record.py``) appended it; we read the latest live llm row from
     the audit trail so the reviewer sees the current draft, not a superseded one.
     """
     llm_rows = [
@@ -794,7 +794,7 @@ def build_review_context(conn: sqlite3.Connection, corpus_dir: str, index_path: 
 
     Keyed by ``fingerprint`` (not by a queue item) so the same render path serves
     both the queue review page and the audit/spot-check view: loads the
-    representative body (``measure.read_body`` via the phase-1 index), the author's
+    representative body (``measure.read_body`` via the fingerprint index), the author's
     claim (``extract_claim``), and the live LLM draft (``decisions_for``); fetches
     the original upstream file and renders the diff in context.  ``item`` is the
     optional queue row -- supplied when reviewing from the queue (its ``reason``
@@ -975,7 +975,7 @@ def _draft_reasoning(draft: sqlite3.Row | None) -> str | None:
 def _representative_patch(index_path: str, fingerprint: str):
     """The representative ``(source_package, version, patch_name, raw_sha256)``.
 
-    Reads the first phase-1 ``patch`` index row for ``fingerprint`` (row order is
+    Reads the first ``patch`` index row for ``fingerprint`` (row order is
     stable for a given index build, matching how the driver picks a
     representative), so the review shows one concrete carried instance of the
     deduplicated fingerprint.  Returns ``None`` when the fingerprint has no index
@@ -1430,7 +1430,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_review.add_argument('ledger', help='path to a ledger sqlite built by classify.ledger')
     p_review.add_argument('corpus_dir', help='directory of a corpus built by classify.corpus')
     p_review.add_argument('--index', default=None,
-                          help='path to the phase-1 sqlite fingerprint index (default: '
+                          help='path to the sqlite fingerprint index (default: '
                                '<corpus_dir>/fingerprints.sqlite)')
     p_review.add_argument('--limit', type=int, default=DEFAULT_LIMIT,
                           help='max items to review this session (default: %d)' % DEFAULT_LIMIT)

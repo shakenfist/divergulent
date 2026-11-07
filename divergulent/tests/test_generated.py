@@ -1233,7 +1233,7 @@ NAME_ONLY_TWIN = _file_diff('src/renamed.c', [' context', '-old', '+new'])
 
 
 def _build_corpus(corpus_dir, bodies_by_name):
-    """Lay down bodies + a phase-1 index for the named patches; one package each.
+    """Lay down bodies + a fingerprint index for the named patches; one package each.
 
     The same shape ``test_injection.py`` uses: bodies content-addressed under
     ``bodies/<xx>/<sha>``, one index row per patch naming its fingerprint.  Returns the

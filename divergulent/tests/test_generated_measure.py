@@ -246,7 +246,7 @@ class MeasureCorpusTestCase(testtools.TestCase):
             'acinclude', 'multi_banner', 'candidate_family', 'translation_candidates', 'totals',
         }, set(self.report))
 
-    def test_no_translation_candidates_in_the_phase_1_fixture(self):
+    def test_no_translation_candidates_in_the_fixture(self):
         translations = self.report['translation_candidates']
         self.assertEqual(0, translations['coverage']['fingerprints_with_corroborated'])
         self.assertEqual(0, sum(

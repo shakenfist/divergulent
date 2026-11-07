@@ -1,6 +1,6 @@
-"""Tests for the phase-6 external CVE pass in record.record_to_ledger (E3).
+"""Tests for the external CVE pass in record.record_to_ledger.
 
-All offline. A small synthetic corpus (bodies + a phase-1 index) is laid down with
+All offline. A small synthetic corpus (bodies + a fingerprint index) is laid down with
 patches that CLAIM CVEs, a pinned Security Tracker snapshot is written by hand, and
 ``record_to_ledger`` is run with ``security_tracker_path`` set. The cases exercise
 the pass's contract: settle ``security`` for a code-touching confirmed CVE over the
@@ -82,7 +82,7 @@ def _write_bodies(corpus_dir, bodies):
 
 
 def _build_corpus(corpus_dir):
-    """Lay down bodies + a phase-1 index; return the index path."""
+    """Lay down bodies + a fingerprint index; return the index path."""
     bodies = {
         'fix.patch': SECURITY_FIX,
         'doc.patch': DOC_MENTIONS_CVE,

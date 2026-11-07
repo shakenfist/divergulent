@@ -1,12 +1,12 @@
-"""Tests for divergulent.classify.classify — the step-2d driver.
+"""Tests for divergulent.classify.classify — the deterministic driver.
 
-All tests are offline.  A small synthetic corpus + phase-1 fingerprint index is
-laid down by hand (the test_measure approach), then classified end to end.  The
+All tests are offline.  A small synthetic corpus + fingerprint index is laid
+down by hand (the test_measure approach), then classified end to end.  The
 known patches exercise every category and the load-bearing logic:
 
   * a mode-only change      -> packaging (empty-after-normalisation)
   * a doc-only change       -> documentation
-  * a substantive code edit -> unknown (the phase-4 residue)
+  * a substantive code edit -> unknown (the substantive residue)
   * a patch that CLAIMS "fix typo" (documentation) but ADDS ``system("...")`` to
     a ``.c`` file -> review_flag True, content unknown, a dangerous-construct
     flag, consistency ``content-substantive`` (content cannot confirm the claim).
@@ -75,7 +75,7 @@ TROJAN = (
 
 
 def _build_synthetic_corpus(corpus_dir):
-    """Lay down bodies + a phase-1 fingerprint index for a known-answer run.
+    """Lay down bodies + a fingerprint index for a known-answer run.
 
     Provenance:
       pkg-a: MODE_ONLY (mode.patch)
@@ -386,11 +386,13 @@ class FindingsNoteTestCase(testtools.TestCase):
         self.assertTrue(os.path.exists(findings_path))
         with open(findings_path, encoding='utf-8') as handle:
             text = handle.read()
+        # The heading, so a rename has to come through a test.
+        self.assertIn('# Findings: deterministic patch classification', text)
         # The headline deterministic-settlement measurement.
         self.assertIn('4 distinct fingerprints', text)
         self.assertIn('50.0% settle deterministically', text)
-        # The phase-4 residue label and the review-flag accounting.
-        self.assertIn('unknown-substantive (phase-4 residue)', text)
+        # The residue label and the review-flag accounting.
+        self.assertIn('unknown-substantive (substantive residue)', text)
         self.assertIn('Review-flagged', text)
         # The dangerous-construct detail breakdown names shell-out.
         self.assertIn('shell-out', text)

@@ -206,7 +206,7 @@ def _header_then_diff(header_text, added_line='int y;'):
 
 
 def _build_corpus(corpus_dir, bodies_by_name):
-    """Lay down bodies + a phase-1 index for the named patches; one package each."""
+    """Lay down bodies + a fingerprint index for the named patches; one package each."""
     for text in bodies_by_name.values():
         sha = body_sha256(text)
         directory = os.path.join(corpus_dir, 'bodies', sha[:2])

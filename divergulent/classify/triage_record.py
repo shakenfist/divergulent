@@ -1,11 +1,11 @@
-"""Record an LLM triage result into the ledger (phase 4, step 4c).
+"""Record an LLM triage result into the ledger.
 
-This is the bridge between the claim-blind LLM triage + adversarial verification
-(``triage.py``, steps 4a/4b) and the append-only decision ledger (phase 3).  It
-takes a single :class:`triage.TriageResult` -- a draft, its independent
-verification, and the resulting routing -- and writes it into the ledger,
-honouring the same structural promises the deterministic recorder
-(``record.py``) does, plus the step-4c precedence rules:
+This is the bridge between the claim-blind LLM triage + adversarial
+verification (``triage.py``) and the append-only decision ledger
+(``ledger.py``).  It takes a single :class:`triage.TriageResult` -- a draft,
+its independent verification, and the resulting routing -- and writes it into
+the ledger, honouring the same structural promises the deterministic recorder
+(``record.py``) does, plus the precedence rules an LLM decision needs:
 
 1. **An LLM decision is recorded with an explicit ``verified`` flag.**  A draft
    that the adversarial pass confirmed (``routing == 'verified'``) is appended
@@ -18,12 +18,13 @@ honouring the same structural promises the deterministic recorder
    ``decided_by = 'llm-triage:<model>'`` (so changing the model is a NEW rule
    identity whose old decisions can be superseded), while ``rule_version`` is
    the integer ``prompt_version`` (so a prompt bump moves the version and
-   re-triages cleanly).  Both drive supersession through the existing phase-3
-   machinery, and ``rule_version`` stays the INTEGER the schema requires.
+   re-triages cleanly).  Both drive supersession through the ledger's existing
+   supersede primitives, and ``rule_version`` stays the INTEGER the schema
+   requires.
 
 3. **A ``needs_human`` result is enqueued for human review.**  When the routing
    is ``needs_human`` the result is also appended to the ``review_queue`` so the
-   local, signed review tool (step 4e) can pull it.  A human's verdict is a
+   local, signed review tool (``review.py``) can pull it.  A human's verdict is a
    separate signed ``kind='human'`` decision; this recorder never writes one.
 
 4. **Recording is idempotent.**  A decision is skipped when a LIVE decision
@@ -209,7 +210,7 @@ def record_triage_to_human(conn, fingerprint, reason, *, now, model,
     ``review_queue`` item carrying ``reason``. Recording the decision means a
     later run finds a live decision for that triple and SKIPS the fingerprint
     instead of re-calling the failing/expensive model on it -- the budget is
-    spent at most once. The human (step 4e) decides the real category from the
+    spent at most once. The human reviewer decides the real category from the
     full diff. ``now`` is caller-supplied; the call commits.
     """
     decided_by = _decided_by(model)
