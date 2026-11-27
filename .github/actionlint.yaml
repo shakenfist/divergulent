@@ -3,6 +3,7 @@
 self-hosted-runner:
   labels:
     - static
+    - persistent
     - vm
     - debian-13
     - s
